@@ -1,0 +1,5 @@
+Coloca en esta carpeta el logo de Pixels Studio con el nombre:
+
+logo.png
+
+El formulario lo mostrará automáticamente en la cabecera.

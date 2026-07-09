@@ -1,0 +1,11 @@
+Options -Indexes
+
+<FilesMatch "\.(sql|md|log|json|bak|env)$">
+  Require all denied
+</FilesMatch>
+
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+RedirectMatch 403 ^/pixelstudio/storage(/|$)

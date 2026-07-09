@@ -1,0 +1,165 @@
+<?php
+// login.php
+declare(strict_types=1);
+require_once __DIR__ . '/config/db.php';
+
+$pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS {$TABLE_USERS} (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(60) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(20) NOT NULL DEFAULT 'admin',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+
+$seed_notice = '';
+try {
+  $exists = (int) $pdo->query("SELECT COUNT(*) FROM {$TABLE_USERS}")->fetchColumn();
+  if ($exists === 0 && (bool) app_config('security.allow_default_admin_seed', true)) {
+    $user = (string) app_config('security.default_admin_user', 'admin');
+    $pass = (string) app_config('security.default_admin_pass', 'CambiaEstaClave#2026');
+    $hash = password_hash($pass, PASSWORD_DEFAULT);
+    $ins = $pdo->prepare("INSERT INTO {$TABLE_USERS} (username, password_hash) VALUES (?, ?)");
+    $ins->execute([$user, $hash]);
+    $seed_notice = "Usuario creado: <strong>" . h($user) . "</strong> / <strong>" . h($pass) . "</strong>";
+  }
+} catch (Throwable $e) { /* log opcional */ }
+
+if (empty($_SESSION['csrf'])) {
+  $_SESSION['csrf'] = bin2hex(random_bytes(32));
+}
+
+function login_security_dir(): string {
+  $dir = __DIR__ . '/storage/security/login';
+  if (!is_dir($dir)) @mkdir($dir, 0770, true);
+  return $dir;
+}
+function login_rate_file(string $username): string {
+  $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+  return login_security_dir() . '/' . hash('sha256', $ip . '|' . mb_strtolower($username)) . '.json';
+}
+function login_rate_state(string $username): array {
+  $file = login_rate_file($username);
+  if (!is_file($file)) return ['attempts' => 0, 'first_at' => 0, 'locked_until' => 0];
+  $data = json_decode((string) file_get_contents($file), true);
+  return is_array($data) ? $data + ['attempts' => 0, 'first_at' => 0, 'locked_until' => 0] : ['attempts' => 0, 'first_at' => 0, 'locked_until' => 0];
+}
+function login_is_locked(string $username): int {
+  $state = login_rate_state($username);
+  $until = (int) ($state['locked_until'] ?? 0);
+  return $until > time() ? $until : 0;
+}
+function login_register_failure(string $username): void {
+  $now = time();
+  $window = (int) app_config('security.login_window_seconds', 900);
+  $max = (int) app_config('security.login_max_attempts', 5);
+  $lock = (int) app_config('security.login_lock_seconds', 900);
+  $state = login_rate_state($username);
+  $first = (int) ($state['first_at'] ?? 0);
+  $attempts = (int) ($state['attempts'] ?? 0);
+  if ($first <= 0 || ($now - $first) > $window) {
+    $first = $now;
+    $attempts = 0;
+  }
+  $attempts++;
+  $state = ['attempts' => $attempts, 'first_at' => $first, 'locked_until' => $attempts >= $max ? $now + $lock : 0];
+  @file_put_contents(login_rate_file($username), json_encode($state));
+}
+function login_clear_failures(string $username): void {
+  $file = login_rate_file($username);
+  if (is_file($file)) @unlink($file);
+}
+
+$error = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $csrf = $_POST['csrf'] ?? '';
+  if (!$csrf || !hash_equals($_SESSION['csrf'], (string) $csrf)) {
+    $error = 'CSRF inválido. Recarga la página.';
+  } else {
+    $username = trim((string) ($_POST['username'] ?? ''));
+    $password = (string) ($_POST['password'] ?? '');
+
+    if ($username === '' || $password === '') {
+      $error = 'Usuario y clave son obligatorios.';
+    } elseif ($lockedUntil = login_is_locked($username)) {
+      $minutes = max(1, (int) ceil(($lockedUntil - time()) / 60));
+      $error = 'Demasiados intentos fallidos. Intenta nuevamente en ' . $minutes . ' minuto' . ($minutes === 1 ? '' : 's') . '.';
+    } else {
+      $stmt = $pdo->prepare("SELECT id, username, password_hash FROM {$TABLE_USERS} WHERE username = ? LIMIT 1");
+      $stmt->execute([$username]);
+      $row = $stmt->fetch();
+
+      if (!$row || !password_verify($password, $row['password_hash'])) {
+        login_register_failure($username);
+        $error = 'Credenciales inválidas.';
+      } else {
+        login_clear_failures($username);
+        session_regenerate_id(true);
+        $_SESSION['user_id'] = (int) $row['id'];
+        $_SESSION['username'] = (string) $row['username'];
+
+        if (empty($_SESSION['csrf'])) {
+          $_SESSION['csrf'] = bin2hex(random_bytes(32));
+        }
+
+        header('Location: dashboard.php');
+        exit;
+      }
+    }
+  }
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title><?= h(app_config('ui.login_title', 'Acceso')) ?></title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="form-card login-card" aria-labelledby="login-title">
+      <div class="panel login-panel">
+        <header class="login-header">
+          <h1 class="title" id="login-title">Acceso al Dashboard</h1>
+          <p class="subtitle">Ingresa tus credenciales</p>
+        </header>
+
+        <?php if ($seed_notice !== ''): ?>
+          <div class="form-alert alert-info" style="display:block; margin-bottom:14px"><?= $seed_notice ?></div>
+        <?php endif; ?>
+
+        <?php if ($error): ?>
+          <div class="form-alert alert-error" style="display:block; margin-bottom:14px" role="alert"><?= h($error) ?></div>
+        <?php endif; ?>
+
+        <form method="post" action="login.php" class="form login-form" novalidate>
+          <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf']) ?>">
+
+          <div class="login-fields" aria-label="Credenciales de acceso">
+            <label class="field" id="f-username">
+              <span class="field-label">Usuario</span>
+              <input type="text" name="username" placeholder="Ingresa tu usuario" required autocomplete="username" autofocus>
+              <small class="err" data-for="username">Usuario obligatorio.</small>
+            </label>
+
+            <label class="field" id="f-password">
+              <span class="field-label">Contraseña</span>
+              <input type="password" name="password" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
+              <small class="err" data-for="password">Contraseña obligatoria.</small>
+            </label>
+          </div>
+
+          <div id="formAlert" class="form-alert" aria-live="polite" style="display:none"></div>
+          <button class="btn" type="submit">Ingresar</button>
+        </form>
+      </div>
+    </section>
+
+    <div class="credit">Desarrollado por <strong><?= h(app_config('brand.developer', 'Pixels Studio')) ?></strong></div>
+  </main>
+  <script src="js/login.js" defer></script>
+</body>
+</html>

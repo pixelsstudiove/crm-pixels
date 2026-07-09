@@ -1,0 +1,13 @@
+.DS_Store
+*.log
+*.bak
+*.tmp
+*.env
+.env
+
+storage/sessions/*
+storage/security/*
+!storage/.htaccess
+
+node_modules/
+vendor/

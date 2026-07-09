@@ -1,0 +1,278 @@
+:root{
+  --brand-primary:#00d4ff;
+  --brand-primary-dark:#0094c8;
+  --brand-ink:#0b1324;
+  --brand-muted:#5a6b86;
+  --surface:#f8fbff;
+  --surface-soft:#edf8ff;
+  --line:#cfe5f4;
+  --field-bg:#fff;
+  --focus:#00d4ff;
+  --success:#2f7a49;
+  --error:#b12d37;
+  --shadow:0 24px 60px rgba(0, 14, 32, .35);
+  --radius-lg:24px;
+  --radius-sm:13px;
+  --field-h:54px;
+  --container-w:min(92vw, 540px);
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+.hp-field{position:absolute!important;left:-10000px!important;top:auto!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important}
+body{
+  margin:0;
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";
+  color:var(--brand-ink);
+  background:radial-gradient(circle at top left, rgba(0,212,255,.22), transparent 34%), radial-gradient(circle at bottom right, rgba(0,102,255,.18), transparent 38%), #071120;
+}
+.shell{width:var(--container-w);padding:30px 0 24px}
+.form-card{
+  overflow:hidden;
+  border-radius:var(--radius-lg);
+  background:var(--surface);
+  border:1px solid rgba(255,255,255,.34);
+  box-shadow:var(--shadow);
+}
+.panel{padding:28px 22px 30px}
+.form-header{text-align:center;margin-bottom:24px}
+.brand-logo-slot{
+  width:min(100%, 200px);
+  min-height:76px;
+  margin:0 auto 18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:10px 14px;
+  border-radius:14px;
+}
+.brand-logo{display:block;max-width:100%;max-height:164px;object-fit:contain}
+.brand-logo-placeholder{
+  color:rgba(0,148,200,.85);
+  font-size:.82rem;
+  font-weight:750;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.title{margin:0 0 9px;color:#071120;font-size:2rem;line-height:1.12;font-weight:850;letter-spacing:-.03em}
+.subtitle{max-width:430px;margin:0 auto;color:var(--brand-muted);font-size:.98rem;line-height:1.48}
+.grid{display:grid;gap:4px}
+.field{position:relative;display:block;margin-top:10px}
+.field-label{display:block;margin:0 0 7px;color:var(--brand-ink);font-size:.9rem;font-weight:750}
+.field-label em,.required-note em{color:var(--brand-primary);font-style:normal}
+.field-label small{color:var(--brand-muted);font-size:.82rem;font-weight:500}
+.field input,.field select,.field textarea{
+  width:100%;
+  height:var(--field-h);
+  padding:0 15px;
+  outline:none;
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  color:var(--brand-ink);
+  background:var(--field-bg);
+  box-shadow:inset 0 1px 0 rgba(51,10,12,.02);
+  transition:border-color .18s,box-shadow .18s;
+}
+.field input::placeholder,.field textarea::placeholder{color:#7b8ca5}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--focus);box-shadow:0 0 0 3px rgba(0,212,255,.16)}
+.field textarea{min-height:106px;resize:vertical;padding:14px 15px;line-height:1.45}
+.field select{appearance:none;padding-right:46px;cursor:pointer}
+.select-field::after{content:"⌄";position:absolute;right:17px;bottom:14px;color:var(--brand-primary);font-size:1.3rem;line-height:1;pointer-events:none}
+.field select option{color:var(--brand-ink);background:#fff}
+.err{display:none;margin-top:6px;color:var(--error);font-size:.82rem;font-weight:650}
+.invalid input,.invalid select,.invalid textarea{border-color:var(--error);box-shadow:0 0 0 3px rgba(177,45,55,.12)}
+[hidden]{display:none!important}
+.required-note{margin:17px 0 0;color:var(--brand-muted);font-size:.84rem}
+.form-alert{display:none;margin-top:14px;padding:12px 14px;border-radius:12px;line-height:1.35;font-weight:650}
+.alert-success{color:#184f2b;background:#eef9f0;border:1px solid #bfe2c5}
+.alert-error{color:#85232a;background:#fff1f2;border:1px solid #f1c2c6}
+.btn{
+  width:100%;
+  height:56px;
+  margin-top:18px;
+  border:0;
+  border-radius:16px;
+  cursor:pointer;
+  color:#fff;
+  background:var(--brand-primary);
+  box-shadow:0 14px 28px rgba(0,148,200,.25);
+  font-size:1rem;
+  font-weight:800;
+  letter-spacing:.01em;
+  transition:transform .06s ease,background .2s ease,box-shadow .2s ease;
+}
+.btn:hover{background:var(--brand-primary-dark);box-shadow:0 18px 32px rgba(0,148,200,.32)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.7;cursor:not-allowed}
+.credit{text-align:center;padding:14px 0 0;color:rgba(255,255,255,.88);font-size:.83rem}
+.credit strong{color:#fff}
+@media (min-width:420px){
+  :root{--container-w:min(90vw,560px);--field-h:56px}
+  .panel{padding:34px 30px 34px}
+  .title{font-size:2.15rem}
+}
+@media (min-width:768px){
+  :root{--container-w:min(86vw,620px)}
+  .panel{padding:38px 42px 40px}
+  .form-card{border-radius:28px}
+}
+
+/* Login: contenedor visual independiente para el formulario de acceso. */
+.login-page{
+  background:radial-gradient(circle at top left, rgba(0,212,255,.22), transparent 34%), radial-gradient(circle at bottom right, rgba(0,102,255,.18), transparent 38%), #071120;
+}
+.login-shell{
+  width:min(92vw, 460px);
+  padding:30px 0 24px;
+  margin:0 auto;
+}
+.login-card{
+  width:100%;
+  background:var(--surface);
+  border:1px solid rgba(255,255,255,.42);
+}
+.login-panel{
+  padding:34px 28px 30px;
+}
+.login-header{
+  text-align:center;
+  margin-bottom:22px;
+}
+.login-header .title{
+  margin:0 0 8px;
+  color:var(--brand-primary);
+  font-size:1.85rem;
+}
+.login-header .subtitle{
+  margin:0 auto;
+}
+.login-fields{
+  display:grid;
+  gap:14px;
+  padding:18px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--surface-soft);
+}
+.login-fields .field{
+  margin:0;
+}
+.login-fields .field-label{
+  margin-bottom:7px;
+}
+.login-form .btn{
+  margin-top:18px;
+}
+.alert-info{
+  color:#275833;
+  background:#edf8ef;
+  border:1px solid #c1dfc6;
+}
+@media (max-width:419px){
+  .login-shell{width:min(92vw, 420px); padding:18px 0}
+  .login-panel{padding:28px 18px 24px}
+  .login-fields{padding:14px; border-radius:16px}
+  .login-header .title{font-size:1.6rem}
+}
+@media (min-width:768px){
+  .login-shell{width:min(90vw, 500px)}
+  .login-panel{padding:40px 38px 36px}
+}
+
+
+/* Dashboard */
+.eyebrow{
+  margin:0 0 8px;
+  color:var(--brand-primary);
+  font-size:.86rem;
+  font-weight:800;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.dashboard-page{
+  display:block;
+  min-height:100vh;
+  background:var(--brand-primary);
+  color:var(--brand-ink);
+}
+.dashboard-shell{
+  width:min(96vw, 1480px);
+  margin:0 auto;
+  padding:34px 0 24px;
+}
+.dashboard-card{
+  width:100%;
+  background:var(--surface);
+  border:1px solid rgba(255,255,255,.4);
+}
+.dashboard-card .panel{
+  padding:26px 18px 24px;
+}
+.dashboard-card .title{
+  margin:0;
+}
+.dashboard-card .subtitle{
+  max-width:none;
+  margin:0;
+}
+.dashboard-card .subtitle strong{
+  color:var(--brand-primary-dark);
+}
+.dashboard-card .topbar{
+  margin-bottom:14px;
+}
+.dashboard-card .credit{padding-top:16px}
+@media (min-width:768px){
+  .dashboard-card .panel{padding:34px 28px 30px;}
+  .dashboard-shell{padding-top:44px;}
+}
+
+
+/* Campos adicionales Pixels Studio */
+.field textarea{
+  width:100%;
+  min-height:112px;
+  padding:14px 15px;
+  resize:vertical;
+  outline:none;
+  border:1px solid var(--line);
+  border-radius:var(--radius-sm);
+  color:var(--brand-ink);
+  background:var(--field-bg);
+  font-family:inherit;
+  line-height:1.45;
+  transition:border-color .18s,box-shadow .18s;
+}
+.field textarea::placeholder{color:#8fa1b9}
+.field textarea:focus{border-color:var(--focus);box-shadow:0 0 0 3px rgba(0,212,255,.16)}
+.invalid textarea{border-color:var(--error);box-shadow:0 0 0 3px rgba(177,45,55,.12)}
+.check-field{margin-top:14px}
+.check-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+  padding:13px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--surface-soft);
+}
+.check-option{
+  display:flex;
+  gap:10px;
+  align-items:flex-start;
+  min-height:42px;
+  padding:10px 12px;
+  border:1px solid rgba(0,148,200,.14);
+  border-radius:13px;
+  background:#fff;
+  color:var(--brand-ink);
+  font-size:.92rem;
+  font-weight:650;
+  cursor:pointer;
+}
+.check-option input{width:18px;height:18px;margin:1px 0 0;accent-color:var(--brand-primary);flex:0 0 auto}
+.check-option:hover{border-color:rgba(0,148,200,.36);background:#f8fdff}
+.invalid .check-grid{border-color:var(--error);box-shadow:0 0 0 3px rgba(177,45,55,.12)}
+@media (min-width:620px){.check-grid{grid-template-columns:1fr 1fr}}
