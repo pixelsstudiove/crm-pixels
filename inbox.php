@@ -36,9 +36,17 @@ function inbox_wants_json(): bool {
   return stripos($accept, 'application/json') !== false || strtolower($requestedWith) === 'fetch';
 }
 
+function inbox_json_error(string $message, int $status = 422): void {
+  http_response_code($status);
+  header('Content-Type: application/json; charset=utf-8');
+  echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = (string) ($_POST['csrf'] ?? '');
   if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
+    if (inbox_wants_json()) inbox_json_error('CSRF invalido. Recarga la pagina.', 403);
     $errors[] = 'CSRF invalido. Recarga la pagina.';
   } else {
     $action = (string) ($_POST['action'] ?? '');
@@ -56,6 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Estado actualizado.'));
         exit;
       }
+      if (inbox_wants_json()) inbox_json_error('Selecciona un estado valido.');
       $errors[] = 'Selecciona un estado valido.';
     } elseif ($action === 'update_sales_status' && $canEditLeads && $conversationId > 0) {
       $leadId = (int) ($_POST['lead_id'] ?? 0);
@@ -71,7 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
         exit;
       }
+      if (inbox_wants_json()) inbox_json_error('Selecciona un status comercial valido.');
       $errors[] = 'Selecciona un status comercial valido.';
+    } elseif (inbox_wants_json()) {
+      inbox_json_error('No tienes permiso o la accion no es valida.', 403);
     }
   }
 }
@@ -632,11 +644,12 @@ function inbox_time($value): string {
 
       select.addEventListener('change', async () => {
         const nextValue = select.value;
+        const formData = new FormData(form);
         select.disabled = true;
         try {
           const response = await fetch(form.action, {
             method: 'POST',
-            body: new FormData(form),
+            body: formData,
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
             cache: 'no-store'
           });
