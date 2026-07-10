@@ -91,6 +91,16 @@ function make_legacy_column_nullable(PDO $pdo, string $table, string $column, ar
 function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, array &$log): void {
   if (!table_exists($pdo, $usersTable)) $log[] = ['err', "La tabla {$usersTable} no existe. Revisa crear_tablas.sql."];
   if (!table_exists($pdo, $leadsTable)) { $log[] = ['err', "La tabla {$leadsTable} no existe. Revisa crear_tablas.sql."]; return; }
+  if (table_exists($pdo, $usersTable)) {
+    ensure_column($pdo, $usersTable, 'role', "`role` VARCHAR(30) NOT NULL DEFAULT 'super_admin'", $log);
+    try {
+      $pdo->exec("ALTER TABLE `{$usersTable}` MODIFY `role` VARCHAR(30) NOT NULL DEFAULT 'super_admin'");
+      $pdo->exec("UPDATE `{$usersTable}` SET `role`='super_admin' WHERE `role`='admin'");
+      $log[] = ['ok', 'Roles de usuarios actualizados.'];
+    } catch (Throwable $e) {
+      $log[] = ['err', 'No se pudieron actualizar los roles de usuarios: ' . $e->getMessage()];
+    }
+  }
   $columns = [
     'email' => '`email` VARCHAR(150) NULL',
     'brand_instagram' => '`brand_instagram` VARCHAR(120) NULL',
