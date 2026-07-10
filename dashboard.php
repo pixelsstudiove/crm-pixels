@@ -476,7 +476,7 @@ function dash_channel_label(array $channel): string {
     .funnel-card-title strong { color:var(--brand-ink); line-height:1.2; }
     .funnel-id { color:#007ea8; font-size:.78rem; font-weight:900; }
     .funnel-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:2px; }
-    .funnel-action-link { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:0 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.82rem; font-weight:850; text-decoration:none; }
+    .funnel-action-link { display:inline-flex; width:100%; align-items:center; justify-content:center; min-height:38px; padding:0 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.82rem; font-weight:850; text-decoration:none; }
     .funnel-action-link:hover { background:#dff6ff; border-color:#8bdfff; }
     .funnel-meta { display:grid; gap:4px; color:var(--brand-muted); font-size:.83rem; line-height:1.3; }
     .funnel-meta-line { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
