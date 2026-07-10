@@ -280,7 +280,11 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   if ($senderId === null) return 0;
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
+  if ($recipientId === null) return 0;
+
   $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId);
+  if (!$channel) return 0;
+
   $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 120);
   $messageText = ig_event_text($event);
   $messageAt = ig_message_time($event['timestamp'] ?? null);
@@ -408,6 +412,7 @@ try {
   ig_ensure_leads_schema($pdo, $DB_NAME, $TABLE_LEADS);
   $channelsTable = ig_ensure_channel_schema_safe($pdo);
   $createdOrUpdated = [];
+  $ignoredEvents = 0;
   foreach (($payload['entry'] ?? []) as $entry) {
     if (!is_array($entry)) continue;
     foreach (($entry['messaging'] ?? []) as $event) {
@@ -416,10 +421,11 @@ try {
       if (!isset($event['message']) && !isset($event['postback'])) continue;
       $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $channelsTable, $event);
       if ($leadId > 0) $createdOrUpdated[] = $leadId;
+      else $ignoredEvents++;
     }
   }
 
-  ig_json(['ok' => true, 'lead_ids' => array_values(array_unique($createdOrUpdated))]);
+  ig_json(['ok' => true, 'lead_ids' => array_values(array_unique($createdOrUpdated)), 'ignored_events' => $ignoredEvents]);
 } catch (Throwable $e) {
   ig_json(['ok' => false, 'error' => 'No se pudo procesar el webhook'], 500);
 }
