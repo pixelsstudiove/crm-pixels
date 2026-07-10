@@ -645,9 +645,10 @@ function inbox_time($value): string {
       select.addEventListener('change', async () => {
         const nextValue = select.value;
         const formData = new FormData(form);
+        const actionUrl = form.getAttribute('action') || window.location.href;
         select.disabled = true;
         try {
-          const response = await fetch(form.action, {
+          const response = await fetch(actionUrl, {
             method: 'POST',
             body: formData,
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
