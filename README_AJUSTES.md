@@ -150,7 +150,33 @@ Estados del embudo comercial:
 - No responde.
 - No califica.
 
-## 6. Campos eliminados en esta versión reducida
+## 6. Leads desde Instagram DM
+
+El CRM puede recibir eventos de Instagram Messaging API y crear/actualizar leads automáticamente cuando una persona escribe por DM.
+
+Webhook:
+
+```text
+https://tudominio.com/ruta-del-formulario/instagram_webhook.php
+```
+
+Variables de entorno recomendadas:
+
+```env
+INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
+INSTAGRAM_APP_SECRET=
+INSTAGRAM_DM_INBOX_URL=https://www.instagram.com/direct/inbox/
+```
+
+Flujo:
+
+- Meta envía el evento al webhook.
+- El CRM crea el lead con origen `Instagram DM`.
+- Si la persona vuelve a escribir, se actualiza el último mensaje recibido.
+- El equipo responde desde Instagram.
+- Status, notas y recordatorios se gestionan desde el dashboard.
+
+## 7. Campos eliminados en esta versión reducida
 
 Para reducir fricción y evitar perder leads, esta versión ya no solicita:
 
@@ -162,7 +188,7 @@ Para reducir fricción y evitar perder leads, esta versión ya no solicita:
 
 El instalador y el backend hacen que esos campos antiguos sean opcionales si ya existían en una base de datos previa, para que no bloqueen nuevos registros.
 
-## 7. Ejemplos de URLs con tracking
+## 8. Ejemplos de URLs con tracking
 
 URL base del formulario:
 
@@ -200,7 +226,7 @@ En Meta Ads también puedes colocar la URL base en el campo **URL del sitio web*
 utm_source={{site_source_name}}&utm_medium=paid_social&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}&ad_name={{ad.name}}&ad_id={{ad.id}}
 ```
 
-## 8. Logo
+## 9. Logo
 
 Sube el logo a:
 
@@ -210,7 +236,7 @@ images/logo.png
 
 Si no existe, el formulario mostrará un espacio reservado.
 
-## 9. WhatsApp automático
+## 10. WhatsApp automático
 
 Por defecto está desactivado. Para activarlo con Evolution API, configura estas variables de entorno o ajusta `config/app.php`:
 
@@ -221,12 +247,13 @@ EVO_INSTANCE=tu-instancia
 EVO_APIKEY=tu-api-key
 ```
 
-## 10. Archivos importantes
+## 11. Archivos importantes
 
 ```text
 index.php                  Formulario público
 save_lead.php              Guarda leads y tracking
 dashboard.php              Dashboard privado
+instagram_webhook.php      Recibe DMs de Instagram y crea/actualiza leads
 update_sales_status.php    Actualiza status comercial
 update_lead_notes.php      Actualiza anotaciones internas
 login.php                  Login administrativo

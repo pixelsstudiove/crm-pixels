@@ -23,13 +23,13 @@ function ensure_leads_schema(PDO $pdo, string $dbName, string $table): void {
 CREATE TABLE IF NOT EXISTS {$table} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   fullname VARCHAR(120) NOT NULL,
-  phone VARCHAR(20) NOT NULL,
-  email VARCHAR(150) NOT NULL,
-  brand_instagram VARCHAR(120) NOT NULL,
-  business_type VARCHAR(80) NOT NULL,
+  phone VARCHAR(64) NULL,
+  email VARCHAR(150) NULL,
+  brand_instagram VARCHAR(120) NULL,
+  business_type VARCHAR(80) NULL,
   business_type_other VARCHAR(120) NULL,
-  services_needed TEXT NOT NULL,
-  main_objective VARCHAR(120) NOT NULL,
+  services_needed TEXT NULL,
+  main_objective VARCHAR(120) NULL,
   message TEXT NULL,
   source_platform VARCHAR(80) NULL,
   utm_source VARCHAR(80) NULL,
@@ -52,9 +52,17 @@ CREATE TABLE IF NOT EXISTS {$table} (
   user_agent VARCHAR(255) NULL,
   whatsapp_sent TINYINT(1) NOT NULL DEFAULT 0,
   whatsapp_status VARCHAR(32) NULL,
+  external_source VARCHAR(40) NULL,
+  external_contact_id VARCHAR(120) NULL,
+  external_thread_id VARCHAR(120) NULL,
+  last_external_message_id VARCHAR(120) NULL,
+  first_message_at DATETIME NULL,
+  last_message_at DATETIME NULL,
+  last_inbound_message TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_phone (phone),
+  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
   KEY idx_brand_instagram (brand_instagram),
   KEY idx_business_type (business_type),
   KEY idx_main_objective (main_objective),
@@ -69,6 +77,7 @@ CREATE TABLE IF NOT EXISTS {$table} (
 SQL);
 
   $columns = [
+    'phone' => "ALTER TABLE {$table} ADD COLUMN phone VARCHAR(64) NULL AFTER fullname",
     'email' => "ALTER TABLE {$table} ADD COLUMN email VARCHAR(150) NULL AFTER phone",
     'brand_instagram' => "ALTER TABLE {$table} ADD COLUMN brand_instagram VARCHAR(120) NULL AFTER email",
     'business_type' => "ALTER TABLE {$table} ADD COLUMN business_type VARCHAR(80) NULL AFTER brand_instagram",
@@ -97,12 +106,32 @@ SQL);
     'user_agent' => "ALTER TABLE {$table} ADD COLUMN user_agent VARCHAR(255) NULL",
     'whatsapp_sent' => "ALTER TABLE {$table} ADD COLUMN whatsapp_sent TINYINT(1) NOT NULL DEFAULT 0",
     'whatsapp_status' => "ALTER TABLE {$table} ADD COLUMN whatsapp_status VARCHAR(32) NULL",
+    'external_source' => "ALTER TABLE {$table} ADD COLUMN external_source VARCHAR(40) NULL AFTER whatsapp_status",
+    'external_contact_id' => "ALTER TABLE {$table} ADD COLUMN external_contact_id VARCHAR(120) NULL AFTER external_source",
+    'external_thread_id' => "ALTER TABLE {$table} ADD COLUMN external_thread_id VARCHAR(120) NULL AFTER external_contact_id",
+    'last_external_message_id' => "ALTER TABLE {$table} ADD COLUMN last_external_message_id VARCHAR(120) NULL AFTER external_thread_id",
+    'first_message_at' => "ALTER TABLE {$table} ADD COLUMN first_message_at DATETIME NULL AFTER last_external_message_id",
+    'last_message_at' => "ALTER TABLE {$table} ADD COLUMN last_message_at DATETIME NULL AFTER first_message_at",
+    'last_inbound_message' => "ALTER TABLE {$table} ADD COLUMN last_inbound_message TEXT NULL AFTER last_message_at",
     'updated_at' => "ALTER TABLE {$table} ADD COLUMN updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP",
   ];
 
   foreach ($columns as $column => $alterSql) {
     if (!column_exists($pdo, $dbName, $table, $column)) {
       $pdo->exec($alterSql);
+    }
+  }
+
+  foreach ([
+    'phone' => 'VARCHAR(64) NULL',
+    'email' => 'VARCHAR(150) NULL',
+    'brand_instagram' => 'VARCHAR(120) NULL',
+    'business_type' => 'VARCHAR(80) NULL',
+    'services_needed' => 'TEXT NULL',
+    'main_objective' => 'VARCHAR(120) NULL',
+  ] as $column => $definition) {
+    if (column_exists($pdo, $dbName, $table, $column)) {
+      try { $pdo->exec("ALTER TABLE {$table} MODIFY {$column} {$definition}"); } catch (Throwable $e) { /* no-op */ }
     }
   }
 
@@ -124,6 +153,8 @@ SQL);
     'idx_ad_name' => "ALTER TABLE {$table} ADD KEY idx_ad_name (ad_name)",
     'idx_sales_status' => "ALTER TABLE {$table} ADD KEY idx_sales_status (sales_status)",
     'idx_reminder_at' => "ALTER TABLE {$table} ADD KEY idx_reminder_at (reminder_at)",
+    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (external_source, external_contact_id)",
+    'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
     'idx_status' => "ALTER TABLE {$table} ADD KEY idx_status (status)",
     'idx_created_at' => "ALTER TABLE {$table} ADD KEY idx_created_at (created_at)",
   ];

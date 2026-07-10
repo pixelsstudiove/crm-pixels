@@ -102,6 +102,7 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     }
   }
   $columns = [
+    'phone' => '`phone` VARCHAR(64) NULL',
     'email' => '`email` VARCHAR(150) NULL',
     'brand_instagram' => '`brand_instagram` VARCHAR(120) NULL',
     'business_type' => '`business_type` VARCHAR(80) NULL',
@@ -130,9 +131,30 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'user_agent' => '`user_agent` VARCHAR(255) NULL',
     'whatsapp_sent' => '`whatsapp_sent` TINYINT(1) NOT NULL DEFAULT 0',
     'whatsapp_status' => '`whatsapp_status` VARCHAR(32) NULL',
+    'external_source' => '`external_source` VARCHAR(40) NULL',
+    'external_contact_id' => '`external_contact_id` VARCHAR(120) NULL',
+    'external_thread_id' => '`external_thread_id` VARCHAR(120) NULL',
+    'last_external_message_id' => '`last_external_message_id` VARCHAR(120) NULL',
+    'first_message_at' => '`first_message_at` DATETIME NULL',
+    'last_message_at' => '`last_message_at` DATETIME NULL',
+    'last_inbound_message' => '`last_inbound_message` TEXT NULL',
     'updated_at' => '`updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP',
   ];
   foreach ($columns as $column => $definition) ensure_column($pdo, $leadsTable, $column, $definition, $log);
+
+  foreach ([
+    'phone' => '`phone` VARCHAR(64) NULL',
+    'email' => '`email` VARCHAR(150) NULL',
+    'brand_instagram' => '`brand_instagram` VARCHAR(120) NULL',
+    'business_type' => '`business_type` VARCHAR(80) NULL',
+    'services_needed' => '`services_needed` TEXT NULL',
+    'main_objective' => '`main_objective` VARCHAR(120) NULL',
+  ] as $column => $definition) {
+    if (column_exists($pdo, $leadsTable, $column)) {
+      try { $pdo->exec("ALTER TABLE `{$leadsTable}` MODIFY {$definition}"); $log[] = ['ok', "Columna {$leadsTable}.{$column} ajustada para leads externos."]; }
+      catch (Throwable $e) { $log[] = ['err', "No se pudo ajustar {$column}: " . $e->getMessage()]; }
+    }
+  }
 
   foreach (['brand_business','city_country','current_situation','budget_range','start_timeline','location_state','interest_category','sexo','age','birthdate'] as $legacyColumn) {
     make_legacy_column_nullable($pdo, $leadsTable, $legacyColumn, $log);
@@ -148,6 +170,8 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'idx_ad_name' => 'KEY `idx_ad_name` (`ad_name`)',
     'idx_sales_status' => 'KEY `idx_sales_status` (`sales_status`)',
     'idx_reminder_at' => 'KEY `idx_reminder_at` (`reminder_at`)',
+    'uniq_external_contact' => 'UNIQUE KEY `uniq_external_contact` (`external_source`, `external_contact_id`)',
+    'idx_last_message_at' => 'KEY `idx_last_message_at` (`last_message_at`)',
     'idx_status' => 'KEY `idx_status` (`status`)',
     'idx_created_at' => 'KEY `idx_created_at` (`created_at`)',
   ];

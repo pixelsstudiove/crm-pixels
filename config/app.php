@@ -144,6 +144,15 @@ $app = [
     'message_template' => "¡Hola {fullname}! 👋\nRecibimos tu solicitud de diagnóstico en {brand_name}.\nInstagram: {brand_instagram}.\nServicio: {services_needed}.\nNuestro equipo te contactará pronto.",
   ],
 
+  'instagram' => [
+    'webhook_verify_token' => (string) env_value('INSTAGRAM_WEBHOOK_VERIFY_TOKEN', ''),
+    'app_secret' => (string) env_value('INSTAGRAM_APP_SECRET', ''),
+    'dm_inbox_url' => (string) env_value('INSTAGRAM_DM_INBOX_URL', 'https://www.instagram.com/direct/inbox/'),
+    'default_business_type' => 'Instagram DM',
+    'default_service' => 'Mensaje directo de Instagram',
+    'default_objective' => 'Conversación iniciada desde Instagram',
+  ],
+
   'security' => [
     'allow_default_admin_seed' => filter_var(env_value('ALLOW_DEFAULT_ADMIN_SEED', in_array($_SERVER['SERVER_NAME'] ?? '', ['localhost', '127.0.0.1', '::1'], true) ? 'true' : 'false'), FILTER_VALIDATE_BOOL),
     'default_admin_user' => (string) env_value('DEFAULT_ADMIN_USER', 'admin'),

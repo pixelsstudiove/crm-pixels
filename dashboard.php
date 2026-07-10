@@ -19,13 +19,13 @@ function ensure_dashboard_schema(PDO $pdo, string $dbName, string $table): void 
 CREATE TABLE IF NOT EXISTS {$table} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   fullname VARCHAR(120) NOT NULL,
-  phone VARCHAR(20) NOT NULL,
-  email VARCHAR(150) NOT NULL,
-  brand_instagram VARCHAR(120) NOT NULL,
-  business_type VARCHAR(80) NOT NULL,
+  phone VARCHAR(64) NULL,
+  email VARCHAR(150) NULL,
+  brand_instagram VARCHAR(120) NULL,
+  business_type VARCHAR(80) NULL,
   business_type_other VARCHAR(120) NULL,
-  services_needed TEXT NOT NULL,
-  main_objective VARCHAR(120) NOT NULL,
+  services_needed TEXT NULL,
+  main_objective VARCHAR(120) NULL,
   message TEXT NULL,
   source_platform VARCHAR(80) NULL,
   utm_source VARCHAR(80) NULL,
@@ -48,9 +48,17 @@ CREATE TABLE IF NOT EXISTS {$table} (
   user_agent VARCHAR(255) NULL,
   whatsapp_sent TINYINT(1) NOT NULL DEFAULT 0,
   whatsapp_status VARCHAR(32) NULL,
+  external_source VARCHAR(40) NULL,
+  external_contact_id VARCHAR(120) NULL,
+  external_thread_id VARCHAR(120) NULL,
+  last_external_message_id VARCHAR(120) NULL,
+  first_message_at DATETIME NULL,
+  last_message_at DATETIME NULL,
+  last_inbound_message TEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_phone (phone),
+  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
   KEY idx_brand_instagram (brand_instagram),
   KEY idx_business_type (business_type),
   KEY idx_main_objective (main_objective),
@@ -65,6 +73,7 @@ CREATE TABLE IF NOT EXISTS {$table} (
 SQL);
 
   $columns = [
+    'phone' => "ALTER TABLE {$table} ADD COLUMN phone VARCHAR(64) NULL AFTER fullname",
     'email' => "ALTER TABLE {$table} ADD COLUMN email VARCHAR(150) NULL AFTER phone",
     'brand_instagram' => "ALTER TABLE {$table} ADD COLUMN brand_instagram VARCHAR(120) NULL AFTER email",
     'business_type' => "ALTER TABLE {$table} ADD COLUMN business_type VARCHAR(80) NULL AFTER brand_instagram",
@@ -93,9 +102,29 @@ SQL);
     'user_agent' => "ALTER TABLE {$table} ADD COLUMN user_agent VARCHAR(255) NULL",
     'whatsapp_sent' => "ALTER TABLE {$table} ADD COLUMN whatsapp_sent TINYINT(1) NOT NULL DEFAULT 0",
     'whatsapp_status' => "ALTER TABLE {$table} ADD COLUMN whatsapp_status VARCHAR(32) NULL",
+    'external_source' => "ALTER TABLE {$table} ADD COLUMN external_source VARCHAR(40) NULL AFTER whatsapp_status",
+    'external_contact_id' => "ALTER TABLE {$table} ADD COLUMN external_contact_id VARCHAR(120) NULL AFTER external_source",
+    'external_thread_id' => "ALTER TABLE {$table} ADD COLUMN external_thread_id VARCHAR(120) NULL AFTER external_contact_id",
+    'last_external_message_id' => "ALTER TABLE {$table} ADD COLUMN last_external_message_id VARCHAR(120) NULL AFTER external_thread_id",
+    'first_message_at' => "ALTER TABLE {$table} ADD COLUMN first_message_at DATETIME NULL AFTER last_external_message_id",
+    'last_message_at' => "ALTER TABLE {$table} ADD COLUMN last_message_at DATETIME NULL AFTER first_message_at",
+    'last_inbound_message' => "ALTER TABLE {$table} ADD COLUMN last_inbound_message TEXT NULL AFTER last_message_at",
     'updated_at' => "ALTER TABLE {$table} ADD COLUMN updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP",
   ];
   foreach ($columns as $column => $alterSql) if (!column_exists_dash($pdo, $dbName, $table, $column)) $pdo->exec($alterSql);
+
+  foreach ([
+    'phone' => 'VARCHAR(64) NULL',
+    'email' => 'VARCHAR(150) NULL',
+    'brand_instagram' => 'VARCHAR(120) NULL',
+    'business_type' => 'VARCHAR(80) NULL',
+    'services_needed' => 'TEXT NULL',
+    'main_objective' => 'VARCHAR(120) NULL',
+  ] as $column => $definition) {
+    if (column_exists_dash($pdo, $dbName, $table, $column)) {
+      try { $pdo->exec("ALTER TABLE {$table} MODIFY {$column} {$definition}"); } catch (Throwable $e) { /* no-op */ }
+    }
+  }
 
   foreach (['brand_business','city_country','current_situation','budget_range','start_timeline','location_state','interest_category','sexo','age','birthdate'] as $legacyColumn) {
     if (column_exists_dash($pdo, $dbName, $table, $legacyColumn)) {
@@ -113,6 +142,8 @@ SQL);
     'idx_ad_name' => "ALTER TABLE {$table} ADD KEY idx_ad_name (ad_name)",
     'idx_sales_status' => "ALTER TABLE {$table} ADD KEY idx_sales_status (sales_status)",
     'idx_reminder_at' => "ALTER TABLE {$table} ADD KEY idx_reminder_at (reminder_at)",
+    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (external_source, external_contact_id)",
+    'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
     'idx_status' => "ALTER TABLE {$table} ADD KEY idx_status (status)",
     'idx_created_at' => "ALTER TABLE {$table} ADD KEY idx_created_at (created_at)",
   ];
@@ -174,7 +205,7 @@ $whereConditions = [];
 $whereParams = [];
 if ($q !== '') {
   $digits = preg_replace('/\D+/', '', $q) ?: $q;
-  $whereConditions[] = "(fullname LIKE :q OR phone LIKE :q OR REPLACE(phone,'-','') LIKE :qd OR email LIKE :q OR brand_instagram LIKE :q OR business_type LIKE :q OR business_type_other LIKE :q OR services_needed LIKE :q OR main_objective LIKE :q OR message LIKE :q OR source_platform LIKE :q OR utm_source LIKE :q OR utm_medium LIKE :q OR utm_campaign LIKE :q OR utm_content LIKE :q OR utm_term LIKE :q OR ad_name LIKE :q OR ad_id LIKE :q OR sales_status LIKE :q OR notes LIKE :q OR reminder_note LIKE :q)";
+  $whereConditions[] = "(fullname LIKE :q OR phone LIKE :q OR REPLACE(COALESCE(phone,''),'-','') LIKE :qd OR email LIKE :q OR brand_instagram LIKE :q OR business_type LIKE :q OR business_type_other LIKE :q OR services_needed LIKE :q OR main_objective LIKE :q OR message LIKE :q OR last_inbound_message LIKE :q OR source_platform LIKE :q OR utm_source LIKE :q OR utm_medium LIKE :q OR utm_campaign LIKE :q OR utm_content LIKE :q OR utm_term LIKE :q OR ad_name LIKE :q OR ad_id LIKE :q OR external_contact_id LIKE :q OR sales_status LIKE :q OR notes LIKE :q OR reminder_note LIKE :q)";
   $whereParams[':q'] = '%' . $q . '%';
   $whereParams[':qd'] = '%' . $digits . '%';
 }
@@ -255,7 +286,7 @@ $pages = max(1, (int) ceil($total / $perPage));
 $page = min($page, $pages);
 $offset = ($page - 1) * $perPage;
 
-$sql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_source, utm_medium, utm_campaign, utm_content, utm_term, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, status, whatsapp_sent, whatsapp_status, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+$sql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_source, utm_medium, utm_campaign, utm_content, utm_term, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, status, whatsapp_sent, whatsapp_status, external_source, external_contact_id, external_thread_id, last_message_at, last_inbound_message, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
 $sql = str_replace('%WHERE%', $whereSql, $sql);
 $stmt = $pdo->prepare($sql);
 foreach ($whereParams as $key => $value) $stmt->bindValue($key, $value);
@@ -271,7 +302,7 @@ foreach ($salesStatusOptions as $statusValue => $statusLabel) {
 }
 $funnelOverflow = false;
 if ($view === 'funnel') {
-  $funnelSql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_campaign, utm_content, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit";
+  $funnelSql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_campaign, utm_content, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, external_source, external_contact_id, external_thread_id, last_message_at, last_inbound_message, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit";
   $funnelSql = str_replace('%WHERE%', $whereSql, $funnelSql);
   $funnelStmt = $pdo->prepare($funnelSql);
   foreach ($whereParams as $key => $value) $funnelStmt->bindValue($key, $value);
@@ -296,6 +327,14 @@ function wa_number_from_formatted(string $phone): string {
   if (str_starts_with($digits, '0')) $digits = substr($digits, 1);
   if (!str_starts_with($digits, $countryCode)) $digits = $countryCode . $digits;
   return $digits;
+}
+function is_instagram_lead(array $lead): bool {
+  $external = mb_strtolower(trim((string) ($lead['external_source'] ?? '')));
+  $source = mb_strtolower(trim((string) ($lead['source_platform'] ?? '')));
+  return $external === 'instagram' || str_contains($source, 'instagram');
+}
+function instagram_inbox_url(): string {
+  return (string) app_config('instagram.dm_inbox_url', 'https://www.instagram.com/direct/inbox/');
 }
 function build_qs(array $params): string { return http_build_query($params, '', '&', PHP_QUERY_RFC3986); }
 function dash_value($value): string { $value = trim((string) $value); return $value !== '' ? $value : '—'; }
@@ -338,6 +377,17 @@ function business_type_display(array $lead): string {
 }
 function updated_display(array $lead): string {
   return dash_value($lead['updated_at'] ?? null) !== '—' ? (string) $lead['updated_at'] : 'Sin cambios';
+}
+function lead_message_display(array $lead): string {
+  $last = dash_value($lead['last_inbound_message'] ?? null);
+  if ($last !== '—') return $last;
+  return dash_value($lead['message'] ?? null);
+}
+function lead_contact_display(array $lead): string {
+  $phone = dash_value($lead['phone'] ?? null);
+  if ($phone !== '—') return $phone;
+  if (is_instagram_lead($lead)) return 'Instagram DM';
+  return '—';
 }
 function datetime_local_value($value): string {
   $value = trim((string) $value);
@@ -692,7 +742,9 @@ function reminder_display(array $lead): string {
             <tbody>
               <?php if ($leads): foreach ($leads as $lead): ?>
                 <?php
-                  $wa = wa_number_from_formatted((string) $lead['phone']);
+                  $phoneValue = dash_value($lead['phone'] ?? null);
+                  $wa = $phoneValue !== '—' ? wa_number_from_formatted($phoneValue) : '';
+                  $isInstagramLead = is_instagram_lead($lead);
                   $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
                   $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
                   $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
@@ -701,12 +753,18 @@ function reminder_display(array $lead): string {
                   <td><?= (int) $lead['id'] ?></td>
                   <td><span class="cell-truncate" title="<?= h($lead['fullname']) ?>"><?= h($lead['fullname']) ?></span></td>
                   <td class="cell-nowrap">
-                    <a class="phone-wa-link" href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener" title="Abrir WhatsApp con <?= h($lead['phone']) ?>">
-                      <img class="phone-wa-icon" src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" loading="lazy">
-                      <span><?= h($lead['phone']) ?></span>
-                    </a>
+                    <?php if ($wa !== ''): ?>
+                      <a class="phone-wa-link" href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener" title="Abrir WhatsApp con <?= h($phoneValue) ?>">
+                        <img class="phone-wa-icon" src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" loading="lazy">
+                        <span><?= h($phoneValue) ?></span>
+                      </a>
+                    <?php elseif ($isInstagramLead): ?>
+                      <a class="instagram-link" href="<?= h(instagram_inbox_url()) ?>" target="_blank" rel="noopener">Instagram DM</a>
+                    <?php else: ?>
+                      <?= h(lead_contact_display($lead)) ?>
+                    <?php endif; ?>
                   </td>
-                  <td><span class="cell-truncate" title="<?= h($lead['email']) ?>"><?= h($lead['email']) ?></span></td>
+                  <td><span class="cell-truncate" title="<?= h(dash_value($lead['email'] ?? null)) ?>"><?= h(dash_value($lead['email'] ?? null)) ?></span></td>
                   <td>
                     <?php $igUrl = instagram_url($lead['brand_instagram'] ?? ''); $igHandle = instagram_handle($lead['brand_instagram'] ?? ''); ?>
                     <?php if ($igUrl): ?>
@@ -724,7 +782,7 @@ function reminder_display(array $lead): string {
                     </div>
                   </td>
                   <td><span class="cell-truncate" title="<?= h(dash_value($lead['main_objective'] ?? null)) ?>"><?= h(short_value($lead['main_objective'] ?? null, 50)) ?></span></td>
-                  <td class="message-cell"><span class="message-full"><?= h(dash_value($lead['message'] ?? null)) ?></span></td>
+                  <td class="message-cell"><span class="message-full"><?= h(lead_message_display($lead)) ?></span></td>
                   <td><?= h(dash_value($lead['source_platform'] ?? null)) ?></td>
                   <td><span class="cell-truncate" title="<?= h(dash_value($lead['utm_campaign'] ?? null)) ?>"><?= h(short_value($lead['utm_campaign'] ?? null, 42)) ?></span></td>
                   <td><span class="cell-truncate" title="<?= h($adValue) ?>"><?= h(short_value($adValue, 42)) ?></span></td>
@@ -794,7 +852,9 @@ function reminder_display(array $lead): string {
                 <div class="funnel-list">
                   <?php if ($cards): foreach ($cards as $lead): ?>
                     <?php
-                      $wa = wa_number_from_formatted((string) $lead['phone']);
+                      $phoneValue = dash_value($lead['phone'] ?? null);
+                      $wa = $phoneValue !== '—' ? wa_number_from_formatted($phoneValue) : '';
+                      $isInstagramLead = is_instagram_lead($lead);
                       $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
                       $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
                       $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
@@ -807,7 +867,15 @@ function reminder_display(array $lead): string {
                         <span class="funnel-id">#<?= (int) $lead['id'] ?></span>
                       </div>
                       <div class="funnel-meta">
-                        <span><a href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener"><?= h($lead['phone']) ?></a></span>
+                        <span>
+                          <?php if ($wa !== ''): ?>
+                            <a href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener"><?= h($phoneValue) ?></a>
+                          <?php elseif ($isInstagramLead): ?>
+                            <a href="<?= h(instagram_inbox_url()) ?>" target="_blank" rel="noopener">Instagram DM</a>
+                          <?php else: ?>
+                            <?= h(lead_contact_display($lead)) ?>
+                          <?php endif; ?>
+                        </span>
                         <span><?= $igUrl ? '<a href="' . h($igUrl) . '" target="_blank" rel="noopener">@' . h($igHandle) . '</a>' : h(dash_value($lead['brand_instagram'] ?? null)) ?></span>
                         <span><?= h(short_value($lead['services_needed'] ?? null, 56)) ?></span>
                         <span><?= h(short_value($lead['main_objective'] ?? null, 56)) ?></span>
@@ -816,8 +884,8 @@ function reminder_display(array $lead): string {
                         <span>Actualizado: <?= h(updated_display($lead)) ?></span>
                         <?php if ($adValue !== '—'): ?><span><?= h(short_value($adValue, 46)) ?></span><?php endif; ?>
                       </div>
-                      <?php if (dash_value($lead['message'] ?? null) !== '—'): ?>
-                        <div class="funnel-note"><?= h(short_value($lead['message'] ?? null, 130)) ?></div>
+                      <?php if (lead_message_display($lead) !== '—'): ?>
+                        <div class="funnel-note"><?= h(short_value(lead_message_display($lead), 130)) ?></div>
                       <?php endif; ?>
                       <?php if ($canEditLeads): ?>
                         <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
