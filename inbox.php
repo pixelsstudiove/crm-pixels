@@ -232,11 +232,7 @@ function inbox_channel_label(array $channel): string {
     .inbox-layout { display:grid; grid-template-columns:minmax(280px, 360px) minmax(0, 1fr) minmax(260px, 320px); gap:12px; min-height:640px; }
     .inbox-panel { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; overflow:hidden; box-shadow:0 8px 22px rgba(0, 76, 110, .06); }
     .conversation-filters { display:grid; gap:8px; padding:12px; border-bottom:1px solid var(--inbox-line); background:#fbfdff; }
-    .conversation-filters input { width:100%; min-height:40px; border:1px solid var(--line); border-radius:10px; padding:0 10px; font:inherit; color:var(--inbox-ink); background:#fff; }
-    .conversation-filters input:focus { outline:none; border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
-    .conversation-filters select, .status-form select { width:100%; min-height:40px; border:1px solid var(--line); border-left-width:5px; border-left-color:var(--brand-primary); border-radius:10px; padding:0 10px; font:inherit; font-weight:750; color:var(--inbox-ink); background:linear-gradient(90deg, #eefaff, #fff 76%); outline:none; cursor:pointer; }
-    .conversation-filters select:focus, .status-form select:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
-    .conversation-filters select:disabled, .status-form select:disabled { opacity:.7; cursor:not-allowed; }
+    .conversation-filters input, .conversation-filters select, .status-form select { width:100%; min-height:40px; border:1px solid var(--line); border-radius:10px; padding:0 10px; font:inherit; color:var(--inbox-ink); background:#fff; }
     .conversation-list { max-height:650px; overflow:auto; }
     .conversation-item { display:block; padding:13px 14px; border-bottom:1px solid rgba(0,68,99,.10); color:inherit; text-decoration:none; background:#fff; }
     .conversation-item:hover, .conversation-item.is-active { background:#effaff; }
