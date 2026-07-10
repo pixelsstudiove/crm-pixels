@@ -30,6 +30,12 @@ if ($salesStatusOptions === []) {
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
 
+function inbox_wants_json(): bool {
+  $accept = (string) ($_SERVER['HTTP_ACCEPT'] ?? '');
+  $requestedWith = (string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '');
+  return stripos($accept, 'application/json') !== false || strtolower($requestedWith) === 'fetch';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = (string) ($_POST['csrf'] ?? '');
   if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
@@ -42,6 +48,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (array_key_exists($status, $statusOptions)) {
         $stmt = $pdo->prepare("UPDATE {$conversationsTable} SET status=?, updated_at=NOW() WHERE id=?");
         $stmt->execute([$status, $conversationId]);
+        if (inbox_wants_json()) {
+          header('Content-Type: application/json; charset=utf-8');
+          echo json_encode(['ok' => true, 'status' => $status, 'label' => (string) $statusOptions[$status], 'notice' => 'Estado actualizado.'], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
         header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Estado actualizado.'));
         exit;
       }
@@ -52,6 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($leadId > 0 && array_key_exists($salesStatus, $salesStatusOptions)) {
         $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
         $stmt->execute([$salesStatus, $leadId]);
+        if (inbox_wants_json()) {
+          header('Content-Type: application/json; charset=utf-8');
+          echo json_encode(['ok' => true, 'sales_status' => $salesStatus, 'label' => (string) $salesStatusOptions[$salesStatus], 'notice' => 'Status comercial actualizado.'], JSON_UNESCAPED_UNICODE);
+          exit;
+        }
         header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
         exit;
       }
@@ -198,6 +214,17 @@ function inbox_time($value): string {
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
     .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
     .reply-box textarea:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
+    .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
+    .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.86rem; font-weight:750; }
+    .enter-toggle { display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
+    .enter-toggle input { width:16px; height:16px; accent-color:#007ea8; }
+    .emoji-wrap { position:relative; }
+    .emoji-btn { width:40px; height:36px; padding:0; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:1.05rem; font-weight:900; cursor:pointer; }
+    .emoji-btn:hover { background:#dff6ff; border-color:#8bdfff; }
+    .emoji-panel { position:absolute; right:0; bottom:42px; width:232px; display:none; grid-template-columns:repeat(6, 1fr); gap:6px; padding:10px; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 14px 36px rgba(0, 76, 110, .18); z-index:5; }
+    .emoji-panel.is-open { display:grid; }
+    .emoji-option { width:30px; height:30px; border:1px solid transparent; border-radius:8px; background:#fff; cursor:pointer; font-size:1.05rem; }
+    .emoji-option:hover { background:#eefaff; border-color:#8bdfff; }
     .reply-actions { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.88rem; }
     .reply-box.is-sending textarea, .reply-box.is-sending button { opacity:.7; pointer-events:none; }
     .live-status { color:var(--inbox-muted); font-size:.82rem; }
@@ -206,6 +233,7 @@ function inbox_time($value): string {
     .info-row { display:grid; gap:3px; color:var(--inbox-muted); font-size:.9rem; }
     .info-row strong { color:var(--inbox-ink); }
     .status-form { display:grid; gap:8px; }
+    .status-save-hint { color:var(--inbox-muted); font-size:.78rem; font-weight:750; }
     .empty-state { display:grid; place-items:center; min-height:500px; text-align:center; color:var(--inbox-muted); padding:24px; }
     .notice { margin-bottom:14px; }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) 1fr; } .side-panel { grid-column:1 / -1; } }
@@ -272,7 +300,7 @@ function inbox_time($value): string {
               <header class="chat-header">
                 <div>
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
-                  <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></p>
+                  <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
                 </div>
                 <a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['id'] ?>">Ver en embudo</a>
               </header>
@@ -296,6 +324,23 @@ function inbox_time($value): string {
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
                 <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?> required></textarea>
+                <div class="composer-tools">
+                  <div class="composer-left">
+                    <label class="enter-toggle">
+                      <input type="checkbox" id="sendWithEnter" checked>
+                      <span>Enviar con Intro</span>
+                    </label>
+                    <span>Shift + Intro crea salto de línea</span>
+                  </div>
+                  <div class="emoji-wrap">
+                    <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false">☺</button>
+                    <div class="emoji-panel" id="emojiPanel" aria-label="Emojis rápidos">
+                      <?php foreach (['😀','😁','😂','😊','😍','😎','🙌','👍','🙏','🔥','✨','✅','👀','💬','📌','📍','💰','🚀'] as $emoji): ?>
+                        <button class="emoji-option" type="button" data-emoji="<?= h($emoji) ?>"><?= h($emoji) ?></button>
+                      <?php endforeach; ?>
+                    </div>
+                  </div>
+                </div>
                 <div class="reply-actions">
                   <span class="live-status" id="liveStatus">Actualizando automaticamente.</span>
                   <button class="inbox-btn primary" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
@@ -314,10 +359,10 @@ function inbox_time($value): string {
               <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
               <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
               <div class="info-row"><span>Lead vinculado</span><strong><?= !empty($selected['lead_id']) ? '#' . (int) $selected['lead_id'] . ' · ' . h((string) ($selected['lead_fullname'] ?? '')) : 'Sin vincular' ?></strong></div>
-              <div class="info-row"><span>Status comercial</span><strong><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
+              <div class="info-row"><span>Status comercial</span><strong id="salesStatusLabel"><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
 
               <?php if (!empty($selected['lead_id'])): ?>
-              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>">
+              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>" data-auto-status-form data-status-target="salesStatusLabel">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_sales_status">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
@@ -330,11 +375,11 @@ function inbox_time($value): string {
                     <?php endforeach; ?>
                   </select>
                 </label>
-                <button class="inbox-btn" type="submit" <?= $canEditLeads ? '' : 'disabled' ?>>Actualizar status comercial</button>
+                <span class="status-save-hint">Se guarda al seleccionar.</span>
               </form>
               <?php endif; ?>
 
-              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>">
+              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>" data-auto-status-form data-status-target="conversationStatusLabel">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_status">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
@@ -346,7 +391,7 @@ function inbox_time($value): string {
                     <?php endforeach; ?>
                   </select>
                 </label>
-                <button class="inbox-btn" type="submit" <?= $canManageConversations ? '' : 'disabled' ?>>Actualizar estado</button>
+                <span class="status-save-hint">Se guarda al seleccionar.</span>
               </form>
             <?php else: ?>
               <h2>Ficha conversacional</h2>
@@ -372,6 +417,9 @@ function inbox_time($value): string {
     const replyForm = document.getElementById('replyForm');
     const liveStatus = document.getElementById('liveStatus');
     const noticeArea = document.getElementById('inboxNoticeArea');
+    const sendWithEnter = document.getElementById('sendWithEnter');
+    const emojiToggle = document.getElementById('emojiToggle');
+    const emojiPanel = document.getElementById('emojiPanel');
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -383,6 +431,16 @@ function inbox_time($value): string {
       if (!noticeArea || !message) return;
       noticeArea.innerHTML = `<div class="form-alert ${type === 'error' ? 'alert-error' : 'alert-info'} notice">${escapeHtml(message)}</div>`;
       window.setTimeout(() => { if (noticeArea) noticeArea.innerHTML = ''; }, 4200);
+    }
+
+    function insertAtCursor(textarea, value) {
+      if (!textarea || !value) return;
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? textarea.value.length;
+      textarea.value = textarea.value.slice(0, start) + value + textarea.value.slice(end);
+      const next = start + value.length;
+      textarea.focus();
+      textarea.setSelectionRange(next, next);
     }
 
     function isNearBottom(el) {
@@ -499,6 +557,43 @@ function inbox_time($value): string {
     }
 
     if (replyForm) {
+      const textarea = replyForm.querySelector('textarea[name="message"]');
+      if (sendWithEnter) {
+        const stored = window.localStorage.getItem('pixels_send_with_enter');
+        sendWithEnter.checked = stored === null ? true : stored === '1';
+        sendWithEnter.addEventListener('change', () => {
+          window.localStorage.setItem('pixels_send_with_enter', sendWithEnter.checked ? '1' : '0');
+        });
+      }
+      if (textarea) {
+        textarea.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return;
+          if (!sendWithEnter || !sendWithEnter.checked) return;
+          event.preventDefault();
+          if (typeof replyForm.requestSubmit === 'function') replyForm.requestSubmit();
+          else replyForm.dispatchEvent(new Event('submit', { cancelable: true }));
+        });
+      }
+      if (emojiToggle && emojiPanel && textarea) {
+        emojiToggle.addEventListener('click', () => {
+          const isOpen = emojiPanel.classList.toggle('is-open');
+          emojiToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+        emojiPanel.querySelectorAll('[data-emoji]').forEach(button => {
+          button.addEventListener('click', () => {
+            insertAtCursor(textarea, button.getAttribute('data-emoji') || '');
+            emojiPanel.classList.remove('is-open');
+            emojiToggle.setAttribute('aria-expanded', 'false');
+          });
+        });
+        document.addEventListener('click', (event) => {
+          if (!emojiPanel.classList.contains('is-open')) return;
+          if (event.target.closest('.emoji-wrap')) return;
+          emojiPanel.classList.remove('is-open');
+          emojiToggle.setAttribute('aria-expanded', 'false');
+        });
+      }
+
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const textarea = replyForm.querySelector('textarea[name="message"]');
@@ -529,6 +624,38 @@ function inbox_time($value): string {
         }
       });
     }
+
+    document.querySelectorAll('[data-auto-status-form]').forEach(form => {
+      const select = form.querySelector('select');
+      if (!select) return;
+      let previousValue = select.value;
+
+      select.addEventListener('change', async () => {
+        const nextValue = select.value;
+        select.disabled = true;
+        try {
+          const response = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+            cache: 'no-store'
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'No se pudo actualizar.');
+          previousValue = nextValue;
+          const targetId = form.getAttribute('data-status-target');
+          const target = targetId ? document.getElementById(targetId) : null;
+          if (target && data.label) target.textContent = data.label;
+          showNotice(data.notice || 'Actualizado.');
+          pollInbox(true);
+        } catch (error) {
+          select.value = previousValue;
+          showNotice(error.message || 'No se pudo actualizar.', 'error');
+        } finally {
+          select.disabled = false;
+        }
+      });
+    });
 
     scrollMessagesToBottom();
     window.setInterval(() => pollInbox(false), 3000);
