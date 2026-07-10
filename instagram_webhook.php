@@ -203,6 +203,23 @@ function ig_referral_data(array $event): array {
   ];
 }
 
+function ig_contact_profile(?array $channel, ?string $senderId): array {
+  $senderId = ig_clean($senderId, 120);
+  $token = ig_clean($channel['page_access_token'] ?? null, 2000);
+  if ($senderId === null || $token === null) return [];
+
+  $response = ig_graph_request('GET', $senderId, [
+    'fields' => 'name,username',
+    'access_token' => $token,
+  ]);
+  if (!($response['ok'] ?? false) || !isset($response['data']) || !is_array($response['data'])) return [];
+
+  return [
+    'name' => ig_clean($response['data']['name'] ?? null, 120),
+    'username' => ig_clean($response['data']['username'] ?? null, 120),
+  ];
+}
+
 function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $event): int {
   $senderId = ig_clean($event['sender']['id'] ?? null, 120);
   if ($senderId === null) return 0;
@@ -214,6 +231,10 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
   $ref = ig_referral_data($event);
+  $profile = ig_contact_profile($channel ?: null, $senderId);
+  $profileName = $profile['name'] ?? null;
+  $profileUsername = $profile['username'] ?? null;
+  $profileDisplayName = $profileName ?: $profileUsername;
 
   $contactKey = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
 
@@ -225,6 +246,8 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
     $update = $pdo->prepare(<<<SQL
 UPDATE {$table}
 SET
+  fullname = CASE WHEN ? IS NOT NULL AND (fullname = '' OR fullname LIKE 'Lead Instagram #%') THEN ? ELSE fullname END,
+  brand_instagram = CASE WHEN ? IS NOT NULL THEN ? ELSE brand_instagram END,
   external_thread_id = ?,
   last_external_message_id = ?,
   last_message_at = ?,
@@ -237,7 +260,7 @@ SET
   updated_at = NOW()
 WHERE id = ?
 SQL);
-    $update->execute([$threadId, $messageId, $messageAt, $messageText, $messageText, $ref['campaign'], $ref['ad_name'], $ref['ad_id'], $ref['content'], $leadId]);
+    $update->execute([$profileDisplayName, $profileDisplayName, $profileUsername, $profileUsername, $threadId, $messageId, $messageAt, $messageText, $messageText, $ref['campaign'], $ref['ad_name'], $ref['ad_id'], $ref['content'], $leadId]);
     if ($channel) {
       try {
         $stamp = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
@@ -248,9 +271,8 @@ SQL);
   }
 
   $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
-  $fullname = 'Lead Instagram #' . substr($senderId, -6);
-  $channelLabel = $channel ? (string) ($channel['instagram_username'] ?: $channel['page_name'] ?: 'Instagram conectado') : 'Instagram';
-  $brandInstagram = $channelLabel . ' / Usuario ' . $senderId;
+  $fullname = $profileDisplayName ?: 'Lead Instagram #' . substr($senderId, -6);
+  $brandInstagram = $profileUsername;
 
   $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (

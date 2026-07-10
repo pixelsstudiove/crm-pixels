@@ -337,6 +337,11 @@ function is_instagram_lead(array $lead): bool {
 function instagram_inbox_url(): string {
   return (string) app_config('instagram.dm_inbox_url', 'https://www.instagram.com/direct/inbox/');
 }
+function instagram_dm_url(array $lead): string {
+  $handle = instagram_handle($lead['brand_instagram'] ?? '');
+  if ($handle !== '') return 'https://ig.me/m/' . rawurlencode($handle);
+  return instagram_inbox_url();
+}
 function build_qs(array $params): string { return http_build_query($params, '', '&', PHP_QUERY_RFC3986); }
 function dash_value($value): string { $value = trim((string) $value); return $value !== '' ? $value : '—'; }
 function short_value($value, int $max = 46): string {
@@ -724,7 +729,7 @@ function reminder_display(array $lead): string {
               <tr>
                 <th style="width:70px">ID</th>
                 <th>Nombre</th>
-                <th>WhatsApp</th>
+                <th>Canal</th>
                 <th>Email</th>
                 <th>Instagram</th>
                 <th>Tipo</th>
@@ -761,7 +766,7 @@ function reminder_display(array $lead): string {
                         <span><?= h($phoneValue) ?></span>
                       </a>
                     <?php elseif ($isInstagramLead): ?>
-                      <a class="instagram-link" href="<?= h(instagram_inbox_url()) ?>" target="_blank" rel="noopener">Instagram DM</a>
+                      <a class="instagram-link" href="<?= h(instagram_dm_url($lead)) ?>" target="_blank" rel="noopener">Instagram DM</a>
                     <?php else: ?>
                       <?= h(lead_contact_display($lead)) ?>
                     <?php endif; ?>
@@ -772,7 +777,7 @@ function reminder_display(array $lead): string {
                     <?php if ($igUrl): ?>
                       <a class="instagram-link" href="<?= h($igUrl) ?>" target="_blank" rel="noopener">@<?= h($igHandle) ?></a>
                     <?php else: ?>
-                      <span class="cell-truncate" title="<?= h(dash_value($lead['brand_instagram'] ?? null)) ?>"><?= h(dash_value($lead['brand_instagram'] ?? null)) ?></span>
+                      <span>—</span>
                     <?php endif; ?>
                   </td>
                   <td><span class="cell-truncate" title="<?= h(business_type_display($lead)) ?>"><?= h(short_value(business_type_display($lead), 48)) ?></span></td>
@@ -873,12 +878,12 @@ function reminder_display(array $lead): string {
                           <?php if ($wa !== ''): ?>
                             <a href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener"><?= h($phoneValue) ?></a>
                           <?php elseif ($isInstagramLead): ?>
-                            <a href="<?= h(instagram_inbox_url()) ?>" target="_blank" rel="noopener">Instagram DM</a>
+                            <a href="<?= h(instagram_dm_url($lead)) ?>" target="_blank" rel="noopener">Instagram DM</a>
                           <?php else: ?>
                             <?= h(lead_contact_display($lead)) ?>
                           <?php endif; ?>
                         </span>
-                        <span><?= $igUrl ? '<a href="' . h($igUrl) . '" target="_blank" rel="noopener">@' . h($igHandle) . '</a>' : h(dash_value($lead['brand_instagram'] ?? null)) ?></span>
+                        <span><?= $igUrl ? '<a href="' . h($igUrl) . '" target="_blank" rel="noopener">@' . h($igHandle) . '</a>' : '—' ?></span>
                         <span><?= h(short_value($lead['services_needed'] ?? null, 56)) ?></span>
                         <span><?= h(short_value($lead['main_objective'] ?? null, 56)) ?></span>
                         <span><?= h(dash_value($lead['source_platform'] ?? null)) ?><?= dash_value($lead['utm_campaign'] ?? null) !== '—' ? ' · ' . h(short_value($lead['utm_campaign'] ?? null, 34)) : '' ?></span>
