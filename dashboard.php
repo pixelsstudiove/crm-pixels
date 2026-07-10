@@ -159,11 +159,7 @@ $canEditLeads = can('edit_leads');
 $canManageUsers = can('manage_users');
 $canManageIntegrations = can('manage_integrations');
 
-$perPage = 50;
-$page = max(1, (int) ($_GET['page'] ?? 1));
 $q = trim((string) ($_GET['q'] ?? ''));
-$view = trim((string) ($_GET['view'] ?? 'table'));
-if (!in_array($view, ['table', 'funnel'], true)) $view = 'table';
 
 $filterObjective = trim((string) ($_GET['objective'] ?? ''));
 $filterService = trim((string) ($_GET['service'] ?? ''));
@@ -250,16 +246,6 @@ $activeFilters = array_filter([
   'campaign' => $filterCampaign,
   'ad' => $filterAd,
 ], static fn($v) => $v !== '' && $v !== null);
-$filterParams = [
-  'q' => $q === '' ? null : $q,
-  'objective' => $filterObjective === '' ? null : $filterObjective,
-  'service' => $filterService === '' ? null : $filterService,
-  'sales_status' => $filterSalesStatus === '' ? null : $filterSalesStatus,
-  'business_type' => $filterBusinessType === '' ? null : $filterBusinessType,
-  'platform' => $filterPlatform === '' ? null : $filterPlatform,
-  'campaign' => $filterCampaign === '' ? null : $filterCampaign,
-  'ad' => $filterAd === '' ? null : $filterAd,
-];
 
 $countSql = "SELECT COUNT(*) FROM {$TABLE_LEADS} {$whereSql}";
 $countStmt = $pdo->prepare($countSql);
@@ -283,43 +269,28 @@ $summaryCards = [
   ['label' => (string) ($salesStatusOptions['cliente_ganado'] ?? 'Cliente ganado'), 'value' => $statusCounts['cliente_ganado'] ?? 0, 'tone' => 'won'],
   ['label' => (string) ($salesStatusOptions['cliente_perdido'] ?? 'Cliente perdido'), 'value' => $statusCounts['cliente_perdido'] ?? 0, 'tone' => 'lost'],
 ];
-$pages = max(1, (int) ceil($total / $perPage));
-$page = min($page, $pages);
-$offset = ($page - 1) * $perPage;
-
-$sql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_source, utm_medium, utm_campaign, utm_content, utm_term, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, status, whatsapp_sent, whatsapp_status, external_source, external_contact_id, external_thread_id, last_message_at, last_inbound_message, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
-$sql = str_replace('%WHERE%', $whereSql, $sql);
-$stmt = $pdo->prepare($sql);
-foreach ($whereParams as $key => $value) $stmt->bindValue($key, $value);
-$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-$stmt->execute();
-$leads = $stmt->fetchAll();
-
 $funnelLimit = 300;
 $funnelLeadsByStatus = [];
 foreach ($salesStatusOptions as $statusValue => $statusLabel) {
   $funnelLeadsByStatus[(string) $statusValue] = [];
 }
 $funnelOverflow = false;
-if ($view === 'funnel') {
-  $funnelSql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_campaign, utm_content, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, external_source, external_contact_id, external_thread_id, last_message_at, last_inbound_message, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit";
-  $funnelSql = str_replace('%WHERE%', $whereSql, $funnelSql);
-  $funnelStmt = $pdo->prepare($funnelSql);
-  foreach ($whereParams as $key => $value) $funnelStmt->bindValue($key, $value);
-  $funnelStmt->bindValue(':limit', $funnelLimit, PDO::PARAM_INT);
-  $funnelStmt->execute();
-  $funnelLeads = $funnelStmt->fetchAll();
-  $funnelOverflow = $total > $funnelLimit && count($funnelLeads) >= $funnelLimit;
+$funnelSql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_campaign, utm_content, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, external_source, external_contact_id, external_thread_id, last_message_at, last_inbound_message, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit";
+$funnelSql = str_replace('%WHERE%', $whereSql, $funnelSql);
+$funnelStmt = $pdo->prepare($funnelSql);
+foreach ($whereParams as $key => $value) $funnelStmt->bindValue($key, $value);
+$funnelStmt->bindValue(':limit', $funnelLimit, PDO::PARAM_INT);
+$funnelStmt->execute();
+$funnelLeads = $funnelStmt->fetchAll();
+$funnelOverflow = $total > $funnelLimit && count($funnelLeads) >= $funnelLimit;
 
-  foreach ($funnelLeads as $lead) {
-    $statusValue = (string) ($lead['sales_status'] ?? '');
-    if (!array_key_exists($statusValue, $salesStatusOptions)) {
-      $statusValue = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
-    }
-    if (!isset($funnelLeadsByStatus[$statusValue])) $funnelLeadsByStatus[$statusValue] = [];
-    $funnelLeadsByStatus[$statusValue][] = $lead;
+foreach ($funnelLeads as $lead) {
+  $statusValue = (string) ($lead['sales_status'] ?? '');
+  if (!array_key_exists($statusValue, $salesStatusOptions)) {
+    $statusValue = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
   }
+  if (!isset($funnelLeadsByStatus[$statusValue])) $funnelLeadsByStatus[$statusValue] = [];
+  $funnelLeadsByStatus[$statusValue][] = $lead;
 }
 
 function wa_number_from_formatted(string $phone): string {
@@ -342,7 +313,6 @@ function instagram_dm_url(array $lead): string {
   if ($handle !== '') return 'https://ig.me/m/' . rawurlencode($handle);
   return instagram_inbox_url();
 }
-function build_qs(array $params): string { return http_build_query($params, '', '&', PHP_QUERY_RFC3986); }
 function dash_value($value): string { $value = trim((string) $value); return $value !== '' ? $value : '—'; }
 function short_value($value, int $max = 46): string {
   $value = dash_value($value);
@@ -366,13 +336,6 @@ function instagram_handle($value): string {
 function instagram_url($value): ?string {
   $handle = instagram_handle($value);
   return $handle !== '' ? 'https://instagram.com/' . $handle : null;
-}
-function services_lines($value): array {
-  $value = trim((string) $value);
-  if ($value === '') return ['—'];
-  $parts = preg_split('/\s*(?:\r?\n|,|;)\s*/', $value) ?: [];
-  $parts = array_values(array_filter(array_map('trim', $parts), static fn($v) => $v !== ''));
-  return $parts ?: ['—'];
 }
 function business_type_display(array $lead): string {
   $type = dash_value($lead['business_type'] ?? null);
@@ -419,35 +382,6 @@ function reminder_display(array $lead): string {
   <meta name="csrf" content="<?= h($_SESSION['csrf'] ?? '') ?>">
   <style>
     :root { --container-w: min(98vw, 1480px); }
-    .table-wrap { overflow:auto; margin-top:18px; border-radius:16px; border:1px solid rgba(0,212,255,.14); }
-    table { width:100%; border-collapse:collapse; font-size:.95rem; table-layout:auto; }
-    thead th { position:sticky; top:0; background:rgba(7,17,32,.96); color:#eafaff; text-align:left; padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.16); white-space:nowrap; }
-    tbody td { padding:12px 14px; border-bottom:1px solid rgba(0,68,99,.10); color:var(--brand-ink); vertical-align:middle; background:#fbfdff; }
-    tbody tr:hover td { background:#eefaff; }
-    .cell-truncate { display:inline-block; max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .cell-nowrap { white-space:nowrap; }
-    .phone-wa-link {
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      color:#007ea8;
-      font-weight:800;
-      text-decoration:none;
-      white-space:nowrap;
-    }
-    .phone-wa-link:hover { text-decoration:underline; }
-    .phone-wa-icon {
-      width:22px;
-      height:22px;
-      display:inline-block;
-      flex:0 0 auto;
-    }
-    .instagram-link { color:#007ea8; font-weight:800; text-decoration:none; white-space:nowrap; }
-    .instagram-link:hover { text-decoration:underline; }
-    .services-list { min-width:250px; display:grid; gap:6px; line-height:1.25; }
-    .services-list span { display:block; white-space:normal; }
-    .message-cell { min-width:320px; max-width:520px; white-space:normal; line-height:1.4; }
-    .message-full { display:block; white-space:pre-wrap; overflow-wrap:anywhere; }
     .notes-input { width:240px; min-height:38px; resize:vertical; padding:9px 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; line-height:1.35; }
     .notes-input:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .notes-input.is-saving { opacity:.65; cursor:progress; }
@@ -480,11 +414,7 @@ function reminder_display(array $lead): string {
     .summary-card[data-tone="scheduled"] { border-left:5px solid #9b6bff; }
     .summary-card[data-tone="won"] { border-left:5px solid #2f9e62; }
     .summary-card[data-tone="lost"] { border-left:5px solid #cf4d5b; }
-    .view-tabs { display:flex; align-items:center; gap:8px; margin-top:16px; flex-wrap:wrap; }
-    .view-tab { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:#fff; color:#007ea8; font-weight:850; text-decoration:none; }
-    .view-tab:hover { background:#dff6ff; border-color:#8bdfff; }
-    .view-tab.is-active { background:#071120; border-color:#071120; color:#eafaff; }
-    .table-filters { margin-top:18px; padding:14px; border:1px solid rgba(0,212,255,.16); border-radius:18px; background:#eefaff; }
+    .lead-filters { margin-top:18px; padding:14px; border:1px solid rgba(0,212,255,.16); border-radius:18px; background:#eefaff; }
     .filters-toggle { display:none; align-items:center; justify-content:center; min-height:40px; margin-top:14px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:800; cursor:pointer; }
     .filters-toggle:hover { background:#dff6ff; border-color:#8bdfff; }
     .filters-toggle:active { transform:translateY(1px); }
@@ -520,12 +450,6 @@ function reminder_display(array $lead): string {
     .sales-status-badge[data-status="no_responde"] { --status-color:#64748b; --status-bg:#f1f5f9; }
     .sales-status-badge[data-status="no_califica"] { --status-color:#8a5a44; --status-bg:#f8f1ed; }
     .readonly-text { min-width:220px; max-width:300px; color:var(--brand-ink); line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
-    .readonly-muted { color:var(--brand-muted); font-weight:750; }
-    .updated-cell { color:var(--brand-muted); font-size:.88rem; font-weight:700; white-space:nowrap; }
-    .pager { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:14px; flex-wrap:wrap; }
-    .pager a, .pager span { padding:6px 10px; border-radius:10px; border:1px solid var(--line); color:#007ea8; text-decoration:none; background:var(--surface-soft); font-weight:800; }
-    .pager a:hover { background:#dff6ff; }
-    .pager .current { border-color:#00a9e0; background:#e8faff; color:#006e95; }
     .funnel-wrap { margin-top:18px; overflow-x:auto; padding-bottom:6px; }
     .funnel-board { display:flex; gap:12px; align-items:flex-start; min-width:max-content; }
     .funnel-column { --status-color:#00a9e0; --status-bg:#eefaff; width:300px; max-height:72vh; display:flex; flex-direction:column; border:1px solid rgba(0,212,255,.16); border-top:5px solid var(--status-color); border-radius:16px; background:var(--status-bg); overflow:hidden; }
@@ -551,6 +475,7 @@ function reminder_display(array $lead): string {
     .funnel-meta a:hover { text-decoration:underline; }
     .funnel-note { color:var(--brand-ink); font-size:.86rem; line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
     .funnel-card .sales-status-select { width:100%; }
+    .funnel-card .notes-input { width:100%; min-height:74px; font-size:.86rem; }
     .funnel-empty { margin:0; padding:14px; color:var(--brand-muted); font-weight:750; }
     .funnel-limit-note { margin:12px 0 0; color:var(--brand-muted); font-size:.88rem; font-weight:700; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(0,8,18,.72); display:none; align-items:center; justify-content:center; z-index:9999; }
@@ -569,11 +494,9 @@ function reminder_display(array $lead): string {
       .summary-card { min-height:72px; padding:12px; }
       .summary-card strong { font-size:1.45rem; }
       .summary-card span { font-size:.72rem; }
-      .view-tabs { gap:6px; }
-      .view-tab { flex:1 1 120px; }
       .filters-toggle { display:inline-flex; }
-      .table-filters { display:none; }
-      .table-filters.is-open { display:block; }
+      .lead-filters { display:none; }
+      .lead-filters.is-open { display:block; }
       .filters-form { grid-template-columns:1fr; }
       .funnel-column { width:280px; max-height:68vh; }
     }
@@ -592,7 +515,6 @@ function reminder_display(array $lead): string {
           <div class="topbar-right">
             <form class="search-form" method="get" action="dashboard.php">
               <input class="search-input" type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar por nombre, teléfono, Instagram, servicio, plataforma o status">
-              <input type="hidden" name="view" value="<?= h($view) ?>">
               <?php if ($filterObjective !== ''): ?><input type="hidden" name="objective" value="<?= h($filterObjective) ?>"><?php endif; ?>
               <?php if ($filterService !== ''): ?><input type="hidden" name="service" value="<?= h($filterService) ?>"><?php endif; ?>
               <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
@@ -627,20 +549,10 @@ function reminder_display(array $lead): string {
           <?php endforeach; ?>
         </div>
 
-        <?php
-          $tableHref = 'dashboard.php?' . build_qs(array_filter($filterParams + ['view' => 'table'], static fn($v) => $v !== null));
-          $funnelHref = 'dashboard.php?' . build_qs(array_filter($filterParams + ['view' => 'funnel'], static fn($v) => $v !== null));
-        ?>
-        <nav class="view-tabs" aria-label="Vistas del dashboard">
-          <a class="view-tab <?= $view === 'table' ? 'is-active' : '' ?>" href="<?= h($tableHref) ?>">Tabla</a>
-          <a class="view-tab <?= $view === 'funnel' ? 'is-active' : '' ?>" href="<?= h($funnelHref) ?>">Embudo</a>
-        </nav>
-
         <button class="filters-toggle" type="button" data-filters-toggle aria-controls="leadFilters" aria-expanded="false">Filtros<?= $activeFilters ? ' (' . count($activeFilters) . ')' : '' ?></button>
 
-        <div class="table-filters" id="leadFilters" aria-label="Filtros de leads">
+        <div class="lead-filters" id="leadFilters" aria-label="Filtros de leads">
           <form class="filters-form" method="get" action="dashboard.php">
-            <input type="hidden" name="view" value="<?= h($view) ?>">
             <?php if ($q !== ''): ?><input type="hidden" name="q" value="<?= h($q) ?>"><?php endif; ?>
 
             <label class="filter-field">
@@ -715,7 +627,7 @@ function reminder_display(array $lead): string {
 
             <div class="filter-actions">
               <button class="search-btn" type="submit">Aplicar filtros</button>
-              <?php if ($activeFilters): ?><a class="clear-filters" href="<?= h($view === 'funnel' ? 'dashboard.php?view=funnel' : 'dashboard.php') ?>">Limpiar</a><?php endif; ?>
+              <?php if ($activeFilters): ?><a class="clear-filters" href="dashboard.php">Limpiar</a><?php endif; ?>
             </div>
           </form>
           <?php if ($activeFilters): ?>
@@ -723,131 +635,6 @@ function reminder_display(array $lead): string {
           <?php endif; ?>
         </div>
 
-        <?php if ($view === 'table'): ?>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th style="width:70px">ID</th>
-                <th>Nombre</th>
-                <th>Canal</th>
-                <th>Email</th>
-                <th>Instagram</th>
-                <th>Tipo</th>
-                <th>Servicios</th>
-                <th>Objetivo</th>
-                <th>Necesidad</th>
-                <th>Plataforma</th>
-                <th>Campaña</th>
-                <th>Anuncio</th>
-                <th>Status comercial</th>
-                <th>Recordatorio</th>
-                <th>Anotaciones</th>
-                <th>Última actualización</th>
-                <th>Registro</th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php if ($leads): foreach ($leads as $lead): ?>
-                <?php
-                  $phoneValue = dash_value($lead['phone'] ?? null);
-                  $wa = $phoneValue !== '—' ? wa_number_from_formatted($phoneValue) : '';
-                  $isInstagramLead = is_instagram_lead($lead);
-                  $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
-                  $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
-                  $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
-                ?>
-                <tr data-id="<?= (int) $lead['id'] ?>">
-                  <td><?= (int) $lead['id'] ?></td>
-                  <td><span class="cell-truncate" title="<?= h($lead['fullname']) ?>"><?= h($lead['fullname']) ?></span></td>
-                  <td class="cell-nowrap">
-                    <?php if ($wa !== ''): ?>
-                      <a class="phone-wa-link" href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener" title="Abrir WhatsApp con <?= h($phoneValue) ?>">
-                        <img class="phone-wa-icon" src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" loading="lazy">
-                        <span><?= h($phoneValue) ?></span>
-                      </a>
-                    <?php elseif ($isInstagramLead): ?>
-                      <a class="instagram-link" href="<?= h(instagram_dm_url($lead)) ?>" target="_blank" rel="noopener">Instagram DM</a>
-                    <?php else: ?>
-                      <?= h(lead_contact_display($lead)) ?>
-                    <?php endif; ?>
-                  </td>
-                  <td><span class="cell-truncate" title="<?= h(dash_value($lead['email'] ?? null)) ?>"><?= h(dash_value($lead['email'] ?? null)) ?></span></td>
-                  <td>
-                    <?php $igUrl = instagram_url($lead['brand_instagram'] ?? ''); $igHandle = instagram_handle($lead['brand_instagram'] ?? ''); ?>
-                    <?php if ($igUrl): ?>
-                      <a class="instagram-link" href="<?= h($igUrl) ?>" target="_blank" rel="noopener">@<?= h($igHandle) ?></a>
-                    <?php else: ?>
-                      <span>—</span>
-                    <?php endif; ?>
-                  </td>
-                  <td><span class="cell-truncate" title="<?= h(business_type_display($lead)) ?>"><?= h(short_value(business_type_display($lead), 48)) ?></span></td>
-                  <td>
-                    <div class="services-list" title="<?= h(dash_value($lead['services_needed'] ?? null)) ?>">
-                      <?php foreach (services_lines($lead['services_needed'] ?? '') as $serviceLine): ?>
-                        <span><?= $serviceLine === '—' ? '—' : '✅ ' . h($serviceLine) ?></span>
-                      <?php endforeach; ?>
-                    </div>
-                  </td>
-                  <td><span class="cell-truncate" title="<?= h(dash_value($lead['main_objective'] ?? null)) ?>"><?= h(short_value($lead['main_objective'] ?? null, 50)) ?></span></td>
-                  <td class="message-cell"><span class="message-full"><?= h(lead_message_display($lead)) ?></span></td>
-                  <td><?= h(dash_value($lead['source_platform'] ?? null)) ?></td>
-                  <td><span class="cell-truncate" title="<?= h(dash_value($lead['utm_campaign'] ?? null)) ?>"><?= h(short_value($lead['utm_campaign'] ?? null, 42)) ?></span></td>
-                  <td><span class="cell-truncate" title="<?= h($adValue) ?>"><?= h(short_value($adValue, 42)) ?></span></td>
-                  <td>
-                    <?php if ($canEditLeads): ?>
-                      <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
-                        <?php foreach (sales_status_options() as $value => $label): ?>
-                          <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                    <?php else: ?>
-                      <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
-                    <?php endif; ?>
-                  </td>
-                  <td>
-                    <?php if ($canEditLeads): ?>
-                      <div class="reminder-control" data-id="<?= (int) $lead['id'] ?>">
-                        <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
-                        <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
-                        <button class="reminder-clear" type="button">Limpiar</button>
-                      </div>
-                    <?php else: ?>
-                      <div class="readonly-text"><?= h(reminder_display($lead)) ?></div>
-                    <?php endif; ?>
-                  </td>
-                  <td>
-                    <?php if ($canEditLeads): ?>
-                      <textarea class="notes-input" data-id="<?= (int) $lead['id'] ?>" maxlength="2000" rows="2" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
-                    <?php else: ?>
-                      <div class="readonly-text"><?= h(dash_value($lead['notes'] ?? null)) ?></div>
-                    <?php endif; ?>
-                  </td>
-                  <td class="updated-cell" title="<?= h(updated_display($lead)) ?>"><?= h(updated_display($lead)) ?></td>
-                  <td class="cell-nowrap"><?= h((string) ($lead['created_at'] ?? '')) ?></td>
-                </tr>
-              <?php endforeach; else: ?>
-                <tr><td colspan="17">Sin registros<?= $q !== '' ? ' para la búsqueda.' : '.' ?></td></tr>
-              <?php endif; ?>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="pager">
-          <?php
-            $base = 'dashboard.php';
-            $prev = max(1, $page - 1);
-            $next = min($pages, $page + 1);
-            $common = $filterParams + ['view' => $view];
-            $prevHref = $page <= 1 ? '#' : $base . '?' . build_qs(array_filter($common + ['page' => $prev], static fn($v) => $v !== null));
-            $nextHref = $page >= $pages ? '#' : $base . '?' . build_qs(array_filter($common + ['page' => $next], static fn($v) => $v !== null));
-          ?>
-          <span><?= $total ?> registro<?= $total === 1 ? '' : 's' ?></span>
-          <?php if ($page > 1): ?><a href="<?= h($prevHref) ?>">← Anterior</a><?php endif; ?>
-          <span class="current">Página <?= $page ?> de <?= $pages ?></span>
-          <?php if ($page < $pages): ?><a href="<?= h($nextHref) ?>">Siguiente →</a><?php endif; ?>
-        </div>
-        <?php else: ?>
         <div class="funnel-wrap" aria-label="Embudo comercial">
           <div class="funnel-board">
             <?php foreach (sales_status_options() as $statusValue => $statusLabel): ?>
@@ -885,6 +672,7 @@ function reminder_display(array $lead): string {
                           <?php endif; ?>
                         </span>
                         <span><?= $igUrl ? '<a href="' . h($igUrl) . '" target="_blank" rel="noopener">@' . h($igHandle) . '</a>' : '—' ?></span>
+                        <span><?= h(short_value(business_type_display($lead), 56)) ?></span>
                         <span><?= h(short_value($lead['services_needed'] ?? null, 56)) ?></span>
                         <span><?= h(short_value($lead['main_objective'] ?? null, 56)) ?></span>
                         <span><?= h(dash_value($lead['source_platform'] ?? null)) ?><?= dash_value($lead['utm_campaign'] ?? null) !== '—' ? ' · ' . h(short_value($lead['utm_campaign'] ?? null, 34)) : '' ?></span>
@@ -906,8 +694,10 @@ function reminder_display(array $lead): string {
                           <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
                           <button class="reminder-clear" type="button">Limpiar</button>
                         </div>
+                        <textarea class="notes-input" data-id="<?= (int) $lead['id'] ?>" maxlength="2000" rows="3" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
                       <?php else: ?>
                         <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
+                        <div class="readonly-text"><?= h(dash_value($lead['notes'] ?? null)) ?></div>
                       <?php endif; ?>
                     </article>
                   <?php endforeach; else: ?>
@@ -921,7 +711,6 @@ function reminder_display(array $lead): string {
             <p class="funnel-limit-note">Mostrando los <?= (int) $funnelLimit ?> leads más recientes del resultado filtrado.</p>
           <?php endif; ?>
         </div>
-        <?php endif; ?>
       </div>
     </section>
 
