@@ -167,6 +167,22 @@ $canManageIntegrations = can('manage_integrations');
 
 $q = trim((string) ($_GET['q'] ?? ''));
 
+$channelOptions = [];
+try {
+  $channelStmt = $pdo->query(<<<SQL
+SELECT DISTINCT ch.id, ch.page_name, ch.page_id, ch.instagram_username
+FROM {$conversationsTable} c
+JOIN {$channelsTable} ch ON ch.id = c.channel_id
+ORDER BY COALESCE(ch.instagram_username, ch.page_name, ch.page_id) ASC
+SQL);
+  $channelOptions = $channelStmt ? $channelStmt->fetchAll() : [];
+} catch (Throwable $e) {
+  $channelOptions = [];
+}
+$channelIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $channelOptions);
+$filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
+if ($filterChannelId > 0 && !in_array($filterChannelId, $channelIds, true)) $filterChannelId = 0;
+
 $filterObjective = trim((string) ($_GET['objective'] ?? ''));
 $filterService = trim((string) ($_GET['service'] ?? ''));
 $filterSalesStatus = trim((string) ($_GET['sales_status'] ?? ''));
@@ -207,6 +223,10 @@ sort($adOptions, SORT_NATURAL | SORT_FLAG_CASE);
 $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
 $whereConditions = [];
 $whereParams = [];
+if ($filterChannelId > 0) {
+  $whereConditions[] = 'c.channel_id = :channel_id';
+  $whereParams[':channel_id'] = $filterChannelId;
+}
 if ($q !== '') {
   $digits = preg_replace('/\D+/', '', $q) ?: $q;
   $whereConditions[] = "(c.id LIKE :q OR l.id LIKE :q OR ct.display_name LIKE :q OR ct.username LIKE :q OR ct.external_contact_id LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q OR l.fullname LIKE :q OR l.phone LIKE :q OR REPLACE(COALESCE(l.phone,''),'-','') LIKE :qd OR l.email LIKE :q OR l.brand_instagram LIKE :q OR l.business_type LIKE :q OR l.business_type_other LIKE :q OR l.services_needed LIKE :q OR l.main_objective LIKE :q OR l.message LIKE :q OR l.last_inbound_message LIKE :q OR l.source_platform LIKE :q OR l.utm_source LIKE :q OR l.utm_medium LIKE :q OR l.utm_campaign LIKE :q OR l.utm_content LIKE :q OR l.utm_term LIKE :q OR l.ad_name LIKE :q OR l.ad_id LIKE :q OR l.external_contact_id LIKE :q OR l.sales_status LIKE :q OR l.notes LIKE :q OR l.reminder_note LIKE :q)";
@@ -245,6 +265,7 @@ if ($filterAd !== '') {
 
 $whereSql = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
 $activeFilters = array_filter([
+  'channel_id' => $filterChannelId > 0 ? $filterChannelId : null,
   'q' => $q,
   'objective' => $filterObjective,
   'service' => $filterService,
@@ -428,6 +449,13 @@ function reminder_display(array $lead): string {
   if ($at !== '—' && $note !== '—') return $at . ' · ' . $note;
   return $at !== '—' ? $at : $note;
 }
+function dash_channel_label(array $channel): string {
+  $username = trim((string) ($channel['instagram_username'] ?? ''));
+  if ($username !== '') return '@' . ltrim($username, '@');
+  $pageName = trim((string) ($channel['page_name'] ?? ''));
+  if ($pageName !== '') return $pageName;
+  return trim((string) ($channel['page_id'] ?? 'Canal de Instagram'));
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -575,6 +603,7 @@ function reminder_display(array $lead): string {
           <div class="topbar-right">
             <form class="search-form" method="get" action="dashboard.php">
               <input class="search-input" type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar por nombre, teléfono, Instagram, servicio, plataforma o status">
+              <?php if ($filterChannelId > 0): ?><input type="hidden" name="channel_id" value="<?= (int) $filterChannelId ?>"><?php endif; ?>
               <?php if ($filterObjective !== ''): ?><input type="hidden" name="objective" value="<?= h($filterObjective) ?>"><?php endif; ?>
               <?php if ($filterService !== ''): ?><input type="hidden" name="service" value="<?= h($filterService) ?>"><?php endif; ?>
               <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
@@ -614,6 +643,16 @@ function reminder_display(array $lead): string {
         <div class="lead-filters" id="leadFilters" aria-label="Filtros de conversaciones">
           <form class="filters-form" method="get" action="dashboard.php">
             <?php if ($q !== ''): ?><input type="hidden" name="q" value="<?= h($q) ?>"><?php endif; ?>
+
+            <label class="filter-field">
+              <span>Canal</span>
+              <select name="channel_id">
+                <option value="">Todos</option>
+                <?php foreach ($channelOptions as $channel): ?>
+                  <option value="<?= (int) $channel['id'] ?>" <?= $filterChannelId === (int) $channel['id'] ? 'selected' : '' ?>><?= h(dash_channel_label($channel)) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
 
             <label class="filter-field">
               <span>Objetivo</span>
@@ -724,7 +763,7 @@ function reminder_display(array $lead): string {
                         <span class="funnel-id">Conv #<?= $conversationId ?></span>
                       </div>
                       <div class="funnel-actions">
-                        <a class="funnel-action-link" href="inbox.php?id=<?= $conversationId ?>">Abrir conversación</a>
+                        <a class="funnel-action-link" href="inbox.php?id=<?= $conversationId ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?>">Abrir conversación</a>
                         <?php if ($leadId > 0): ?><span class="funnel-id">Lead #<?= $leadId ?></span><?php endif; ?>
                       </div>
                       <div class="funnel-meta">

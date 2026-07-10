@@ -48,9 +48,14 @@ try {
   if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
   $q = trim((string) ($_GET['q'] ?? ''));
   $selectedId = max(0, (int) ($_GET['id'] ?? 0));
+  $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
 
   $where = [];
   $params = [];
+  if ($filterChannelId > 0) {
+    $where[] = 'c.channel_id = :channel_id';
+    $params[':channel_id'] = $filterChannelId;
+  }
   if ($filterStatus !== '') {
     $where[] = 'c.status = :status';
     $params[':status'] = $filterStatus;

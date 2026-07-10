@@ -93,8 +93,28 @@ if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $f
 $q = trim((string) ($_GET['q'] ?? ''));
 $selectedId = max(0, (int) ($_GET['id'] ?? 0));
 
+$channelOptions = [];
+try {
+  $channelStmt = $pdo->query(<<<SQL
+SELECT DISTINCT ch.id, ch.page_name, ch.page_id, ch.instagram_username
+FROM {$conversationsTable} c
+JOIN {$channelsTable} ch ON ch.id = c.channel_id
+ORDER BY COALESCE(ch.instagram_username, ch.page_name, ch.page_id) ASC
+SQL);
+  $channelOptions = $channelStmt ? $channelStmt->fetchAll() : [];
+} catch (Throwable $e) {
+  $channelOptions = [];
+}
+$channelIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $channelOptions);
+$filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
+if ($filterChannelId > 0 && !in_array($filterChannelId, $channelIds, true)) $filterChannelId = 0;
+
 $where = [];
 $params = [];
+if ($filterChannelId > 0) {
+  $where[] = 'c.channel_id = :channel_id';
+  $params[':channel_id'] = $filterChannelId;
+}
 if ($filterStatus !== '') {
   $where[] = 'c.status = :status';
   $params[':status'] = $filterStatus;
@@ -184,6 +204,14 @@ function inbox_time($value): string {
   if ($value === '') return 'Sin fecha';
   $time = strtotime($value);
   return $time ? date('d/m/Y H:i', $time) : $value;
+}
+
+function inbox_channel_label(array $channel): string {
+  $username = trim((string) ($channel['instagram_username'] ?? ''));
+  if ($username !== '') return '@' . ltrim($username, '@');
+  $pageName = trim((string) ($channel['page_name'] ?? ''));
+  if ($pageName !== '') return $pageName;
+  return trim((string) ($channel['page_id'] ?? 'Canal de Instagram'));
 }
 ?>
 <!DOCTYPE html>
@@ -278,6 +306,12 @@ function inbox_time($value): string {
         <div class="inbox-layout">
           <aside class="inbox-panel" aria-label="Conversaciones">
             <form class="conversation-filters" method="get" action="inbox.php">
+              <select name="channel_id" onchange="this.form.submit()" aria-label="Filtrar por canal">
+                <option value="">Todos los canales</option>
+                <?php foreach ($channelOptions as $channel): ?>
+                  <option value="<?= (int) $channel['id'] ?>" <?= $filterChannelId === (int) $channel['id'] ? 'selected' : '' ?>><?= h(inbox_channel_label($channel)) ?></option>
+                <?php endforeach; ?>
+              </select>
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar conversación">
               <select name="status" onchange="this.form.submit()" aria-label="Filtrar por estado">
                 <option value="">Todos los estados</option>
@@ -290,7 +324,7 @@ function inbox_time($value): string {
             <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedId ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
-                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="inbox.php?id=<?= (int) $conversation['id'] ?><?= $filterStatus !== '' ? '&status=' . h(rawurlencode($filterStatus)) : '' ?><?= $q !== '' ? '&q=' . h(rawurlencode($q)) : '' ?>">
+                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="inbox.php?id=<?= (int) $conversation['id'] ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?><?= $filterStatus !== '' ? '&status=' . h(rawurlencode($filterStatus)) : '' ?><?= $q !== '' ? '&q=' . h(rawurlencode($q)) : '' ?>">
                   <div class="conversation-row">
                     <span class="conversation-name"><?= h(inbox_contact_name($conversation)) ?></span>
                     <span class="conversation-time"><?= h(inbox_time($conversation['last_message_at'] ?? $conversation['created_at'] ?? '')) ?></span>
@@ -417,6 +451,7 @@ function inbox_time($value): string {
   <script>
     const inboxState = {
       conversationId: <?= (int) $selectedId ?>,
+      channelId: <?= (int) $filterChannelId ?>,
       q: <?= json_encode($q, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       lastMessageId: <?= (int) $lastMessageId ?>,
@@ -467,6 +502,7 @@ function inbox_time($value): string {
     function conversationHref(id) {
       const params = new URLSearchParams();
       params.set('id', String(id));
+      if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
       if (inboxState.status) params.set('status', inboxState.status);
       if (inboxState.q) params.set('q', inboxState.q);
       return `inbox.php?${params.toString()}`;
@@ -548,6 +584,7 @@ function inbox_time($value): string {
       try {
         const params = new URLSearchParams();
         if (inboxState.conversationId) params.set('id', String(inboxState.conversationId));
+        if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
         if (inboxState.q) params.set('q', inboxState.q);
         if (inboxState.status) params.set('status', inboxState.status);
         const response = await fetch(`inbox_updates.php?${params.toString()}`, {
