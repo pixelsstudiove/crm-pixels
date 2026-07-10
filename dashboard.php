@@ -183,42 +183,7 @@ $channelIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $channelOpti
 $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
 if ($filterChannelId > 0 && !in_array($filterChannelId, $channelIds, true)) $filterChannelId = 0;
 
-$filterObjective = trim((string) ($_GET['objective'] ?? ''));
-$filterService = trim((string) ($_GET['service'] ?? ''));
-$filterSalesStatus = trim((string) ($_GET['sales_status'] ?? ''));
-$filterBusinessType = trim((string) ($_GET['business_type'] ?? ''));
-$filterPlatform = trim((string) ($_GET['platform'] ?? ''));
-$filterCampaign = trim((string) ($_GET['campaign'] ?? ''));
-$filterAd = trim((string) ($_GET['ad'] ?? ''));
-
-$objectiveOptions = (array) app_config('lead_fields.main_objective.options', []);
-$serviceOptions = (array) app_config('lead_fields.services_needed.options', []);
-$businessTypeOptions = (array) app_config('lead_fields.business_type.options', []);
 $salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
-
-// Los valores visibles se guardan en BD como etiquetas. Se validan contra la configuración para evitar filtros inválidos.
-if ($filterObjective !== '' && !in_array($filterObjective, $objectiveOptions, true)) $filterObjective = '';
-if ($filterService !== '' && !in_array($filterService, $serviceOptions, true)) $filterService = '';
-if ($filterBusinessType !== '' && !in_array($filterBusinessType, $businessTypeOptions, true)) $filterBusinessType = '';
-if ($filterSalesStatus !== '' && !array_key_exists($filterSalesStatus, $salesStatusOptions)) $filterSalesStatus = '';
-
-function dash_distinct_values(PDO $pdo, string $conversationsTable, string $contactsTable, string $channelsTable, string $leadsTable, string $column, int $limit = 100): array {
-  $allowed = ['source_platform', 'utm_campaign', 'ad_name', 'utm_content', 'ad_id'];
-  if (!in_array($column, $allowed, true)) return [];
-  $limit = max(1, min(200, $limit));
-  $stmt = $pdo->query("SELECT DISTINCT l.{$column} AS value FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id = c.contact_id LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id LEFT JOIN {$leadsTable} l ON l.id = c.lead_id WHERE l.{$column} IS NOT NULL AND TRIM(l.{$column}) <> '' ORDER BY l.{$column} ASC LIMIT {$limit}");
-  $values = $stmt ? $stmt->fetchAll(PDO::FETCH_COLUMN) : [];
-  return array_values(array_filter(array_map('trim', array_map('strval', $values)), static fn($v) => $v !== ''));
-}
-
-$platformOptions = dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'source_platform');
-$campaignOptions = dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'utm_campaign');
-$adOptions = array_values(array_unique(array_filter(array_merge(
-  dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'ad_name'),
-  dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'utm_content'),
-  dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'ad_id')
-), static fn($v) => $v !== '')));
-sort($adOptions, SORT_NATURAL | SORT_FLAG_CASE);
 
 $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
 $whereConditions = [];
@@ -233,47 +198,11 @@ if ($q !== '') {
   $whereParams[':q'] = '%' . $q . '%';
   $whereParams[':qd'] = '%' . $digits . '%';
 }
-if ($filterObjective !== '') {
-  $whereConditions[] = 'l.main_objective = :objective';
-  $whereParams[':objective'] = $filterObjective;
-}
-if ($filterService !== '') {
-  $whereConditions[] = 'l.services_needed LIKE :service';
-  $whereParams[':service'] = '%' . $filterService . '%';
-}
-if ($filterSalesStatus !== '') {
-  $whereConditions[] = "COALESCE(l.sales_status, :default_sales_status_filter) = :sales_status";
-  $whereParams[':default_sales_status_filter'] = $defaultSalesStatus;
-  $whereParams[':sales_status'] = $filterSalesStatus;
-}
-if ($filterBusinessType !== '') {
-  $whereConditions[] = 'l.business_type = :business_type';
-  $whereParams[':business_type'] = $filterBusinessType;
-}
-if ($filterPlatform !== '') {
-  $whereConditions[] = 'l.source_platform = :platform';
-  $whereParams[':platform'] = $filterPlatform;
-}
-if ($filterCampaign !== '') {
-  $whereConditions[] = 'l.utm_campaign = :campaign';
-  $whereParams[':campaign'] = $filterCampaign;
-}
-if ($filterAd !== '') {
-  $whereConditions[] = '(l.ad_name = :ad OR l.utm_content = :ad OR l.ad_id = :ad)';
-  $whereParams[':ad'] = $filterAd;
-}
 
 $whereSql = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
 $activeFilters = array_filter([
   'channel_id' => $filterChannelId > 0 ? $filterChannelId : null,
   'q' => $q,
-  'objective' => $filterObjective,
-  'service' => $filterService,
-  'sales_status' => $filterSalesStatus,
-  'business_type' => $filterBusinessType,
-  'platform' => $filterPlatform,
-  'campaign' => $filterCampaign,
-  'ad' => $filterAd,
 ], static fn($v) => $v !== '' && $v !== null);
 
 $conversationFromSql = "FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id = c.contact_id LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id";
@@ -503,7 +432,7 @@ function dash_channel_label(array $channel): string {
     .filters-toggle { display:none; align-items:center; justify-content:center; min-height:40px; margin-top:14px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:800; cursor:pointer; }
     .filters-toggle:hover { background:#dff6ff; border-color:#8bdfff; }
     .filters-toggle:active { transform:translateY(1px); }
-    .filters-form { display:grid; grid-template-columns:repeat(7, minmax(150px, 1fr)); gap:10px; align-items:end; }
+    .filters-form { display:grid; grid-template-columns:minmax(220px, 320px) auto; gap:10px; align-items:end; justify-content:start; }
     .filter-field { display:grid; gap:6px; min-width:0; }
     .filter-field span { color:var(--brand-muted); font-size:.78rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
     .filter-field select { width:100%; height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font-weight:700; }
@@ -576,7 +505,7 @@ function dash_channel_label(array $channel): string {
     .modal input { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.22); color:#fff; }
     .btn-secondary { appearance:none; border:1px solid rgba(255,255,255,.35); background:transparent; color:#eafaff; padding:10px 14px; border-radius:12px; cursor:pointer; }
     .btn-secondary:hover { background:rgba(255,255,255,.08); }
-    @media (max-width: 1200px) { .summary-grid { grid-template-columns:repeat(3, minmax(150px, 1fr)); } .filters-form { grid-template-columns:repeat(3, minmax(160px, 1fr)); } }
+    @media (max-width: 1200px) { .summary-grid { grid-template-columns:repeat(3, minmax(150px, 1fr)); } }
     @media (max-width: 760px) {
       .summary-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
       .summary-card { min-height:72px; padding:12px; }
@@ -602,15 +531,8 @@ function dash_channel_label(array $channel): string {
           </div>
           <div class="topbar-right">
             <form class="search-form" method="get" action="dashboard.php">
-              <input class="search-input" type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar por nombre, teléfono, Instagram, servicio, plataforma o status">
+              <input class="search-input" type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar conversación, cliente, Instagram o mensaje">
               <?php if ($filterChannelId > 0): ?><input type="hidden" name="channel_id" value="<?= (int) $filterChannelId ?>"><?php endif; ?>
-              <?php if ($filterObjective !== ''): ?><input type="hidden" name="objective" value="<?= h($filterObjective) ?>"><?php endif; ?>
-              <?php if ($filterService !== ''): ?><input type="hidden" name="service" value="<?= h($filterService) ?>"><?php endif; ?>
-              <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
-              <?php if ($filterBusinessType !== ''): ?><input type="hidden" name="business_type" value="<?= h($filterBusinessType) ?>"><?php endif; ?>
-              <?php if ($filterPlatform !== ''): ?><input type="hidden" name="platform" value="<?= h($filterPlatform) ?>"><?php endif; ?>
-              <?php if ($filterCampaign !== ''): ?><input type="hidden" name="campaign" value="<?= h($filterCampaign) ?>"><?php endif; ?>
-              <?php if ($filterAd !== ''): ?><input type="hidden" name="ad" value="<?= h($filterAd) ?>"><?php endif; ?>
               <button class="search-btn" type="submit">Buscar</button>
             </form>
             <span class="role-pill"><?= h($currentRoleLabel) ?></span>
@@ -654,78 +576,8 @@ function dash_channel_label(array $channel): string {
               </select>
             </label>
 
-            <label class="filter-field">
-              <span>Objetivo</span>
-              <select name="objective">
-                <option value="">Todos</option>
-                <?php foreach ($objectiveOptions as $label): ?>
-                  <option value="<?= h($label) ?>" <?= $filterObjective === (string) $label ? 'selected' : '' ?>><?= h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span>Servicio</span>
-              <select name="service">
-                <option value="">Todos</option>
-                <?php foreach ($serviceOptions as $label): ?>
-                  <option value="<?= h($label) ?>" <?= $filterService === (string) $label ? 'selected' : '' ?>><?= h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span>Status comercial</span>
-              <select name="sales_status">
-                <option value="">Todos</option>
-                <?php foreach ($salesStatusOptions as $value => $label): ?>
-                  <option value="<?= h($value) ?>" <?= $filterSalesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span>Tipo</span>
-              <select name="business_type">
-                <option value="">Todos</option>
-                <?php foreach ($businessTypeOptions as $label): ?>
-                  <option value="<?= h($label) ?>" <?= $filterBusinessType === (string) $label ? 'selected' : '' ?>><?= h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span>Plataforma</span>
-              <select name="platform">
-                <option value="">Todas</option>
-                <?php foreach ($platformOptions as $value): ?>
-                  <option value="<?= h($value) ?>" <?= $filterPlatform === (string) $value ? 'selected' : '' ?>><?= h($value) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span>Campaña</span>
-              <select name="campaign">
-                <option value="">Todas</option>
-                <?php foreach ($campaignOptions as $value): ?>
-                  <option value="<?= h($value) ?>" <?= $filterCampaign === (string) $value ? 'selected' : '' ?>><?= h($value) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
-            <label class="filter-field">
-              <span>Anuncio</span>
-              <select name="ad">
-                <option value="">Todos</option>
-                <?php foreach ($adOptions as $value): ?>
-                  <option value="<?= h($value) ?>" <?= $filterAd === (string) $value ? 'selected' : '' ?>><?= h($value) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-
             <div class="filter-actions">
-              <button class="search-btn" type="submit">Aplicar filtros</button>
+              <button class="search-btn" type="submit">Filtrar canal</button>
               <?php if ($activeFilters): ?><a class="clear-filters" href="dashboard.php">Limpiar</a><?php endif; ?>
             </div>
           </form>
