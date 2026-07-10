@@ -135,7 +135,7 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'external_source' => '`external_source` VARCHAR(40) NULL',
     'external_contact_id' => '`external_contact_id` VARCHAR(120) NULL',
     'external_thread_id' => '`external_thread_id` VARCHAR(120) NULL',
-    'last_external_message_id' => '`last_external_message_id` VARCHAR(120) NULL',
+    'last_external_message_id' => '`last_external_message_id` TEXT NULL',
     'first_message_at' => '`first_message_at` DATETIME NULL',
     'last_message_at' => '`last_message_at` DATETIME NULL',
     'last_inbound_message' => '`last_inbound_message` TEXT NULL',
@@ -154,6 +154,15 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     if (column_exists($pdo, $leadsTable, $column)) {
       try { $pdo->exec("ALTER TABLE `{$leadsTable}` MODIFY {$definition}"); $log[] = ['ok', "Columna {$leadsTable}.{$column} ajustada para leads externos."]; }
       catch (Throwable $e) { $log[] = ['err', "No se pudo ajustar {$column}: " . $e->getMessage()]; }
+    }
+  }
+
+  if (column_exists($pdo, $leadsTable, 'last_external_message_id')) {
+    try {
+      $pdo->exec("ALTER TABLE `{$leadsTable}` MODIFY `last_external_message_id` TEXT NULL");
+      $log[] = ['ok', "Columna {$leadsTable}.last_external_message_id ampliada para IDs largos de Meta."];
+    } catch (Throwable $e) {
+      $log[] = ['err', "No se pudo ampliar last_external_message_id: " . $e->getMessage()];
     }
   }
 

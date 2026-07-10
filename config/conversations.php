@@ -72,7 +72,8 @@ SQL);
 CREATE TABLE IF NOT EXISTS {$messagesTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   conversation_id INT UNSIGNED NOT NULL,
-  external_message_id VARCHAR(180) NULL,
+  external_message_id TEXT NULL,
+  external_message_hash CHAR(64) NULL,
   direction VARCHAR(20) NOT NULL,
   sender_external_id VARCHAR(180) NULL,
   message_type VARCHAR(40) NOT NULL DEFAULT 'text',
@@ -82,7 +83,7 @@ CREATE TABLE IF NOT EXISTS {$messagesTable} (
   sent_at DATETIME NOT NULL,
   delivery_status VARCHAR(40) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_conversation_message (conversation_id, external_message_id),
+  UNIQUE KEY uniq_conversation_message_hash (conversation_id, external_message_hash),
   KEY idx_conversation_id (conversation_id),
   KEY idx_direction (direction),
   KEY idx_sent_at (sent_at)
@@ -99,7 +100,7 @@ CREATE TABLE IF NOT EXISTS {$logsTable} (
   sender_id VARCHAR(180) NULL,
   channel_id INT UNSIGNED NULL,
   channel_username VARCHAR(180) NULL,
-  external_message_id VARCHAR(180) NULL,
+  external_message_id TEXT NULL,
   lead_id INT UNSIGNED NULL,
   conversation_id INT UNSIGNED NULL,
   message_preview VARCHAR(255) NULL,
@@ -113,6 +114,13 @@ CREATE TABLE IF NOT EXISTS {$logsTable} (
   KEY idx_channel_id (channel_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
+
+  try { $pdo->exec("ALTER TABLE {$messagesTable} ADD COLUMN external_message_hash CHAR(64) NULL AFTER external_message_id"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("UPDATE {$messagesTable} SET external_message_hash=SHA2(external_message_id, 256) WHERE external_message_hash IS NULL AND external_message_id IS NOT NULL AND external_message_id <> ''"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$messagesTable} DROP INDEX uniq_conversation_message"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$messagesTable} MODIFY external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$messagesTable} ADD UNIQUE KEY uniq_conversation_message_hash (conversation_id, external_message_hash)"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$logsTable} MODIFY external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
 }
 
 function conv_clean($value, int $max = 180): ?string {
@@ -195,7 +203,8 @@ function conv_add_message(PDO $pdo, array $data): int {
   $table = conv_messages_table();
   $conversationId = (int) ($data['conversation_id'] ?? 0);
   if ($conversationId <= 0) return 0;
-  $externalMessageId = conv_clean($data['external_message_id'] ?? null, 180);
+  $externalMessageId = conv_clean($data['external_message_id'] ?? null, 2000);
+  $externalMessageHash = $externalMessageId !== null ? hash('sha256', $externalMessageId) : null;
   $direction = conv_clean($data['direction'] ?? 'inbound', 20) ?? 'inbound';
   $senderExternalId = conv_clean($data['sender_external_id'] ?? null, 180);
   $messageType = conv_clean($data['message_type'] ?? 'text', 40) ?? 'text';
@@ -207,9 +216,9 @@ function conv_add_message(PDO $pdo, array $data): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  conversation_id, external_message_id, direction, sender_external_id, message_type,
+  conversation_id, external_message_id, external_message_hash, direction, sender_external_id, message_type,
   message_text, payload_json, sent_by, sent_at, delivery_status
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   direction = VALUES(direction),
   sender_external_id = VALUES(sender_external_id),
@@ -220,13 +229,13 @@ ON DUPLICATE KEY UPDATE
   sent_at = VALUES(sent_at),
   delivery_status = VALUES(delivery_status)
 SQL);
-  $stmt->execute([$conversationId, $externalMessageId, $direction, $senderExternalId, $messageType, $messageText, $payloadJson, $sentBy, $sentAt, $deliveryStatus]);
+  $stmt->execute([$conversationId, $externalMessageId, $externalMessageHash, $direction, $senderExternalId, $messageType, $messageText, $payloadJson, $sentBy, $sentAt, $deliveryStatus]);
   $insertedId = (int) $pdo->lastInsertId();
   if ($insertedId > 0) return $insertedId;
-  if ($externalMessageId === null) return 0;
+  if ($externalMessageHash === null) return 0;
 
-  $find = $pdo->prepare("SELECT id FROM {$table} WHERE conversation_id=? AND external_message_id=? LIMIT 1");
-  $find->execute([$conversationId, $externalMessageId]);
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE conversation_id=? AND external_message_hash=? LIMIT 1");
+  $find->execute([$conversationId, $externalMessageHash]);
   return (int) ($find->fetchColumn() ?: 0);
 }
 
@@ -255,7 +264,7 @@ SQL);
       conv_clean($data['sender_id'] ?? null, 180),
       isset($data['channel_id']) ? (int) $data['channel_id'] : null,
       conv_clean($data['channel_username'] ?? null, 180),
-      conv_clean($data['external_message_id'] ?? null, 180),
+      conv_clean($data['external_message_id'] ?? null, 2000),
       isset($data['lead_id']) ? (int) $data['lead_id'] : null,
       isset($data['conversation_id']) ? (int) $data['conversation_id'] : null,
       conv_clean($data['message_preview'] ?? null, 255),
@@ -388,7 +397,7 @@ SQL);
 
     conv_add_message($pdo, [
       'conversation_id' => $conversationId,
-      'external_message_id' => conv_clean($lead['last_external_message_id'] ?? null, 180),
+      'external_message_id' => conv_clean($lead['last_external_message_id'] ?? null, 2000),
       'direction' => 'inbound',
       'sender_external_id' => $senderId,
       'message_type' => 'text',

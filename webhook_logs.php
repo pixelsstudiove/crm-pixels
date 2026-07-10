@@ -21,10 +21,10 @@ SELECT l.*
 FROM {$logsTable} l
 LEFT JOIN {$messagesTable} m
   ON m.conversation_id = l.conversation_id
-  AND m.external_message_id = l.external_message_id
+  AND m.direction = 'inbound'
+  AND m.message_text = l.message_preview
 WHERE l.source='instagram'
   AND l.conversation_id IS NOT NULL
-  AND l.external_message_id IS NOT NULL
   AND l.message_preview IS NOT NULL
   AND l.status IN ('processed', 'duplicate', 'lead_only')
   AND m.id IS NULL
@@ -34,9 +34,17 @@ SQL;
     $rows = $pdo->query($repairSql)->fetchAll();
     $repaired = 0;
     foreach ($rows as $row) {
+      $externalMessageId = (string) ($row['external_message_id'] ?? '');
+      if ($externalMessageId !== '') {
+        $dupStmt = $pdo->prepare("SELECT id FROM {$messagesTable} WHERE conversation_id=? AND external_message_hash=? LIMIT 1");
+        $dupStmt->execute([(int) $row['conversation_id'], hash('sha256', $externalMessageId)]);
+        if ($dupStmt->fetchColumn()) $externalMessageId = 'repaired-log-' . (int) $row['id'] . '-' . mb_substr($externalMessageId, 0, 460);
+      } else {
+        $externalMessageId = 'repaired-log-' . (int) $row['id'];
+      }
       $messageId = conv_add_message($pdo, [
         'conversation_id' => (int) $row['conversation_id'],
-        'external_message_id' => (string) $row['external_message_id'],
+        'external_message_id' => $externalMessageId,
         'direction' => 'inbound',
         'sender_external_id' => (string) ($row['sender_id'] ?? ''),
         'message_type' => (string) ($row['event_type'] ?: 'message'),

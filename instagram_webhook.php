@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS {$table} (
   external_source VARCHAR(40) NULL,
   external_contact_id VARCHAR(120) NULL,
   external_thread_id VARCHAR(120) NULL,
-  last_external_message_id VARCHAR(120) NULL,
+  last_external_message_id TEXT NULL,
   first_message_at DATETIME NULL,
   last_message_at DATETIME NULL,
   last_inbound_message TEXT NULL,
@@ -134,7 +134,7 @@ SQL);
     'external_source' => "ALTER TABLE {$table} ADD COLUMN external_source VARCHAR(40) NULL AFTER whatsapp_status",
     'external_contact_id' => "ALTER TABLE {$table} ADD COLUMN external_contact_id VARCHAR(120) NULL AFTER external_source",
     'external_thread_id' => "ALTER TABLE {$table} ADD COLUMN external_thread_id VARCHAR(120) NULL AFTER external_contact_id",
-    'last_external_message_id' => "ALTER TABLE {$table} ADD COLUMN last_external_message_id VARCHAR(120) NULL AFTER external_thread_id",
+    'last_external_message_id' => "ALTER TABLE {$table} ADD COLUMN last_external_message_id TEXT NULL AFTER external_thread_id",
     'first_message_at' => "ALTER TABLE {$table} ADD COLUMN first_message_at DATETIME NULL AFTER last_external_message_id",
     'last_message_at' => "ALTER TABLE {$table} ADD COLUMN last_message_at DATETIME NULL AFTER first_message_at",
     'last_inbound_message' => "ALTER TABLE {$table} ADD COLUMN last_inbound_message TEXT NULL AFTER last_message_at",
@@ -165,6 +165,10 @@ SQL);
     if (!ig_index_exists($pdo, $dbName, $table, $index)) {
       try { $pdo->exec($sql); } catch (Throwable $e) { /* índice existente */ }
     }
+  }
+
+  if (ig_column_exists($pdo, $dbName, $table, 'last_external_message_id')) {
+    try { $pdo->exec("ALTER TABLE {$table} MODIFY last_external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
   }
 }
 
@@ -249,8 +253,8 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
     $messagesTable = conv_messages_table();
     $messageAlreadyExists = false;
     if ($messageId !== null) {
-      $existsStmt = $pdo->prepare("SELECT id FROM {$messagesTable} WHERE conversation_id=? AND external_message_id=? LIMIT 1");
-      $existsStmt->execute([$conversationId, $messageId]);
+      $existsStmt = $pdo->prepare("SELECT id FROM {$messagesTable} WHERE conversation_id=? AND external_message_hash=? LIMIT 1");
+      $existsStmt->execute([$conversationId, hash('sha256', $messageId)]);
       $messageAlreadyExists = (bool) $existsStmt->fetchColumn();
     }
     $inserted = conv_add_message($pdo, [
@@ -294,7 +298,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   if ($senderId === null) return 0;
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
-  $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 120);
+  $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 2000);
   $messageText = ig_event_text($event);
   if ($recipientId === null) {
     conv_log_webhook_event($pdo, [
