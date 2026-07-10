@@ -178,6 +178,28 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
   foreach ($indexes as $index => $definition) ensure_index($pdo, $leadsTable, $index, $definition, $log);
 }
 
+function ensure_instagram_channels_schema(PDO $pdo, string $channelsTable, array &$log): void {
+  $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `page_id` VARCHAR(120) NOT NULL,
+  `page_name` VARCHAR(180) NULL,
+  `instagram_user_id` VARCHAR(120) NOT NULL,
+  `instagram_username` VARCHAR(180) NULL,
+  `page_access_token` TEXT NULL,
+  `connected_by` INT UNSIGNED NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `last_event_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_page_id` (`page_id`),
+  UNIQUE KEY `uniq_instagram_user_id` (`instagram_user_id`),
+  KEY `idx_is_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+  $log[] = ['ok', "Tabla {$channelsTable} verificada."];
+}
+
 if (!$isAuthorized) {
   http_response_code(403);
   page_start('Acceso restringido');
@@ -194,7 +216,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$csrf || !hash_equals((string) $_SESSION['install_csrf'], $csrf)) $log[] = ['err', 'CSRF inválido. Recarga la página e inténtalo de nuevo.'];
   else {
     $ran = true;
-    try { run_sql_file($pdo, __DIR__ . '/crear_tablas.sql', $log); ensure_latest_schema($pdo, $TABLE_LEADS, $TABLE_USERS, $log); $log[] = ['ok', 'Instalación/actualización finalizada.']; }
+    try {
+      run_sql_file($pdo, __DIR__ . '/crear_tablas.sql', $log);
+      ensure_latest_schema($pdo, $TABLE_LEADS, $TABLE_USERS, $log);
+      ensure_instagram_channels_schema($pdo, safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'), $log);
+      $log[] = ['ok', 'Instalación/actualización finalizada.'];
+    }
     catch (Throwable $e) { $log[] = ['err', 'Error durante la instalación: ' . $e->getMessage()]; }
   }
 }

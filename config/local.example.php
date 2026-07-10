@@ -6,6 +6,7 @@ return [
   'DB_NAME' => '',
   'DB_USER' => '',
   'DB_PASS' => '',
+  'INSTAGRAM_APP_ID' => '',
   'INSTAGRAM_WEBHOOK_VERIFY_TOKEN' => '',
   'INSTAGRAM_APP_SECRET' => '',
   'INSTAGRAM_DM_INBOX_URL' => 'https://www.instagram.com/direct/inbox/',

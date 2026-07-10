@@ -171,6 +171,7 @@ https://tudominio.com/ruta-del-formulario/instagram_webhook.php
 Variables de entorno recomendadas:
 
 ```env
+INSTAGRAM_APP_ID=
 INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
 INSTAGRAM_APP_SECRET=
 INSTAGRAM_DM_INBOX_URL=https://www.instagram.com/direct/inbox/
@@ -178,8 +179,23 @@ INSTAGRAM_DM_INBOX_URL=https://www.instagram.com/direct/inbox/
 
 Si el hosting no permite variables de entorno, coloca esos valores en `config/local.php`.
 
+Pantalla de conexion:
+
+```text
+https://tudominio.com/ruta-del-formulario/channels.php
+```
+
+Desde esa pantalla el cliente inicia sesion con Meta, autoriza sus paginas y el CRM guarda la fanpage y cuenta de Instagram conectadas.
+
+URL de redireccion OAuth para Meta:
+
+```text
+https://tudominio.com/ruta-del-formulario/instagram_oauth_callback.php
+```
+
 Flujo:
 
+- El cliente conecta su fanpage/Instagram desde `channels.php`.
 - Meta envía el evento al webhook.
 - El CRM crea el lead con origen `Instagram DM`.
 - Si la persona vuelve a escribir, se actualiza el último mensaje recibido.
@@ -264,6 +280,8 @@ index.php                  Formulario público
 save_lead.php              Guarda leads y tracking
 dashboard.php              Dashboard privado
 instagram_webhook.php      Recibe DMs de Instagram y crea/actualiza leads
+instagram_oauth_callback.php Callback para conectar fanpage/Instagram
+channels.php                Gestiona canales conectados
 update_sales_status.php    Actualiza status comercial
 update_lead_notes.php      Actualiza anotaciones internas
 login.php                  Login administrativo

@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/instagram_channels.php';
 
 function ig_json(array $payload, int $status = 200): void {
   if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
@@ -166,6 +167,12 @@ SQL);
   }
 }
 
+function ig_ensure_channel_schema_safe(PDO $pdo): string {
+  $table = ig_channels_table();
+  try { ig_channels_ensure_schema($pdo, $table); } catch (Throwable $e) { /* no-op */ }
+  return $table;
+}
+
 function ig_event_text(array $event): string {
   $text = ig_clean($event['message']['text'] ?? null, 1200);
   if ($text !== null) return $text;
@@ -196,19 +203,22 @@ function ig_referral_data(array $event): array {
   ];
 }
 
-function ig_upsert_lead(PDO $pdo, string $table, array $event): int {
+function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $event): int {
   $senderId = ig_clean($event['sender']['id'] ?? null, 120);
   if ($senderId === null) return 0;
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
+  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId);
   $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 120);
   $messageText = ig_event_text($event);
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
   $ref = ig_referral_data($event);
 
+  $contactKey = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
+
   $existing = $pdo->prepare("SELECT id FROM {$table} WHERE external_source=? AND external_contact_id=? LIMIT 1");
-  $existing->execute(['instagram', $senderId]);
+  $existing->execute(['instagram', $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
 
   if ($leadId > 0) {
@@ -228,12 +238,19 @@ SET
 WHERE id = ?
 SQL);
     $update->execute([$threadId, $messageId, $messageAt, $messageText, $messageText, $ref['campaign'], $ref['ad_name'], $ref['ad_id'], $ref['content'], $leadId]);
+    if ($channel) {
+      try {
+        $stamp = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
+        $stamp->execute([$messageAt, (int) $channel['id']]);
+      } catch (Throwable $e) { /* no-op */ }
+    }
     return $leadId;
   }
 
   $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
   $fullname = 'Lead Instagram #' . substr($senderId, -6);
-  $brandInstagram = 'Instagram ID ' . $senderId;
+  $channelLabel = $channel ? (string) ($channel['instagram_username'] ?: $channel['page_name'] ?: 'Instagram conectado') : 'Instagram';
+  $brandInstagram = $channelLabel . ' / Usuario ' . $senderId;
 
   $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
@@ -260,13 +277,20 @@ SQL);
     $ref['ad_name'],
     $ref['ad_id'],
     $defaultSalesStatus,
-    $senderId,
+    $contactKey,
     $threadId,
     $messageId,
     $messageAt,
     $messageAt,
     $messageText,
   ]);
+
+  if ($channel) {
+    try {
+      $stamp = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
+      $stamp->execute([$messageAt, (int) $channel['id']]);
+    } catch (Throwable $e) { /* no-op */ }
+  }
 
   return (int) $pdo->lastInsertId();
 }
@@ -302,12 +326,13 @@ if (!is_array($payload)) {
 
 try {
   ig_ensure_leads_schema($pdo, $DB_NAME, $TABLE_LEADS);
+  $channelsTable = ig_ensure_channel_schema_safe($pdo);
   $createdOrUpdated = [];
   foreach (($payload['entry'] ?? []) as $entry) {
     if (!is_array($entry)) continue;
     foreach (($entry['messaging'] ?? []) as $event) {
       if (!is_array($event)) continue;
-      $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $event);
+      $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $channelsTable, $event);
       if ($leadId > 0) $createdOrUpdated[] = $leadId;
     }
   }

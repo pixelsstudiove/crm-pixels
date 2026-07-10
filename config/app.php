@@ -41,6 +41,7 @@ $app = [
   'database' => [
     'leads_table' => 'leads',
     'users_table' => 'users',
+    'instagram_channels_table' => 'instagram_channels',
   ],
 
   'session' => [
@@ -123,7 +124,7 @@ $app = [
       'super_admin' => [
         'label' => 'Super administrador',
         'description' => 'Control total del CRM, usuarios, leads y configuracion.',
-        'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'view_reports'],
+        'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'manage_integrations', 'view_reports'],
       ],
       'admin_comercial' => [
         'label' => 'Administrador comercial',
@@ -153,9 +154,12 @@ $app = [
   ],
 
   'instagram' => [
+    'app_id' => (string) env_value('INSTAGRAM_APP_ID', env_value('META_APP_ID', '')),
     'webhook_verify_token' => (string) env_value('INSTAGRAM_WEBHOOK_VERIFY_TOKEN', ''),
     'app_secret' => (string) env_value('INSTAGRAM_APP_SECRET', ''),
     'dm_inbox_url' => (string) env_value('INSTAGRAM_DM_INBOX_URL', 'https://www.instagram.com/direct/inbox/'),
+    'graph_version' => (string) env_value('META_GRAPH_VERSION', 'v20.0'),
+    'oauth_scopes' => (string) env_value('INSTAGRAM_OAUTH_SCOPES', 'pages_show_list,pages_manage_metadata,instagram_basic,instagram_manage_messages,instagram_business_basic,instagram_business_manage_messages'),
     'default_business_type' => 'Instagram DM',
     'default_service' => 'Mensaje directo de Instagram',
     'default_objective' => 'Conversación iniciada desde Instagram',

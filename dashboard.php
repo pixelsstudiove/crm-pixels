@@ -157,6 +157,7 @@ $currentRoleLabel = role_label($currentRole);
 require_permission('view_dashboard');
 $canEditLeads = can('edit_leads');
 $canManageUsers = can('manage_users');
+$canManageIntegrations = can('manage_integrations');
 
 $perPage = 50;
 $page = max(1, (int) ($_GET['page'] ?? 1));
@@ -597,6 +598,7 @@ function reminder_display(array $lead): string {
               <button class="search-btn" type="submit">Buscar</button>
             </form>
             <span class="role-pill"><?= h($currentRoleLabel) ?></span>
+            <?php if ($canManageIntegrations): ?><a class="user-btn" href="channels.php" title="Canales conectados">Canales</a><?php endif; ?>
             <?php if ($canManageUsers): ?><a class="user-btn" href="users.php" title="Administrar usuarios">Usuarios</a><?php endif; ?>
             <button type="button" class="user-btn" data-modal-open="profileModal" title="Perfil de usuario">👤 <?= h($_SESSION['username']) ?></button>
             <form action="logout.php" method="post" style="margin:0">

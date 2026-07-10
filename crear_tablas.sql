@@ -66,3 +66,20 @@ CREATE TABLE IF NOT EXISTS `leads` (
   KEY `idx_status` (`status`),
   KEY `idx_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `instagram_channels` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `page_id` VARCHAR(120) NOT NULL,
+  `page_name` VARCHAR(180) NULL,
+  `instagram_user_id` VARCHAR(120) NOT NULL,
+  `instagram_username` VARCHAR(180) NULL,
+  `page_access_token` TEXT NULL,
+  `connected_by` INT UNSIGNED NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `last_event_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_page_id` (`page_id`),
+  UNIQUE KEY `uniq_instagram_user_id` (`instagram_user_id`),
+  KEY `idx_is_active` (`is_active`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
