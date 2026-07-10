@@ -8,20 +8,33 @@ CREATE TABLE IF NOT EXISTS {$TABLE_USERS} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(60) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(20) NOT NULL DEFAULT 'admin',
+  role VARCHAR(30) NOT NULL DEFAULT 'super_admin',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
 
 $seed_notice = '';
 try {
+  $chk = $pdo->prepare('SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?');
+  $chk->execute([$DB_NAME, $TABLE_USERS, 'role']);
+  if (!$chk->fetch()) {
+    $pdo->exec("ALTER TABLE {$TABLE_USERS} ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'super_admin' AFTER password_hash");
+  } else {
+    try { $pdo->exec("ALTER TABLE {$TABLE_USERS} MODIFY role VARCHAR(30) NOT NULL DEFAULT 'super_admin'"); } catch (Throwable $e) { /* no-op */ }
+  }
+  $legacyMap = (array) app_config('roles.legacy_map', []);
+  foreach ($legacyMap as $legacyRole => $newRole) {
+    $migrate = $pdo->prepare("UPDATE {$TABLE_USERS} SET role=? WHERE role=?");
+    $migrate->execute([(string) $newRole, (string) $legacyRole]);
+  }
+
   $exists = (int) $pdo->query("SELECT COUNT(*) FROM {$TABLE_USERS}")->fetchColumn();
   if ($exists === 0 && (bool) app_config('security.allow_default_admin_seed', true)) {
     $user = (string) app_config('security.default_admin_user', 'admin');
     $pass = (string) app_config('security.default_admin_pass', 'CambiaEstaClave#2026');
     $hash = password_hash($pass, PASSWORD_DEFAULT);
-    $ins = $pdo->prepare("INSERT INTO {$TABLE_USERS} (username, password_hash) VALUES (?, ?)");
-    $ins->execute([$user, $hash]);
+    $ins = $pdo->prepare("INSERT INTO {$TABLE_USERS} (username, password_hash, role) VALUES (?, ?, ?)");
+    $ins->execute([$user, $hash, 'super_admin']);
     $seed_notice = "Usuario creado: <strong>" . h($user) . "</strong> / <strong>" . h($pass) . "</strong>";
   }
 } catch (Throwable $e) { /* log opcional */ }
@@ -86,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $minutes = max(1, (int) ceil(($lockedUntil - time()) / 60));
       $error = 'Demasiados intentos fallidos. Intenta nuevamente en ' . $minutes . ' minuto' . ($minutes === 1 ? '' : 's') . '.';
     } else {
-      $stmt = $pdo->prepare("SELECT id, username, password_hash FROM {$TABLE_USERS} WHERE username = ? LIMIT 1");
+      $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM {$TABLE_USERS} WHERE username = ? LIMIT 1");
       $stmt->execute([$username]);
       $row = $stmt->fetch();
 
@@ -98,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         session_regenerate_id(true);
         $_SESSION['user_id'] = (int) $row['id'];
         $_SESSION['username'] = (string) $row['username'];
+        $_SESSION['role'] = normalize_role($row['role'] ?? null);
 
         if (empty($_SESSION['csrf'])) {
           $_SESSION['csrf'] = bin2hex(random_bytes(32));

@@ -121,6 +121,12 @@ SQL);
 
 ensure_dashboard_schema($pdo, $DB_NAME, $TABLE_LEADS);
 
+$currentRole = current_user_role();
+$currentRoleLabel = role_label($currentRole);
+require_permission('view_dashboard');
+$canEditLeads = can('edit_leads');
+$canManageUsers = can('manage_users');
+
 $perPage = 50;
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $q = trim((string) ($_GET['q'] ?? ''));
@@ -403,6 +409,7 @@ function reminder_display(array $lead): string {
     .wa-btn, .user-btn, .logout-btn, .search-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; text-decoration:none; height:40px; padding:0 14px; font-size:.95rem; font-weight:800; cursor:pointer; transition:background .2s ease, transform .06s ease, border-color .2s ease, color .2s ease; }
     .wa-btn:hover, .user-btn:hover, .logout-btn:hover, .search-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .wa-btn:active, .user-btn:active, .logout-btn:active, .search-btn:active { transform:translateY(1px); }
+    .role-pill { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:0 10px; border-radius:999px; border:1px solid #8bdfff; background:#eefaff; color:#006e95; font-size:.78rem; font-weight:900; white-space:nowrap; }
     .search-form { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .search-input { height:40px; min-width:360px; padding:0 12px; color:var(--brand-ink); border-radius:10px; border:1px solid var(--line); background:#fff; outline:none; }
     .search-input::placeholder { color:#7b8ca5; }
@@ -446,6 +453,18 @@ function reminder_display(array $lead): string {
     .sales-status-select[data-status="cliente_perdido"] { --status-color:#cf4d5b; --status-bg:#fff1f2; }
     .sales-status-select[data-status="no_responde"] { --status-color:#64748b; --status-bg:#f1f5f9; }
     .sales-status-select[data-status="no_califica"] { --status-color:#8a5a44; --status-bg:#f8f1ed; }
+    .sales-status-badge { --status-color:#8bdfff; --status-bg:#fff; display:inline-flex; align-items:center; min-height:34px; padding:0 11px; border:1px solid var(--status-color); border-left-width:5px; border-radius:10px; background:var(--status-bg); color:var(--brand-ink); font-size:.9rem; font-weight:850; white-space:nowrap; }
+    .sales-status-badge[data-status="nuevo_lead"] { --status-color:#00a9e0; --status-bg:#e8faff; }
+    .sales-status-badge[data-status="contactado"] { --status-color:#5f7cff; --status-bg:#eef2ff; }
+    .sales-status-badge[data-status="diagnostico_agendado"] { --status-color:#9b6bff; --status-bg:#f4efff; }
+    .sales-status-badge[data-status="propuesta_enviada"] { --status-color:#d69e2e; --status-bg:#fff8df; }
+    .sales-status-badge[data-status="en_negociacion"] { --status-color:#f97316; --status-bg:#fff2e8; }
+    .sales-status-badge[data-status="cliente_ganado"] { --status-color:#2f9e62; --status-bg:#eef9f0; }
+    .sales-status-badge[data-status="cliente_perdido"] { --status-color:#cf4d5b; --status-bg:#fff1f2; }
+    .sales-status-badge[data-status="no_responde"] { --status-color:#64748b; --status-bg:#f1f5f9; }
+    .sales-status-badge[data-status="no_califica"] { --status-color:#8a5a44; --status-bg:#f8f1ed; }
+    .readonly-text { min-width:220px; max-width:300px; color:var(--brand-ink); line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .readonly-muted { color:var(--brand-muted); font-weight:750; }
     .updated-cell { color:var(--brand-muted); font-size:.88rem; font-weight:700; white-space:nowrap; }
     .pager { display:flex; gap:8px; align-items:center; justify-content:flex-end; margin-top:14px; flex-wrap:wrap; }
     .pager a, .pager span { padding:6px 10px; border-radius:10px; border:1px solid var(--line); color:#007ea8; text-decoration:none; background:var(--surface-soft); font-weight:800; }
@@ -527,6 +546,8 @@ function reminder_display(array $lead): string {
               <?php if ($filterAd !== ''): ?><input type="hidden" name="ad" value="<?= h($filterAd) ?>"><?php endif; ?>
               <button class="search-btn" type="submit">Buscar</button>
             </form>
+            <span class="role-pill"><?= h($currentRoleLabel) ?></span>
+            <?php if ($canManageUsers): ?><a class="user-btn" href="users.php" title="Administrar usuarios">Usuarios</a><?php endif; ?>
             <button type="button" class="user-btn" data-modal-open="profileModal" title="Perfil de usuario">👤 <?= h($_SESSION['username']) ?></button>
             <form action="logout.php" method="post" style="margin:0">
               <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
@@ -673,6 +694,7 @@ function reminder_display(array $lead): string {
                 <?php
                   $wa = wa_number_from_formatted((string) $lead['phone']);
                   $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
+                  $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
                   $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
                 ?>
                 <tr data-id="<?= (int) $lead['id'] ?>">
@@ -707,21 +729,33 @@ function reminder_display(array $lead): string {
                   <td><span class="cell-truncate" title="<?= h(dash_value($lead['utm_campaign'] ?? null)) ?>"><?= h(short_value($lead['utm_campaign'] ?? null, 42)) ?></span></td>
                   <td><span class="cell-truncate" title="<?= h($adValue) ?>"><?= h(short_value($adValue, 42)) ?></span></td>
                   <td>
-                    <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
-                      <?php foreach (sales_status_options() as $value => $label): ?>
-                        <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                      <?php endforeach; ?>
-                    </select>
+                    <?php if ($canEditLeads): ?>
+                      <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
+                        <?php foreach (sales_status_options() as $value => $label): ?>
+                          <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                    <?php else: ?>
+                      <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <div class="reminder-control" data-id="<?= (int) $lead['id'] ?>">
-                      <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
-                      <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
-                      <button class="reminder-clear" type="button">Limpiar</button>
-                    </div>
+                    <?php if ($canEditLeads): ?>
+                      <div class="reminder-control" data-id="<?= (int) $lead['id'] ?>">
+                        <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
+                        <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
+                        <button class="reminder-clear" type="button">Limpiar</button>
+                      </div>
+                    <?php else: ?>
+                      <div class="readonly-text"><?= h(reminder_display($lead)) ?></div>
+                    <?php endif; ?>
                   </td>
                   <td>
-                    <textarea class="notes-input" data-id="<?= (int) $lead['id'] ?>" maxlength="2000" rows="2" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
+                    <?php if ($canEditLeads): ?>
+                      <textarea class="notes-input" data-id="<?= (int) $lead['id'] ?>" maxlength="2000" rows="2" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
+                    <?php else: ?>
+                      <div class="readonly-text"><?= h(dash_value($lead['notes'] ?? null)) ?></div>
+                    <?php endif; ?>
                   </td>
                   <td class="updated-cell" title="<?= h(updated_display($lead)) ?>"><?= h(updated_display($lead)) ?></td>
                   <td class="cell-nowrap"><?= h((string) ($lead['created_at'] ?? '')) ?></td>
@@ -762,6 +796,7 @@ function reminder_display(array $lead): string {
                     <?php
                       $wa = wa_number_from_formatted((string) $lead['phone']);
                       $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
+                      $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
                       $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
                       $igUrl = instagram_url($lead['brand_instagram'] ?? '');
                       $igHandle = instagram_handle($lead['brand_instagram'] ?? '');
@@ -784,16 +819,20 @@ function reminder_display(array $lead): string {
                       <?php if (dash_value($lead['message'] ?? null) !== '—'): ?>
                         <div class="funnel-note"><?= h(short_value($lead['message'] ?? null, 130)) ?></div>
                       <?php endif; ?>
-                      <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
-                        <?php foreach (sales_status_options() as $value => $label): ?>
-                          <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                      <div class="reminder-control" data-id="<?= (int) $lead['id'] ?>">
-                        <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
-                        <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
-                        <button class="reminder-clear" type="button">Limpiar</button>
-                      </div>
+                      <?php if ($canEditLeads): ?>
+                        <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
+                          <?php foreach (sales_status_options() as $value => $label): ?>
+                            <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                        <div class="reminder-control" data-id="<?= (int) $lead['id'] ?>">
+                          <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
+                          <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
+                          <button class="reminder-clear" type="button">Limpiar</button>
+                        </div>
+                      <?php else: ?>
+                        <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
+                      <?php endif; ?>
                     </article>
                   <?php endforeach; else: ?>
                     <p class="funnel-empty">Sin leads en este estado.</p>

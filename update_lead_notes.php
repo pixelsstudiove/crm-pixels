@@ -6,6 +6,12 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 header('Content-Type: application/json; charset=utf-8');
 
+if (!can('edit_leads')) {
+  http_response_code(403);
+  echo json_encode(['ok' => false, 'error' => 'No tienes permiso para editar leads'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 $csrf = $_POST['csrf'] ?? '';
 if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], (string) $csrf)) {
   http_response_code(403);

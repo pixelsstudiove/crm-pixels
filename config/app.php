@@ -106,6 +106,35 @@ $app = [
     ],
   ],
 
+  'roles' => [
+    'default' => 'asesor',
+    'legacy_map' => [
+      'admin' => 'super_admin',
+    ],
+    'profiles' => [
+      'super_admin' => [
+        'label' => 'Super administrador',
+        'description' => 'Control total del CRM, usuarios, leads y configuracion.',
+        'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'view_reports'],
+      ],
+      'admin_comercial' => [
+        'label' => 'Administrador comercial',
+        'description' => 'Gestiona todos los leads, embudo, recordatorios y metricas comerciales.',
+        'permissions' => ['view_dashboard', 'edit_leads', 'view_reports'],
+      ],
+      'asesor' => [
+        'label' => 'Asesor comercial',
+        'description' => 'Da seguimiento a leads, cambia status, agrega notas y recordatorios.',
+        'permissions' => ['view_dashboard', 'edit_leads'],
+      ],
+      'lectura' => [
+        'label' => 'Solo lectura',
+        'description' => 'Consulta el dashboard sin modificar leads ni recordatorios.',
+        'permissions' => ['view_dashboard'],
+      ],
+    ],
+  ],
+
   'whatsapp' => [
     'enabled' => filter_var(env_value('EVO_ENABLED', 'false'), FILTER_VALIDATE_BOOL),
     'base_url' => (string) env_value('EVO_BASE', ''),
@@ -147,6 +176,63 @@ if (!function_exists('app_config')) {
 if (!function_exists('h')) {
   function h($value): string {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+  }
+}
+
+if (!function_exists('role_profiles')) {
+  function role_profiles(): array {
+    return (array) app_config('roles.profiles', []);
+  }
+}
+
+if (!function_exists('normalize_role')) {
+  function normalize_role($role): string {
+    $role = trim((string) $role);
+    $legacyMap = (array) app_config('roles.legacy_map', []);
+    if (isset($legacyMap[$role])) $role = (string) $legacyMap[$role];
+    $profiles = role_profiles();
+    if (isset($profiles[$role])) return $role;
+    $default = (string) app_config('roles.default', 'asesor');
+    return isset($profiles[$default]) ? $default : (array_key_first($profiles) ?: 'asesor');
+  }
+}
+
+if (!function_exists('role_label')) {
+  function role_label($role): string {
+    $role = normalize_role($role);
+    return (string) app_config('roles.profiles.' . $role . '.label', $role);
+  }
+}
+
+if (!function_exists('current_user_role')) {
+  function current_user_role(): string {
+    return normalize_role($_SESSION['role'] ?? app_config('roles.default', 'asesor'));
+  }
+}
+
+if (!function_exists('current_user_permissions')) {
+  function current_user_permissions(): array {
+    $role = current_user_role();
+    $permissions = app_config('roles.profiles.' . $role . '.permissions', []);
+    return is_array($permissions) ? $permissions : [];
+  }
+}
+
+if (!function_exists('can')) {
+  function can(string $permission): bool {
+    return in_array($permission, current_user_permissions(), true);
+  }
+}
+
+if (!function_exists('require_permission')) {
+  function require_permission(string $permission): void {
+    if (can($permission)) return;
+    if (!headers_sent()) {
+      header('Content-Type: text/html; charset=utf-8');
+      http_response_code(403);
+    }
+    echo 'No tienes permiso para acceder a esta seccion.';
+    exit;
   }
 }
 

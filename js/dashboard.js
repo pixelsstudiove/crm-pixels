@@ -173,7 +173,7 @@
           updatedCell.textContent = data.updated_at;
           updatedCell.setAttribute('title', data.updated_at);
         }
-        if(control.closest('.funnel-card')){
+        if(field.closest('.funnel-card')){
           window.location.reload();
         }
       }catch(_){
