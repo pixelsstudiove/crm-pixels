@@ -14,6 +14,7 @@ $channelsTable = ig_channels_table();
 
 $canSendMessages = can('send_messages');
 $canManageConversations = can('manage_conversations') || can('send_messages');
+$canEditLeads = can('edit_leads');
 $statusOptions = [
   'abierta' => 'Abierta',
   'pendiente' => 'Pendiente',
@@ -21,6 +22,10 @@ $statusOptions = [
   'cerrada' => 'Cerrada',
   'spam' => 'Spam / no califica',
 ];
+$salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
+if ($salesStatusOptions === []) {
+  $salesStatusOptions = ['nuevo_lead' => 'Nuevo lead', 'contactado' => 'Contactado', 'diagnostico_agendado' => 'Diagnóstico agendado'];
+}
 
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
@@ -41,6 +46,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
       }
       $errors[] = 'Selecciona un estado valido.';
+    } elseif ($action === 'update_sales_status' && $canEditLeads && $conversationId > 0) {
+      $leadId = (int) ($_POST['lead_id'] ?? 0);
+      $salesStatus = (string) ($_POST['sales_status'] ?? '');
+      if ($leadId > 0 && array_key_exists($salesStatus, $salesStatusOptions)) {
+        $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
+        $stmt->execute([$salesStatus, $leadId]);
+        header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
+        exit;
+      }
+      $errors[] = 'Selecciona un status comercial valido.';
     }
   }
 }
@@ -205,10 +220,10 @@ function inbox_time($value): string {
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
             <h1 class="title">Inbox conversacional</h1>
-            <p class="subtitle">Gestiona conversaciones de Instagram sin mezclar la bandeja con el CRM de formularios.</p>
+            <p class="subtitle">Gestiona conversaciones de Instagram y su avance comercial desde el CRM.</p>
           </div>
           <div class="inbox-actions">
-            <a class="inbox-link" href="dashboard.php">CRM de formularios</a>
+            <a class="inbox-link" href="dashboard.php">Embudo comercial</a>
             <?php if (can('manage_integrations')): ?><a class="inbox-link" href="channels.php">Canales</a><?php endif; ?>
             <?php if (can('manage_integrations')): ?><a class="inbox-link" href="webhook_logs.php">Eventos</a><?php endif; ?>
             <span class="role-pill"><?= h(role_label(current_user_role())) ?></span>
@@ -259,7 +274,7 @@ function inbox_time($value): string {
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
                   <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></p>
                 </div>
-                <?php if (!empty($selected['lead_id'])): ?><a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['lead_id'] ?>">Ver lead #<?= (int) $selected['lead_id'] ?></a><?php endif; ?>
+                <a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['id'] ?>">Ver en embudo</a>
               </header>
 
               <div class="message-list" id="messageList" data-last-id="<?= (int) $lastMessageId ?>">
@@ -299,6 +314,25 @@ function inbox_time($value): string {
               <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
               <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
               <div class="info-row"><span>Lead vinculado</span><strong><?= !empty($selected['lead_id']) ? '#' . (int) $selected['lead_id'] . ' · ' . h((string) ($selected['lead_fullname'] ?? '')) : 'Sin vincular' ?></strong></div>
+              <div class="info-row"><span>Status comercial</span><strong><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
+
+              <?php if (!empty($selected['lead_id'])): ?>
+              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>">
+                <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                <input type="hidden" name="action" value="update_sales_status">
+                <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
+                <input type="hidden" name="lead_id" value="<?= (int) $selected['lead_id'] ?>">
+                <label class="field">
+                  <span class="field-label">Status comercial</span>
+                  <select name="sales_status" <?= $canEditLeads ? '' : 'disabled' ?>>
+                    <?php foreach ($salesStatusOptions as $value => $label): ?>
+                      <option value="<?= h($value) ?>" <?= (string) ($selected['lead_sales_status'] ?? '') === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </label>
+                <button class="inbox-btn" type="submit" <?= $canEditLeads ? '' : 'disabled' ?>>Actualizar status comercial</button>
+              </form>
+              <?php endif; ?>
 
               <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">

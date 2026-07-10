@@ -2,6 +2,7 @@
 // dashboard.php
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
+require_once __DIR__ . '/config/conversations.php';
 
 function column_exists_dash(PDO $pdo, string $dbName, string $table, string $column): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?");
@@ -151,6 +152,11 @@ SQL);
 }
 
 ensure_dashboard_schema($pdo, $DB_NAME, $TABLE_LEADS);
+conv_ensure_schema($pdo);
+
+$contactsTable = conv_contacts_table();
+$conversationsTable = conv_conversations_table();
+$channelsTable = ig_channels_table();
 
 $currentRole = current_user_role();
 $currentRoleLabel = role_label($currentRole);
@@ -180,58 +186,60 @@ if ($filterService !== '' && !in_array($filterService, $serviceOptions, true)) $
 if ($filterBusinessType !== '' && !in_array($filterBusinessType, $businessTypeOptions, true)) $filterBusinessType = '';
 if ($filterSalesStatus !== '' && !array_key_exists($filterSalesStatus, $salesStatusOptions)) $filterSalesStatus = '';
 
-function dash_distinct_values(PDO $pdo, string $table, string $column, int $limit = 100): array {
+function dash_distinct_values(PDO $pdo, string $conversationsTable, string $contactsTable, string $channelsTable, string $leadsTable, string $column, int $limit = 100): array {
   $allowed = ['source_platform', 'utm_campaign', 'ad_name', 'utm_content', 'ad_id'];
   if (!in_array($column, $allowed, true)) return [];
   $limit = max(1, min(200, $limit));
-  $stmt = $pdo->query("SELECT DISTINCT {$column} AS value FROM {$table} WHERE {$column} IS NOT NULL AND TRIM({$column}) <> '' ORDER BY {$column} ASC LIMIT {$limit}");
+  $stmt = $pdo->query("SELECT DISTINCT l.{$column} AS value FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id = c.contact_id LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id LEFT JOIN {$leadsTable} l ON l.id = c.lead_id WHERE l.{$column} IS NOT NULL AND TRIM(l.{$column}) <> '' ORDER BY l.{$column} ASC LIMIT {$limit}");
   $values = $stmt ? $stmt->fetchAll(PDO::FETCH_COLUMN) : [];
   return array_values(array_filter(array_map('trim', array_map('strval', $values)), static fn($v) => $v !== ''));
 }
 
-$platformOptions = dash_distinct_values($pdo, $TABLE_LEADS, 'source_platform');
-$campaignOptions = dash_distinct_values($pdo, $TABLE_LEADS, 'utm_campaign');
+$platformOptions = dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'source_platform');
+$campaignOptions = dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'utm_campaign');
 $adOptions = array_values(array_unique(array_filter(array_merge(
-  dash_distinct_values($pdo, $TABLE_LEADS, 'ad_name'),
-  dash_distinct_values($pdo, $TABLE_LEADS, 'utm_content'),
-  dash_distinct_values($pdo, $TABLE_LEADS, 'ad_id')
+  dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'ad_name'),
+  dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'utm_content'),
+  dash_distinct_values($pdo, $conversationsTable, $contactsTable, $channelsTable, $TABLE_LEADS, 'ad_id')
 ), static fn($v) => $v !== '')));
 sort($adOptions, SORT_NATURAL | SORT_FLAG_CASE);
 
+$defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
 $whereConditions = [];
 $whereParams = [];
 if ($q !== '') {
   $digits = preg_replace('/\D+/', '', $q) ?: $q;
-  $whereConditions[] = "(fullname LIKE :q OR phone LIKE :q OR REPLACE(COALESCE(phone,''),'-','') LIKE :qd OR email LIKE :q OR brand_instagram LIKE :q OR business_type LIKE :q OR business_type_other LIKE :q OR services_needed LIKE :q OR main_objective LIKE :q OR message LIKE :q OR last_inbound_message LIKE :q OR source_platform LIKE :q OR utm_source LIKE :q OR utm_medium LIKE :q OR utm_campaign LIKE :q OR utm_content LIKE :q OR utm_term LIKE :q OR ad_name LIKE :q OR ad_id LIKE :q OR external_contact_id LIKE :q OR sales_status LIKE :q OR notes LIKE :q OR reminder_note LIKE :q)";
+  $whereConditions[] = "(c.id LIKE :q OR l.id LIKE :q OR ct.display_name LIKE :q OR ct.username LIKE :q OR ct.external_contact_id LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q OR l.fullname LIKE :q OR l.phone LIKE :q OR REPLACE(COALESCE(l.phone,''),'-','') LIKE :qd OR l.email LIKE :q OR l.brand_instagram LIKE :q OR l.business_type LIKE :q OR l.business_type_other LIKE :q OR l.services_needed LIKE :q OR l.main_objective LIKE :q OR l.message LIKE :q OR l.last_inbound_message LIKE :q OR l.source_platform LIKE :q OR l.utm_source LIKE :q OR l.utm_medium LIKE :q OR l.utm_campaign LIKE :q OR l.utm_content LIKE :q OR l.utm_term LIKE :q OR l.ad_name LIKE :q OR l.ad_id LIKE :q OR l.external_contact_id LIKE :q OR l.sales_status LIKE :q OR l.notes LIKE :q OR l.reminder_note LIKE :q)";
   $whereParams[':q'] = '%' . $q . '%';
   $whereParams[':qd'] = '%' . $digits . '%';
 }
 if ($filterObjective !== '') {
-  $whereConditions[] = 'main_objective = :objective';
+  $whereConditions[] = 'l.main_objective = :objective';
   $whereParams[':objective'] = $filterObjective;
 }
 if ($filterService !== '') {
-  $whereConditions[] = 'services_needed LIKE :service';
+  $whereConditions[] = 'l.services_needed LIKE :service';
   $whereParams[':service'] = '%' . $filterService . '%';
 }
 if ($filterSalesStatus !== '') {
-  $whereConditions[] = 'sales_status = :sales_status';
+  $whereConditions[] = "COALESCE(l.sales_status, :default_sales_status_filter) = :sales_status";
+  $whereParams[':default_sales_status_filter'] = $defaultSalesStatus;
   $whereParams[':sales_status'] = $filterSalesStatus;
 }
 if ($filterBusinessType !== '') {
-  $whereConditions[] = 'business_type = :business_type';
+  $whereConditions[] = 'l.business_type = :business_type';
   $whereParams[':business_type'] = $filterBusinessType;
 }
 if ($filterPlatform !== '') {
-  $whereConditions[] = 'source_platform = :platform';
+  $whereConditions[] = 'l.source_platform = :platform';
   $whereParams[':platform'] = $filterPlatform;
 }
 if ($filterCampaign !== '') {
-  $whereConditions[] = 'utm_campaign = :campaign';
+  $whereConditions[] = 'l.utm_campaign = :campaign';
   $whereParams[':campaign'] = $filterCampaign;
 }
 if ($filterAd !== '') {
-  $whereConditions[] = '(ad_name = :ad OR utm_content = :ad OR ad_id = :ad)';
+  $whereConditions[] = '(l.ad_name = :ad OR l.utm_content = :ad OR l.ad_id = :ad)';
   $whereParams[':ad'] = $filterAd;
 }
 
@@ -247,14 +255,18 @@ $activeFilters = array_filter([
   'ad' => $filterAd,
 ], static fn($v) => $v !== '' && $v !== null);
 
-$countSql = "SELECT COUNT(*) FROM {$TABLE_LEADS} {$whereSql}";
+$conversationFromSql = "FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id = c.contact_id LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id";
+
+$countSql = "SELECT COUNT(*) {$conversationFromSql} {$whereSql}";
 $countStmt = $pdo->prepare($countSql);
 foreach ($whereParams as $key => $value) $countStmt->bindValue($key, $value);
 $countStmt->execute();
 $total = (int) $countStmt->fetchColumn();
 
-$statusCountsSql = "SELECT sales_status, COUNT(*) AS total FROM {$TABLE_LEADS} {$whereSql} GROUP BY sales_status";
+$statusCountsSql = "SELECT COALESCE(l.sales_status, :default_sales_status_count) AS sales_status, COUNT(*) AS total {$conversationFromSql} {$whereSql} GROUP BY COALESCE(l.sales_status, :default_sales_status_group)";
 $statusCountsStmt = $pdo->prepare($statusCountsSql);
+$statusCountsStmt->bindValue(':default_sales_status_count', $defaultSalesStatus);
+$statusCountsStmt->bindValue(':default_sales_status_group', $defaultSalesStatus);
 foreach ($whereParams as $key => $value) $statusCountsStmt->bindValue($key, $value);
 $statusCountsStmt->execute();
 $statusCounts = [];
@@ -275,9 +287,54 @@ foreach ($salesStatusOptions as $statusValue => $statusLabel) {
   $funnelLeadsByStatus[(string) $statusValue] = [];
 }
 $funnelOverflow = false;
-$funnelSql = "SELECT id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message, source_platform, utm_campaign, utm_content, ad_name, ad_id, sales_status, notes, reminder_at, reminder_note, external_source, external_contact_id, external_thread_id, last_message_at, last_inbound_message, created_at, updated_at FROM {$TABLE_LEADS} %WHERE% ORDER BY created_at DESC LIMIT :limit";
+$funnelSql = <<<SQL
+SELECT
+  COALESCE(l.id, 0) AS id,
+  c.id AS conversation_id,
+  c.status AS conversation_status,
+  c.unread_count,
+  c.last_message_preview AS conversation_preview,
+  c.last_message_at AS conversation_last_message_at,
+  c.created_at AS conversation_created_at,
+  c.updated_at AS conversation_updated_at,
+  ct.display_name AS contact_display_name,
+  ct.username AS contact_username,
+  ct.profile_url AS contact_profile_url,
+  ch.page_name,
+  ch.instagram_username AS channel_username,
+  COALESCE(l.fullname, ct.display_name, NULLIF(CONCAT('@', TRIM(LEADING '@' FROM COALESCE(ct.username, ''))), '@'), 'Contacto de Instagram') AS fullname,
+  l.phone,
+  l.email,
+  COALESCE(l.brand_instagram, ct.username) AS brand_instagram,
+  l.business_type,
+  l.business_type_other,
+  l.services_needed,
+  l.main_objective,
+  l.message,
+  COALESCE(l.source_platform, c.external_source) AS source_platform,
+  l.utm_campaign,
+  l.utm_content,
+  l.ad_name,
+  l.ad_id,
+  COALESCE(l.sales_status, :default_sales_status_select) AS sales_status,
+  l.notes,
+  l.reminder_at,
+  l.reminder_note,
+  COALESCE(l.external_source, c.external_source) AS external_source,
+  COALESCE(l.external_contact_id, ct.external_contact_id) AS external_contact_id,
+  c.external_thread_id,
+  COALESCE(l.last_message_at, c.last_message_at) AS last_message_at,
+  COALESCE(l.last_inbound_message, c.last_message_preview) AS last_inbound_message,
+  COALESCE(l.created_at, c.created_at) AS created_at,
+  COALESCE(l.updated_at, c.updated_at) AS updated_at
+{$conversationFromSql}
+%WHERE%
+ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
+LIMIT :limit
+SQL;
 $funnelSql = str_replace('%WHERE%', $whereSql, $funnelSql);
 $funnelStmt = $pdo->prepare($funnelSql);
+$funnelStmt->bindValue(':default_sales_status_select', $defaultSalesStatus);
 foreach ($whereParams as $key => $value) $funnelStmt->bindValue($key, $value);
 $funnelStmt->bindValue(':limit', $funnelLimit, PDO::PARAM_INT);
 $funnelStmt->execute();
@@ -470,6 +527,9 @@ function reminder_display(array $lead): string {
     .funnel-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
     .funnel-card-title strong { color:var(--brand-ink); line-height:1.2; }
     .funnel-id { color:#007ea8; font-size:.78rem; font-weight:900; }
+    .funnel-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .funnel-action-link { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:0 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.82rem; font-weight:850; text-decoration:none; }
+    .funnel-action-link:hover { background:#dff6ff; border-color:#8bdfff; }
     .funnel-meta { display:grid; gap:4px; color:var(--brand-muted); font-size:.83rem; line-height:1.3; }
     .funnel-meta a { color:#007ea8; font-weight:800; text-decoration:none; }
     .funnel-meta a:hover { text-decoration:underline; }
@@ -540,7 +600,7 @@ function reminder_display(array $lead): string {
           <?= h(app_config('ui.dashboard_subtitle', 'Listado de registros')) ?><?= $q !== '' ? " – Búsqueda: <strong>" . h($q) . "</strong>" : '' ?>
         </p>
 
-        <div class="summary-grid" aria-label="Resumen de leads">
+        <div class="summary-grid" aria-label="Resumen comercial">
           <?php foreach ($summaryCards as $card): ?>
             <div class="summary-card" data-tone="<?= h($card['tone']) ?>">
               <strong><?= (int) $card['value'] ?></strong>
@@ -551,7 +611,7 @@ function reminder_display(array $lead): string {
 
         <button class="filters-toggle" type="button" data-filters-toggle aria-controls="leadFilters" aria-expanded="false">Filtros<?= $activeFilters ? ' (' . count($activeFilters) . ')' : '' ?></button>
 
-        <div class="lead-filters" id="leadFilters" aria-label="Filtros de leads">
+        <div class="lead-filters" id="leadFilters" aria-label="Filtros de conversaciones">
           <form class="filters-form" method="get" action="dashboard.php">
             <?php if ($q !== ''): ?><input type="hidden" name="q" value="<?= h($q) ?>"><?php endif; ?>
 
@@ -631,7 +691,7 @@ function reminder_display(array $lead): string {
             </div>
           </form>
           <?php if ($activeFilters): ?>
-            <p class="active-filter-note">Mostrando <?= (int) $total ?> resultado<?= $total === 1 ? '' : 's' ?> con los filtros activos.</p>
+            <p class="active-filter-note">Mostrando <?= (int) $total ?> conversacion<?= $total === 1 ? '' : 'es' ?> con los filtros activos.</p>
           <?php endif; ?>
         </div>
 
@@ -647,6 +707,8 @@ function reminder_display(array $lead): string {
                 <div class="funnel-list">
                   <?php if ($cards): foreach ($cards as $lead): ?>
                     <?php
+                      $conversationId = (int) ($lead['conversation_id'] ?? 0);
+                      $leadId = (int) ($lead['id'] ?? 0);
                       $phoneValue = dash_value($lead['phone'] ?? null);
                       $wa = $phoneValue !== '—' ? wa_number_from_formatted($phoneValue) : '';
                       $isInstagramLead = is_instagram_lead($lead);
@@ -656,10 +718,14 @@ function reminder_display(array $lead): string {
                       $igUrl = instagram_url($lead['brand_instagram'] ?? '');
                       $igHandle = instagram_handle($lead['brand_instagram'] ?? '');
                     ?>
-                    <article class="funnel-card" data-id="<?= (int) $lead['id'] ?>">
+                    <article class="funnel-card" data-id="<?= $leadId ?>" data-conversation-id="<?= $conversationId ?>">
                       <div class="funnel-card-title">
                         <strong><?= h(short_value($lead['fullname'] ?? null, 34)) ?></strong>
-                        <span class="funnel-id">#<?= (int) $lead['id'] ?></span>
+                        <span class="funnel-id">Conv #<?= $conversationId ?></span>
+                      </div>
+                      <div class="funnel-actions">
+                        <a class="funnel-action-link" href="inbox.php?id=<?= $conversationId ?>">Abrir conversación</a>
+                        <?php if ($leadId > 0): ?><span class="funnel-id">Lead #<?= $leadId ?></span><?php endif; ?>
                       </div>
                       <div class="funnel-meta">
                         <span>
@@ -683,32 +749,32 @@ function reminder_display(array $lead): string {
                       <?php if (lead_message_display($lead) !== '—'): ?>
                         <div class="funnel-note"><?= h(short_value(lead_message_display($lead), 130)) ?></div>
                       <?php endif; ?>
-                      <?php if ($canEditLeads): ?>
-                        <select class="sales-status-select" data-id="<?= (int) $lead['id'] ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
+                      <?php if ($canEditLeads && $leadId > 0): ?>
+                        <select class="sales-status-select" data-id="<?= $leadId ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
                           <?php foreach (sales_status_options() as $value => $label): ?>
                             <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
                           <?php endforeach; ?>
                         </select>
-                        <div class="reminder-control" data-id="<?= (int) $lead['id'] ?>">
+                        <div class="reminder-control" data-id="<?= $leadId ?>">
                           <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
                           <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
                           <button class="reminder-clear" type="button">Limpiar</button>
                         </div>
-                        <textarea class="notes-input" data-id="<?= (int) $lead['id'] ?>" maxlength="2000" rows="3" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
+                        <textarea class="notes-input" data-id="<?= $leadId ?>" maxlength="2000" rows="3" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
                       <?php else: ?>
                         <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
                         <div class="readonly-text"><?= h(dash_value($lead['notes'] ?? null)) ?></div>
                       <?php endif; ?>
                     </article>
                   <?php endforeach; else: ?>
-                    <p class="funnel-empty">Sin leads en este estado.</p>
+                    <p class="funnel-empty">Sin conversaciones en este estado.</p>
                   <?php endif; ?>
                 </div>
               </section>
             <?php endforeach; ?>
           </div>
           <?php if ($funnelOverflow): ?>
-            <p class="funnel-limit-note">Mostrando los <?= (int) $funnelLimit ?> leads más recientes del resultado filtrado.</p>
+            <p class="funnel-limit-note">Mostrando las <?= (int) $funnelLimit ?> conversaciones más recientes del resultado filtrado.</p>
           <?php endif; ?>
         </div>
       </div>
