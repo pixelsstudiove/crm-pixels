@@ -140,3 +140,26 @@ CREATE TABLE IF NOT EXISTS `conversation_messages` (
   KEY `idx_direction` (`direction`),
   KEY `idx_sent_at` (`sent_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `webhook_event_logs` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `source` VARCHAR(40) NOT NULL DEFAULT 'instagram',
+  `event_type` VARCHAR(60) NULL,
+  `status` VARCHAR(40) NOT NULL,
+  `recipient_id` VARCHAR(180) NULL,
+  `sender_id` VARCHAR(180) NULL,
+  `channel_id` INT UNSIGNED NULL,
+  `channel_username` VARCHAR(180) NULL,
+  `external_message_id` VARCHAR(180) NULL,
+  `lead_id` INT UNSIGNED NULL,
+  `conversation_id` INT UNSIGNED NULL,
+  `message_preview` VARCHAR(255) NULL,
+  `error_message` VARCHAR(255) NULL,
+  `payload_json` MEDIUMTEXT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_source_created_at` (`source`, `created_at`),
+  KEY `idx_status` (`status`),
+  KEY `idx_recipient_id` (`recipient_id`),
+  KEY `idx_sender_id` (`sender_id`),
+  KEY `idx_channel_id` (`channel_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

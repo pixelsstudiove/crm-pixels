@@ -221,7 +221,7 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
   ];
 }
 
-function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): void {
+function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): int {
   try {
     conv_ensure_schema($pdo);
     $contactId = conv_upsert_contact($pdo, [
@@ -231,7 +231,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'username' => $profileUsername,
       'last_seen_at' => $messageAt,
     ]);
-    if ($contactId <= 0) return;
+    if ($contactId <= 0) return 0;
 
     $conversationId = conv_upsert_conversation($pdo, [
       'channel_id' => $channel['id'] ?? null,
@@ -243,7 +243,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'last_message_at' => $messageAt,
       'unread_increment' => 0,
     ]);
-    if ($conversationId <= 0) return;
+    if ($conversationId <= 0) return 0;
 
     $messageType = isset($event['message']['text']) ? 'text' : (isset($event['postback']) ? 'postback' : 'attachment');
     $inserted = conv_add_message($pdo, [
@@ -270,8 +270,10 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
         'unread_increment' => 1,
       ]);
     }
+    return $conversationId;
   } catch (Throwable $e) {
     /* El webhook no debe fallar si el historial conversacional no pudo escribirse. */
+    return 0;
   }
 }
 
@@ -280,13 +282,36 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   if ($senderId === null) return 0;
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
-  if ($recipientId === null) return 0;
-
-  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId);
-  if (!$channel) return 0;
-
   $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 120);
   $messageText = ig_event_text($event);
+  if ($recipientId === null) {
+    conv_log_webhook_event($pdo, [
+      'status' => 'ignored',
+      'event_type' => 'missing_recipient',
+      'sender_id' => $senderId,
+      'external_message_id' => $messageId,
+      'message_preview' => $messageText,
+      'error_message' => 'Evento sin recipient.id.',
+      'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
+    ]);
+    return 0;
+  }
+
+  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId);
+  if (!$channel) {
+    conv_log_webhook_event($pdo, [
+      'status' => 'ignored',
+      'event_type' => 'inactive_or_unknown_channel',
+      'recipient_id' => $recipientId,
+      'sender_id' => $senderId,
+      'external_message_id' => $messageId,
+      'message_preview' => $messageText,
+      'error_message' => 'No existe canal activo para el recipient.',
+      'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
+    ]);
+    return 0;
+  }
+
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
   $ref = ig_referral_data($event);
@@ -326,7 +351,21 @@ SQL);
         $stamp->execute([$messageAt, (int) $channel['id']]);
       } catch (Throwable $e) { /* no-op */ }
     }
-    ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+    $conversationId = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+    conv_log_webhook_event($pdo, [
+      'status' => $conversationId > 0 ? 'processed' : 'lead_only',
+      'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
+      'recipient_id' => $recipientId,
+      'sender_id' => $senderId,
+      'channel_id' => (int) $channel['id'],
+      'channel_username' => $channel['instagram_username'] ?? $channel['page_name'] ?? null,
+      'external_message_id' => $messageId,
+      'lead_id' => $leadId,
+      'conversation_id' => $conversationId > 0 ? $conversationId : null,
+      'message_preview' => $messageText,
+      'error_message' => $conversationId > 0 ? null : 'Lead actualizado, pero no se pudo sincronizar la conversacion.',
+      'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
+    ]);
     return $leadId;
   }
 
@@ -375,7 +414,21 @@ SQL);
   }
 
   $leadId = (int) $pdo->lastInsertId();
-  ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+  $conversationId = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+  conv_log_webhook_event($pdo, [
+    'status' => $conversationId > 0 ? 'processed' : 'lead_only',
+    'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
+    'recipient_id' => $recipientId,
+    'sender_id' => $senderId,
+    'channel_id' => (int) $channel['id'],
+    'channel_username' => $channel['instagram_username'] ?? $channel['page_name'] ?? null,
+    'external_message_id' => $messageId,
+    'lead_id' => $leadId,
+    'conversation_id' => $conversationId > 0 ? $conversationId : null,
+    'message_preview' => $messageText,
+    'error_message' => $conversationId > 0 ? null : 'Lead creado, pero no se pudo sincronizar la conversacion.',
+    'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
+  ]);
   return $leadId;
 }
 

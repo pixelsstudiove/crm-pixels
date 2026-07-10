@@ -48,7 +48,6 @@ try {
   if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
   $q = trim((string) ($_GET['q'] ?? ''));
   $selectedId = max(0, (int) ($_GET['id'] ?? 0));
-  $afterId = max(0, (int) ($_GET['after_id'] ?? 0));
 
   $where = [];
   $params = [];
@@ -124,8 +123,8 @@ SQL;
     $selected = $detailStmt->fetch() ?: null;
     if ($selected) {
       conv_mark_read($pdo, (int) $selected['id']);
-      $msgStmt = $pdo->prepare("SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? AND m.id>? ORDER BY m.sent_at ASC, m.id ASC");
-      $msgStmt->execute([(int) $selected['id'], $afterId]);
+      $msgStmt = $pdo->prepare("SELECT * FROM (SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at DESC, m.id DESC LIMIT 120) recent_messages ORDER BY sent_at ASC, id ASC");
+      $msgStmt->execute([(int) $selected['id']]);
       foreach ($msgStmt->fetchAll() as $message) {
         $direction = (string) ($message['direction'] ?? 'inbound');
         $messages[] = [

@@ -210,6 +210,7 @@ function inbox_time($value): string {
           <div class="inbox-actions">
             <a class="inbox-link" href="dashboard.php">CRM de formularios</a>
             <?php if (can('manage_integrations')): ?><a class="inbox-link" href="channels.php">Canales</a><?php endif; ?>
+            <?php if (can('manage_integrations')): ?><a class="inbox-link" href="webhook_logs.php">Eventos</a><?php endif; ?>
             <span class="role-pill"><?= h(role_label(current_user_role())) ?></span>
           </div>
         </header>
@@ -412,6 +413,31 @@ function inbox_time($value): string {
       messageList.dataset.lastId = String(inboxState.lastMessageId);
     }
 
+    function messageMarkup(message) {
+      const direction = message.direction === 'outbound' ? 'outbound' : 'inbound';
+      const metaLabel = direction === 'outbound' ? 'Enviado' : 'Recibido';
+      const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
+      return `
+        <article class="message ${direction}" data-message-id="${Number(message.id)}">
+          <div class="message-text">${escapeHtml(message.text || 'Mensaje sin texto')}</div>
+          <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
+        </article>
+      `;
+    }
+
+    function renderMessages(messages) {
+      if (!messageList || !Array.isArray(messages)) return;
+      if (!messages.length) {
+        messageList.innerHTML = '<div class="empty-state">Esta conversacion aun no tiene mensajes guardados.</div>';
+        inboxState.lastMessageId = 0;
+        messageList.dataset.lastId = '0';
+        return;
+      }
+      messageList.innerHTML = messages.map(messageMarkup).join('');
+      inboxState.lastMessageId = messages.reduce((max, message) => Math.max(max, Number(message.id || 0)), 0);
+      messageList.dataset.lastId = String(inboxState.lastMessageId);
+    }
+
     async function pollInbox(force = false) {
       if (inboxState.polling && !force) return;
       inboxState.polling = true;
@@ -420,7 +446,6 @@ function inbox_time($value): string {
         if (inboxState.conversationId) params.set('id', String(inboxState.conversationId));
         if (inboxState.q) params.set('q', inboxState.q);
         if (inboxState.status) params.set('status', inboxState.status);
-        params.set('after_id', String(inboxState.lastMessageId || 0));
         const response = await fetch(`inbox_updates.php?${params.toString()}`, {
           headers: { 'Accept': 'application/json' },
           cache: 'no-store'
@@ -429,8 +454,8 @@ function inbox_time($value): string {
         if (!data.ok) throw new Error(data.error || 'No se pudieron cargar actualizaciones.');
         renderConversations(data.conversations || []);
         const shouldStick = isNearBottom(messageList);
-        for (const message of (data.messages || [])) appendMessage(message);
-        if ((data.messages || []).length && shouldStick) scrollMessagesToBottom();
+        renderMessages(data.messages || []);
+        if (shouldStick) scrollMessagesToBottom();
         if (liveStatus) liveStatus.textContent = 'Actualizado automaticamente.';
       } catch (error) {
         if (liveStatus) liveStatus.textContent = 'Reintentando actualizacion...';

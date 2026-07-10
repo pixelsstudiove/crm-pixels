@@ -16,10 +16,15 @@ function conv_messages_table(): string {
   return safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages');
 }
 
+function conv_webhook_logs_table(): string {
+  return safe_identifier((string) app_config('database.webhook_event_logs_table', 'webhook_event_logs'), 'webhook_event_logs');
+}
+
 function conv_ensure_schema(PDO $pdo): void {
   $contactsTable = conv_contacts_table();
   $conversationsTable = conv_conversations_table();
   $messagesTable = conv_messages_table();
+  $logsTable = conv_webhook_logs_table();
 
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$contactsTable} (
@@ -81,6 +86,31 @@ CREATE TABLE IF NOT EXISTS {$messagesTable} (
   KEY idx_conversation_id (conversation_id),
   KEY idx_direction (direction),
   KEY idx_sent_at (sent_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+
+  $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS {$logsTable} (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  source VARCHAR(40) NOT NULL DEFAULT 'instagram',
+  event_type VARCHAR(60) NULL,
+  status VARCHAR(40) NOT NULL,
+  recipient_id VARCHAR(180) NULL,
+  sender_id VARCHAR(180) NULL,
+  channel_id INT UNSIGNED NULL,
+  channel_username VARCHAR(180) NULL,
+  external_message_id VARCHAR(180) NULL,
+  lead_id INT UNSIGNED NULL,
+  conversation_id INT UNSIGNED NULL,
+  message_preview VARCHAR(255) NULL,
+  error_message VARCHAR(255) NULL,
+  payload_json MEDIUMTEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_source_created_at (source, created_at),
+  KEY idx_status (status),
+  KEY idx_recipient_id (recipient_id),
+  KEY idx_sender_id (sender_id),
+  KEY idx_channel_id (channel_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
 }
@@ -190,6 +220,36 @@ function conv_mark_read(PDO $pdo, int $conversationId): void {
   $table = conv_conversations_table();
   $stmt = $pdo->prepare("UPDATE {$table} SET unread_count=0, updated_at=NOW() WHERE id=?");
   $stmt->execute([$conversationId]);
+}
+
+function conv_log_webhook_event(PDO $pdo, array $data): void {
+  try {
+    conv_ensure_schema($pdo);
+    $table = conv_webhook_logs_table();
+    $stmt = $pdo->prepare(<<<SQL
+INSERT INTO {$table} (
+  source, event_type, status, recipient_id, sender_id, channel_id, channel_username,
+  external_message_id, lead_id, conversation_id, message_preview, error_message, payload_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+SQL);
+    $stmt->execute([
+      conv_clean($data['source'] ?? 'instagram', 40) ?? 'instagram',
+      conv_clean($data['event_type'] ?? null, 60),
+      conv_clean($data['status'] ?? 'received', 40) ?? 'received',
+      conv_clean($data['recipient_id'] ?? null, 180),
+      conv_clean($data['sender_id'] ?? null, 180),
+      isset($data['channel_id']) ? (int) $data['channel_id'] : null,
+      conv_clean($data['channel_username'] ?? null, 180),
+      conv_clean($data['external_message_id'] ?? null, 180),
+      isset($data['lead_id']) ? (int) $data['lead_id'] : null,
+      isset($data['conversation_id']) ? (int) $data['conversation_id'] : null,
+      conv_clean($data['message_preview'] ?? null, 255),
+      conv_clean($data['error_message'] ?? null, 255),
+      isset($data['payload_json']) ? (string) $data['payload_json'] : null,
+    ]);
+  } catch (Throwable $e) {
+    /* Los logs nunca deben romper el webhook. */
+  }
 }
 
 function conv_graph_post_json(string $path, array $payload, string $accessToken): array {

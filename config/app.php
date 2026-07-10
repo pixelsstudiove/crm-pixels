@@ -45,6 +45,7 @@ $app = [
     'conversation_contacts_table' => 'conversation_contacts',
     'conversations_table' => 'conversations',
     'conversation_messages_table' => 'conversation_messages',
+    'webhook_event_logs_table' => 'webhook_event_logs',
   ],
 
   'session' => [

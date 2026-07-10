@@ -12,6 +12,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE `conversation_messages`;
 TRUNCATE TABLE `conversations`;
 TRUNCATE TABLE `conversation_contacts`;
+TRUNCATE TABLE `webhook_event_logs`;
 TRUNCATE TABLE `leads`;
 
 UPDATE `instagram_channels`
