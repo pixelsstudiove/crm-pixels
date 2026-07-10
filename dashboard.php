@@ -399,15 +399,6 @@ function dash_channel_label(array $channel): string {
     .notes-input { width:240px; min-height:38px; resize:vertical; padding:9px 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; line-height:1.35; }
     .notes-input:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .notes-input.is-saving { opacity:.65; cursor:progress; }
-    .reminder-control { width:260px; display:grid; grid-template-columns:1fr auto; gap:7px; align-items:center; }
-    .reminder-at, .reminder-note { min-width:0; height:36px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; font-size:.88rem; }
-    .reminder-at { grid-column:1 / -1; }
-    .reminder-note { width:100%; }
-    .reminder-at:focus, .reminder-note:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
-    .reminder-clear { height:36px; padding:0 10px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-size:.82rem; font-weight:850; cursor:pointer; }
-    .reminder-clear:hover { background:#dff6ff; border-color:#8bdfff; }
-    .reminder-control.is-saving { opacity:.65; cursor:progress; }
-    .funnel-card .reminder-control { width:100%; }
     .topbar { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; flex-wrap:wrap; gap:16px; }
     .topbar-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .wa-btn, .user-btn, .logout-btn, .search-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; text-decoration:none; height:40px; padding:0 14px; font-size:.95rem; font-weight:800; cursor:pointer; transition:background .2s ease, transform .06s ease, border-color .2s ease, color .2s ease; }
@@ -484,10 +475,11 @@ function dash_channel_label(array $channel): string {
     .funnel-card-title { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
     .funnel-card-title strong { color:var(--brand-ink); line-height:1.2; }
     .funnel-id { color:#007ea8; font-size:.78rem; font-weight:900; }
-    .funnel-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .funnel-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:2px; }
     .funnel-action-link { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:0 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.82rem; font-weight:850; text-decoration:none; }
     .funnel-action-link:hover { background:#dff6ff; border-color:#8bdfff; }
     .funnel-meta { display:grid; gap:4px; color:var(--brand-muted); font-size:.83rem; line-height:1.3; }
+    .funnel-meta-line { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
     .funnel-meta a { color:#007ea8; font-weight:800; text-decoration:none; }
     .funnel-meta a:hover { text-decoration:underline; }
     .funnel-note { color:var(--brand-ink); font-size:.86rem; line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
@@ -614,26 +606,20 @@ function dash_channel_label(array $channel): string {
                         <strong><?= h(short_value($lead['fullname'] ?? null, 34)) ?></strong>
                         <span class="funnel-id">Conv #<?= $conversationId ?></span>
                       </div>
-                      <div class="funnel-actions">
-                        <a class="funnel-action-link" href="inbox.php?id=<?= $conversationId ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?>">Abrir conversación</a>
-                        <?php if ($leadId > 0): ?><span class="funnel-id">Lead #<?= $leadId ?></span><?php endif; ?>
-                      </div>
                       <div class="funnel-meta">
-                        <span>
+                        <span class="funnel-meta-line">
                           <?php if ($wa !== ''): ?>
                             <a href="https://wa.me/<?= h($wa) ?>" target="_blank" rel="noopener"><?= h($phoneValue) ?></a>
                           <?php elseif ($isInstagramLead): ?>
                             <a href="<?= h(instagram_dm_url($lead)) ?>" target="_blank" rel="noopener">Instagram DM</a>
+                            <?php if ($igUrl && $igHandle !== ''): ?>
+                              <span>-</span>
+                              <a href="<?= h($igUrl) ?>" target="_blank" rel="noopener">@<?= h($igHandle) ?></a>
+                            <?php endif; ?>
                           <?php else: ?>
                             <?= h(lead_contact_display($lead)) ?>
                           <?php endif; ?>
                         </span>
-                        <span><?= $igUrl ? '<a href="' . h($igUrl) . '" target="_blank" rel="noopener">@' . h($igHandle) . '</a>' : '—' ?></span>
-                        <span><?= h(short_value(business_type_display($lead), 56)) ?></span>
-                        <span><?= h(short_value($lead['services_needed'] ?? null, 56)) ?></span>
-                        <span><?= h(short_value($lead['main_objective'] ?? null, 56)) ?></span>
-                        <span><?= h(dash_value($lead['source_platform'] ?? null)) ?><?= dash_value($lead['utm_campaign'] ?? null) !== '—' ? ' · ' . h(short_value($lead['utm_campaign'] ?? null, 34)) : '' ?></span>
-                        <span>Recordatorio: <?= h(reminder_display($lead)) ?></span>
                         <span>Actualizado: <?= h(updated_display($lead)) ?></span>
                         <?php if ($adValue !== '—'): ?><span><?= h(short_value($adValue, 46)) ?></span><?php endif; ?>
                       </div>
@@ -641,21 +627,19 @@ function dash_channel_label(array $channel): string {
                         <div class="funnel-note"><?= h(short_value(lead_message_display($lead), 130)) ?></div>
                       <?php endif; ?>
                       <?php if ($canEditLeads && $leadId > 0): ?>
+                        <textarea class="notes-input" data-id="<?= $leadId ?>" maxlength="2000" rows="3" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
                         <select class="sales-status-select" data-id="<?= $leadId ?>" data-status="<?= h($salesStatus) ?>" aria-label="Status comercial">
                           <?php foreach (sales_status_options() as $value => $label): ?>
                             <option value="<?= h($value) ?>" <?= $salesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
                           <?php endforeach; ?>
                         </select>
-                        <div class="reminder-control" data-id="<?= $leadId ?>">
-                          <input class="reminder-at" type="datetime-local" value="<?= h(datetime_local_value($lead['reminder_at'] ?? null)) ?>" aria-label="Fecha del recordatorio">
-                          <input class="reminder-note" type="text" value="<?= h((string) ($lead['reminder_note'] ?? '')) ?>" maxlength="255" placeholder="Próxima acción" aria-label="Nota del recordatorio">
-                          <button class="reminder-clear" type="button">Limpiar</button>
-                        </div>
-                        <textarea class="notes-input" data-id="<?= $leadId ?>" maxlength="2000" rows="3" placeholder="Agregar anotación..." aria-label="Anotaciones del cliente"><?= h((string) ($lead['notes'] ?? '')) ?></textarea>
                       <?php else: ?>
-                        <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
                         <div class="readonly-text"><?= h(dash_value($lead['notes'] ?? null)) ?></div>
+                        <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
                       <?php endif; ?>
+                      <div class="funnel-actions">
+                        <a class="funnel-action-link" href="inbox.php?id=<?= $conversationId ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?>">Abrir conversación</a>
+                      </div>
                     </article>
                   <?php endforeach; else: ?>
                     <p class="funnel-empty">Sin conversaciones en este estado.</p>
