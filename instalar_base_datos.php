@@ -5,6 +5,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/conversations.php';
 
 $installKey = (string) app_config('security.install_key', '');
 $providedKey = (string) ($_GET['key'] ?? $_POST['key'] ?? '');
@@ -220,6 +221,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       run_sql_file($pdo, __DIR__ . '/crear_tablas.sql', $log);
       ensure_latest_schema($pdo, $TABLE_LEADS, $TABLE_USERS, $log);
       ensure_instagram_channels_schema($pdo, safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'), $log);
+      conv_ensure_schema($pdo);
+      $log[] = ['ok', 'Tablas del CRM conversacional verificadas.'];
+      $importedConversations = conv_backfill_from_leads($pdo, $TABLE_LEADS);
+      $log[] = ['ok', 'Conversaciones importadas desde leads existentes: ' . $importedConversations . '.'];
       $log[] = ['ok', 'Instalación/actualización finalizada.'];
     }
     catch (Throwable $e) { $log[] = ['err', 'Error durante la instalación: ' . $e->getMessage()]; }

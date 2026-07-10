@@ -1,0 +1,329 @@
+<?php
+// config/conversations.php
+declare(strict_types=1);
+
+require_once __DIR__ . '/instagram_channels.php';
+
+function conv_contacts_table(): string {
+  return safe_identifier((string) app_config('database.conversation_contacts_table', 'conversation_contacts'), 'conversation_contacts');
+}
+
+function conv_conversations_table(): string {
+  return safe_identifier((string) app_config('database.conversations_table', 'conversations'), 'conversations');
+}
+
+function conv_messages_table(): string {
+  return safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages');
+}
+
+function conv_ensure_schema(PDO $pdo): void {
+  $contactsTable = conv_contacts_table();
+  $conversationsTable = conv_conversations_table();
+  $messagesTable = conv_messages_table();
+
+  $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS {$contactsTable} (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  external_source VARCHAR(40) NOT NULL,
+  external_contact_id VARCHAR(160) NOT NULL,
+  display_name VARCHAR(180) NULL,
+  username VARCHAR(180) NULL,
+  profile_url VARCHAR(255) NULL,
+  last_seen_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
+  KEY idx_username (username),
+  KEY idx_last_seen_at (last_seen_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+
+  $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS {$conversationsTable} (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  channel_id INT UNSIGNED NULL,
+  contact_id INT UNSIGNED NOT NULL,
+  lead_id INT UNSIGNED NULL,
+  external_source VARCHAR(40) NOT NULL,
+  external_thread_id VARCHAR(180) NOT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'abierta',
+  assigned_to INT UNSIGNED NULL,
+  last_message_preview TEXT NULL,
+  last_message_at DATETIME NULL,
+  unread_count INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_external_thread (external_source, external_thread_id),
+  KEY idx_channel_id (channel_id),
+  KEY idx_contact_id (contact_id),
+  KEY idx_lead_id (lead_id),
+  KEY idx_status (status),
+  KEY idx_assigned_to (assigned_to),
+  KEY idx_last_message_at (last_message_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+
+  $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS {$messagesTable} (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  conversation_id INT UNSIGNED NOT NULL,
+  external_message_id VARCHAR(180) NULL,
+  direction VARCHAR(20) NOT NULL,
+  sender_external_id VARCHAR(180) NULL,
+  message_type VARCHAR(40) NOT NULL DEFAULT 'text',
+  message_text TEXT NULL,
+  payload_json MEDIUMTEXT NULL,
+  sent_by INT UNSIGNED NULL,
+  sent_at DATETIME NOT NULL,
+  delivery_status VARCHAR(40) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_conversation_message (conversation_id, external_message_id),
+  KEY idx_conversation_id (conversation_id),
+  KEY idx_direction (direction),
+  KEY idx_sent_at (sent_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+}
+
+function conv_clean($value, int $max = 180): ?string {
+  $value = trim(str_replace("\0", '', (string) $value));
+  if ($value === '') return null;
+  return mb_substr($value, 0, $max);
+}
+
+function conv_instagram_profile_url(?string $username): ?string {
+  $username = conv_clean($username, 180);
+  if ($username === null) return null;
+  $handle = trim($username, "@/ \t\n\r\0\x0B");
+  if (!preg_match('/^[a-zA-Z0-9._]{1,30}$/', $handle)) return null;
+  return 'https://instagram.com/' . $handle;
+}
+
+function conv_upsert_contact(PDO $pdo, array $data): int {
+  $table = conv_contacts_table();
+  $externalSource = conv_clean($data['external_source'] ?? 'instagram', 40) ?? 'instagram';
+  $externalContactId = conv_clean($data['external_contact_id'] ?? null, 160);
+  if ($externalContactId === null) return 0;
+  $displayName = conv_clean($data['display_name'] ?? null, 180);
+  $username = conv_clean($data['username'] ?? null, 180);
+  $profileUrl = conv_clean($data['profile_url'] ?? conv_instagram_profile_url($username), 255);
+  $lastSeenAt = conv_clean($data['last_seen_at'] ?? null, 30);
+
+  $stmt = $pdo->prepare(<<<SQL
+INSERT INTO {$table} (
+  external_source, external_contact_id, display_name, username, profile_url, last_seen_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, NOW())
+ON DUPLICATE KEY UPDATE
+  display_name = COALESCE(VALUES(display_name), display_name),
+  username = COALESCE(VALUES(username), username),
+  profile_url = COALESCE(VALUES(profile_url), profile_url),
+  last_seen_at = COALESCE(VALUES(last_seen_at), last_seen_at),
+  updated_at = NOW()
+SQL);
+  $stmt->execute([$externalSource, $externalContactId, $displayName, $username, $profileUrl, $lastSeenAt]);
+
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE external_source=? AND external_contact_id=? LIMIT 1");
+  $find->execute([$externalSource, $externalContactId]);
+  return (int) ($find->fetchColumn() ?: 0);
+}
+
+function conv_upsert_conversation(PDO $pdo, array $data): int {
+  $table = conv_conversations_table();
+  $externalSource = conv_clean($data['external_source'] ?? 'instagram', 40) ?? 'instagram';
+  $externalThreadId = conv_clean($data['external_thread_id'] ?? null, 180);
+  $contactId = (int) ($data['contact_id'] ?? 0);
+  if ($externalThreadId === null || $contactId <= 0) return 0;
+  $channelId = isset($data['channel_id']) ? (int) $data['channel_id'] : null;
+  $leadId = isset($data['lead_id']) ? (int) $data['lead_id'] : null;
+  $status = conv_clean($data['status'] ?? 'abierta', 40) ?? 'abierta';
+  $preview = conv_clean($data['last_message_preview'] ?? null, 1200);
+  $lastMessageAt = conv_clean($data['last_message_at'] ?? null, 30);
+  $unreadIncrement = max(0, (int) ($data['unread_increment'] ?? 0));
+
+  $stmt = $pdo->prepare(<<<SQL
+INSERT INTO {$table} (
+  channel_id, contact_id, lead_id, external_source, external_thread_id, status,
+  last_message_preview, last_message_at, unread_count, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+ON DUPLICATE KEY UPDATE
+  channel_id = COALESCE(VALUES(channel_id), channel_id),
+  contact_id = VALUES(contact_id),
+  lead_id = COALESCE(VALUES(lead_id), lead_id),
+  last_message_preview = COALESCE(VALUES(last_message_preview), last_message_preview),
+  last_message_at = COALESCE(VALUES(last_message_at), last_message_at),
+  unread_count = unread_count + VALUES(unread_count),
+  updated_at = NOW()
+SQL);
+  $stmt->execute([$channelId, $contactId, $leadId, $externalSource, $externalThreadId, $status, $preview, $lastMessageAt, $unreadIncrement]);
+
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE external_source=? AND external_thread_id=? LIMIT 1");
+  $find->execute([$externalSource, $externalThreadId]);
+  return (int) ($find->fetchColumn() ?: 0);
+}
+
+function conv_add_message(PDO $pdo, array $data): int {
+  $table = conv_messages_table();
+  $conversationId = (int) ($data['conversation_id'] ?? 0);
+  if ($conversationId <= 0) return 0;
+  $externalMessageId = conv_clean($data['external_message_id'] ?? null, 180);
+  $direction = conv_clean($data['direction'] ?? 'inbound', 20) ?? 'inbound';
+  $senderExternalId = conv_clean($data['sender_external_id'] ?? null, 180);
+  $messageType = conv_clean($data['message_type'] ?? 'text', 40) ?? 'text';
+  $messageText = conv_clean($data['message_text'] ?? null, 5000);
+  $payloadJson = isset($data['payload_json']) ? (string) $data['payload_json'] : null;
+  $sentBy = isset($data['sent_by']) ? (int) $data['sent_by'] : null;
+  $sentAt = conv_clean($data['sent_at'] ?? gmdate('Y-m-d H:i:s'), 30) ?? gmdate('Y-m-d H:i:s');
+  $deliveryStatus = conv_clean($data['delivery_status'] ?? null, 40);
+
+  $stmt = $pdo->prepare(<<<SQL
+INSERT IGNORE INTO {$table} (
+  conversation_id, external_message_id, direction, sender_external_id, message_type,
+  message_text, payload_json, sent_by, sent_at, delivery_status
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+SQL);
+  $stmt->execute([$conversationId, $externalMessageId, $direction, $senderExternalId, $messageType, $messageText, $payloadJson, $sentBy, $sentAt, $deliveryStatus]);
+  return (int) $pdo->lastInsertId();
+}
+
+function conv_mark_read(PDO $pdo, int $conversationId): void {
+  if ($conversationId <= 0) return;
+  $table = conv_conversations_table();
+  $stmt = $pdo->prepare("UPDATE {$table} SET unread_count=0, updated_at=NOW() WHERE id=?");
+  $stmt->execute([$conversationId]);
+}
+
+function conv_graph_post_json(string $path, array $payload, string $accessToken): array {
+  $url = rtrim(ig_graph_base(), '/') . '/' . ltrim($path, '/') . '?access_token=' . rawurlencode($accessToken);
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+    CURLOPT_URL => $url,
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+    CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT => 25,
+  ]);
+  $raw = curl_exec($ch);
+  $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $error = curl_error($ch);
+  curl_close($ch);
+  $json = json_decode((string) $raw, true);
+  if ($error !== '' || $http < 200 || $http >= 300 || !is_array($json)) {
+    return ['ok' => false, 'http' => $http, 'error' => $error !== '' ? $error : ($json['error']['message'] ?? 'Respuesta invalida de Meta'), 'raw' => $raw];
+  }
+  return ['ok' => true, 'http' => $http, 'data' => $json];
+}
+
+function conv_send_instagram_message(PDO $pdo, array $conversation, string $message): array {
+  $message = trim($message);
+  if ($message === '') return ['ok' => false, 'error' => 'El mensaje esta vacio.'];
+
+  $channelsTable = ig_channels_table();
+  $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 LIMIT 1");
+  $stmt->execute([(int) ($conversation['channel_id'] ?? 0)]);
+  $channel = $stmt->fetch();
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de Instagram no disponible.'];
+
+  $token = (string) ($channel['page_access_token'] ?? '');
+  $recipientId = (string) ($conversation['contact_external_id'] ?? '');
+  if ($token === '' || $recipientId === '') return ['ok' => false, 'error' => 'Faltan credenciales del canal o destinatario.'];
+
+  $payload = [
+    'recipient' => ['id' => $recipientId],
+    'message' => ['text' => $message],
+    'messaging_type' => 'RESPONSE',
+  ];
+
+  $targets = array_values(array_filter([
+    (string) ($channel['instagram_user_id'] ?? ''),
+    (string) ($channel['page_id'] ?? ''),
+    'me',
+  ], static fn($value) => trim($value) !== ''));
+
+  $lastError = 'No se pudo enviar el mensaje.';
+  foreach (array_unique($targets) as $target) {
+    $response = conv_graph_post_json($target . '/messages', $payload, $token);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+    }
+    $lastError = (string) ($response['error'] ?? $lastError);
+  }
+
+  return ['ok' => false, 'error' => $lastError];
+}
+
+function conv_backfill_from_leads(PDO $pdo, string $leadsTable): int {
+  conv_ensure_schema($pdo);
+  $channelsTable = ig_channels_table();
+  $stmt = $pdo->query(<<<SQL
+SELECT id, fullname, brand_instagram, external_source, external_contact_id, external_thread_id,
+       last_external_message_id, last_message_at, last_inbound_message, message, created_at
+FROM {$leadsTable}
+WHERE external_source='instagram'
+  AND external_contact_id IS NOT NULL
+ORDER BY id ASC
+SQL);
+  $leads = $stmt ? $stmt->fetchAll() : [];
+  $count = 0;
+
+  foreach ($leads as $lead) {
+    $threadId = conv_clean($lead['external_thread_id'] ?? $lead['external_contact_id'] ?? null, 180);
+    if ($threadId === null) continue;
+    $parts = explode(':', $threadId);
+    $senderId = conv_clean(end($parts) ?: ($lead['external_contact_id'] ?? null), 160);
+    if ($senderId === null) continue;
+
+    $recipientId = count($parts) > 1 ? conv_clean($parts[0], 160) : null;
+    $channel = null;
+    if ($recipientId !== null) {
+      try { $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId); } catch (Throwable $e) { $channel = null; }
+    }
+
+    $username = conv_clean($lead['brand_instagram'] ?? null, 180);
+    if ($username !== null) {
+      $username = trim((string) preg_replace('#^https?://(www\.)?instagram\.com/#i', '', $username), "@/ \t\n\r\0\x0B");
+      if (!preg_match('/^[a-zA-Z0-9._]{1,30}$/', $username)) $username = null;
+    }
+
+    $displayName = conv_clean($lead['fullname'] ?? null, 180);
+    if ($displayName !== null && str_starts_with($displayName, 'Lead Instagram #')) $displayName = $username;
+    $messageText = conv_clean($lead['last_inbound_message'] ?? $lead['message'] ?? 'Conversacion importada desde lead.', 5000) ?? 'Conversacion importada desde lead.';
+    $messageAt = conv_clean($lead['last_message_at'] ?? $lead['created_at'] ?? gmdate('Y-m-d H:i:s'), 30) ?? gmdate('Y-m-d H:i:s');
+
+    $contactId = conv_upsert_contact($pdo, [
+      'external_source' => 'instagram',
+      'external_contact_id' => $senderId,
+      'display_name' => $displayName,
+      'username' => $username,
+      'last_seen_at' => $messageAt,
+    ]);
+    if ($contactId <= 0) continue;
+
+    $conversationId = conv_upsert_conversation($pdo, [
+      'channel_id' => $channel['id'] ?? null,
+      'contact_id' => $contactId,
+      'lead_id' => (int) $lead['id'],
+      'external_source' => 'instagram',
+      'external_thread_id' => $threadId,
+      'last_message_preview' => $messageText,
+      'last_message_at' => $messageAt,
+      'unread_increment' => 0,
+    ]);
+    if ($conversationId <= 0) continue;
+
+    conv_add_message($pdo, [
+      'conversation_id' => $conversationId,
+      'external_message_id' => conv_clean($lead['last_external_message_id'] ?? null, 180),
+      'direction' => 'inbound',
+      'sender_external_id' => $senderId,
+      'message_type' => 'text',
+      'message_text' => $messageText,
+      'payload_json' => json_encode(['source' => 'lead_backfill', 'lead_id' => (int) $lead['id']], JSON_UNESCAPED_UNICODE),
+      'sent_at' => $messageAt,
+      'delivery_status' => 'imported',
+    ]);
+    $count++;
+  }
+
+  return $count;
+}

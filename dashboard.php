@@ -603,6 +603,7 @@ function reminder_display(array $lead): string {
               <button class="search-btn" type="submit">Buscar</button>
             </form>
             <span class="role-pill"><?= h($currentRoleLabel) ?></span>
+            <?php if (can('view_conversations')): ?><a class="user-btn" href="inbox.php" title="Inbox conversacional">Inbox</a><?php endif; ?>
             <?php if ($canManageIntegrations): ?><a class="user-btn" href="channels.php" title="Canales conectados">Canales</a><?php endif; ?>
             <?php if ($canManageUsers): ?><a class="user-btn" href="users.php" title="Administrar usuarios">Usuarios</a><?php endif; ?>
             <button type="button" class="user-btn" data-modal-open="profileModal" title="Perfil de usuario">👤 <?= h($_SESSION['username']) ?></button>

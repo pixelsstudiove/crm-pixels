@@ -83,3 +83,60 @@ CREATE TABLE IF NOT EXISTS `instagram_channels` (
   UNIQUE KEY `uniq_instagram_user_id` (`instagram_user_id`),
   KEY `idx_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `conversation_contacts` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `external_source` VARCHAR(40) NOT NULL,
+  `external_contact_id` VARCHAR(160) NOT NULL,
+  `display_name` VARCHAR(180) NULL,
+  `username` VARCHAR(180) NULL,
+  `profile_url` VARCHAR(255) NULL,
+  `last_seen_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_external_contact` (`external_source`, `external_contact_id`),
+  KEY `idx_username` (`username`),
+  KEY `idx_last_seen_at` (`last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `conversations` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `channel_id` INT UNSIGNED NULL,
+  `contact_id` INT UNSIGNED NOT NULL,
+  `lead_id` INT UNSIGNED NULL,
+  `external_source` VARCHAR(40) NOT NULL,
+  `external_thread_id` VARCHAR(180) NOT NULL,
+  `status` VARCHAR(40) NOT NULL DEFAULT 'abierta',
+  `assigned_to` INT UNSIGNED NULL,
+  `last_message_preview` TEXT NULL,
+  `last_message_at` DATETIME NULL,
+  `unread_count` INT UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_external_thread` (`external_source`, `external_thread_id`),
+  KEY `idx_channel_id` (`channel_id`),
+  KEY `idx_contact_id` (`contact_id`),
+  KEY `idx_lead_id` (`lead_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_assigned_to` (`assigned_to`),
+  KEY `idx_last_message_at` (`last_message_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `conversation_messages` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `conversation_id` INT UNSIGNED NOT NULL,
+  `external_message_id` VARCHAR(180) NULL,
+  `direction` VARCHAR(20) NOT NULL,
+  `sender_external_id` VARCHAR(180) NULL,
+  `message_type` VARCHAR(40) NOT NULL DEFAULT 'text',
+  `message_text` TEXT NULL,
+  `payload_json` MEDIUMTEXT NULL,
+  `sent_by` INT UNSIGNED NULL,
+  `sent_at` DATETIME NOT NULL,
+  `delivery_status` VARCHAR(40) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_conversation_message` (`conversation_id`, `external_message_id`),
+  KEY `idx_conversation_id` (`conversation_id`),
+  KEY `idx_direction` (`direction`),
+  KEY `idx_sent_at` (`sent_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

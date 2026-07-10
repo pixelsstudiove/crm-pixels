@@ -42,6 +42,9 @@ $app = [
     'leads_table' => 'leads',
     'users_table' => 'users',
     'instagram_channels_table' => 'instagram_channels',
+    'conversation_contacts_table' => 'conversation_contacts',
+    'conversations_table' => 'conversations',
+    'conversation_messages_table' => 'conversation_messages',
   ],
 
   'session' => [
@@ -124,22 +127,22 @@ $app = [
       'super_admin' => [
         'label' => 'Super administrador',
         'description' => 'Control total del CRM, usuarios, leads y configuracion.',
-        'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'manage_integrations', 'view_reports'],
+        'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'manage_integrations', 'view_reports', 'view_conversations', 'send_messages', 'manage_conversations'],
       ],
       'admin_comercial' => [
         'label' => 'Administrador comercial',
-        'description' => 'Gestiona todos los leads, embudo, recordatorios y metricas comerciales.',
-        'permissions' => ['view_dashboard', 'edit_leads', 'view_reports'],
+        'description' => 'Gestiona leads, conversaciones, embudo, recordatorios y metricas comerciales.',
+        'permissions' => ['view_dashboard', 'edit_leads', 'view_reports', 'view_conversations', 'send_messages', 'manage_conversations'],
       ],
       'asesor' => [
         'label' => 'Asesor comercial',
-        'description' => 'Da seguimiento a leads, cambia status, agrega notas y recordatorios.',
-        'permissions' => ['view_dashboard', 'edit_leads'],
+        'description' => 'Da seguimiento a leads y conversaciones, cambia status, agrega notas y recordatorios.',
+        'permissions' => ['view_dashboard', 'edit_leads', 'view_conversations', 'send_messages'],
       ],
       'lectura' => [
         'label' => 'Solo lectura',
-        'description' => 'Consulta el dashboard sin modificar leads ni recordatorios.',
-        'permissions' => ['view_dashboard'],
+        'description' => 'Consulta el dashboard e inbox sin modificar leads ni conversaciones.',
+        'permissions' => ['view_dashboard', 'view_conversations'],
       ],
     ],
   ],

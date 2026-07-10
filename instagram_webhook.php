@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/instagram_channels.php';
+require_once __DIR__ . '/config/conversations.php';
 
 function ig_json(array $payload, int $status = 200): void {
   if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
@@ -220,6 +221,60 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
   ];
 }
 
+function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): void {
+  try {
+    conv_ensure_schema($pdo);
+    $contactId = conv_upsert_contact($pdo, [
+      'external_source' => 'instagram',
+      'external_contact_id' => $senderId,
+      'display_name' => $profileName ?: $profileUsername,
+      'username' => $profileUsername,
+      'last_seen_at' => $messageAt,
+    ]);
+    if ($contactId <= 0) return;
+
+    $conversationId = conv_upsert_conversation($pdo, [
+      'channel_id' => $channel['id'] ?? null,
+      'contact_id' => $contactId,
+      'lead_id' => $leadId > 0 ? $leadId : null,
+      'external_source' => 'instagram',
+      'external_thread_id' => $threadId,
+      'last_message_preview' => $messageText,
+      'last_message_at' => $messageAt,
+      'unread_increment' => 0,
+    ]);
+    if ($conversationId <= 0) return;
+
+    $messageType = isset($event['message']['text']) ? 'text' : (isset($event['postback']) ? 'postback' : 'attachment');
+    $inserted = conv_add_message($pdo, [
+      'conversation_id' => $conversationId,
+      'external_message_id' => $messageId,
+      'direction' => 'inbound',
+      'sender_external_id' => $senderId,
+      'message_type' => $messageType,
+      'message_text' => $messageText,
+      'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
+      'sent_at' => $messageAt,
+      'delivery_status' => 'received',
+    ]);
+
+    if ($inserted > 0) {
+      conv_upsert_conversation($pdo, [
+        'channel_id' => $channel['id'] ?? null,
+        'contact_id' => $contactId,
+        'lead_id' => $leadId > 0 ? $leadId : null,
+        'external_source' => 'instagram',
+        'external_thread_id' => $threadId,
+        'last_message_preview' => $messageText,
+        'last_message_at' => $messageAt,
+        'unread_increment' => 1,
+      ]);
+    }
+  } catch (Throwable $e) {
+    /* El webhook no debe fallar si el historial conversacional no pudo escribirse. */
+  }
+}
+
 function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $event): int {
   $senderId = ig_clean($event['sender']['id'] ?? null, 120);
   if ($senderId === null) return 0;
@@ -267,6 +322,7 @@ SQL);
         $stamp->execute([$messageAt, (int) $channel['id']]);
       } catch (Throwable $e) { /* no-op */ }
     }
+    ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
     return $leadId;
   }
 
@@ -314,7 +370,9 @@ SQL);
     } catch (Throwable $e) { /* no-op */ }
   }
 
-  return (int) $pdo->lastInsertId();
+  $leadId = (int) $pdo->lastInsertId();
+  ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+  return $leadId;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -354,6 +412,8 @@ try {
     if (!is_array($entry)) continue;
     foreach (($entry['messaging'] ?? []) as $event) {
       if (!is_array($event)) continue;
+      if (!empty($event['message']['is_echo'])) continue;
+      if (!isset($event['message']) && !isset($event['postback'])) continue;
       $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $channelsTable, $event);
       if ($leadId > 0) $createdOrUpdated[] = $leadId;
     }

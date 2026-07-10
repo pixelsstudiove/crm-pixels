@@ -90,6 +90,7 @@ try {
           </div>
           <div class="channel-actions">
             <a class="channel-link" href="dashboard.php">Dashboard</a>
+            <?php if (can('view_conversations')): ?><a class="channel-link" href="inbox.php">Inbox</a><?php endif; ?>
             <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($authUrl) ?>">Conectar Instagram</a>
           </div>
         </header>
