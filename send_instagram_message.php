@@ -10,12 +10,27 @@ conv_ensure_schema($pdo);
 $conversationsTable = conv_conversations_table();
 $contactsTable = conv_contacts_table();
 
+function send_wants_json(): bool {
+  $accept = (string) ($_SERVER['HTTP_ACCEPT'] ?? '');
+  $requested = (string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '');
+  return str_contains($accept, 'application/json') || strtolower($requested) === 'fetch';
+}
+
+function send_json(array $payload, int $status = 200): void {
+  if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
+  http_response_code($status);
+  echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 function send_redirect(int $conversationId, string $notice): void {
+  if (send_wants_json()) send_json(['ok' => false, 'error' => $notice, 'conversation_id' => $conversationId], 400);
   header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode($notice));
   exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+  if (send_wants_json()) send_json(['ok' => false, 'error' => 'Metodo no permitido.'], 405);
   http_response_code(405);
   echo 'Metodo no permitido.';
   exit;
@@ -69,6 +84,7 @@ conv_add_message($pdo, [
   'sent_at' => $now,
   'delivery_status' => 'sent',
 ]);
+$messageId = (int) $pdo->lastInsertId();
 
 conv_upsert_conversation($pdo, [
   'channel_id' => $conversation['channel_id'] ?? null,
@@ -80,5 +96,21 @@ conv_upsert_conversation($pdo, [
   'last_message_at' => $now,
   'unread_increment' => 0,
 ]);
+
+if (send_wants_json()) {
+  send_json([
+    'ok' => true,
+    'notice' => 'Mensaje enviado.',
+    'conversation_id' => $conversationId,
+    'message' => [
+      'id' => $messageId,
+      'direction' => 'outbound',
+      'text' => $message,
+      'time' => date('d/m/Y H:i', strtotime($now)),
+      'sent_by_username' => (string) ($_SESSION['username'] ?? ''),
+      'delivery_status' => 'sent',
+    ],
+  ]);
+}
 
 send_redirect($conversationId, 'Mensaje enviado.');

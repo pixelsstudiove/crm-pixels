@@ -119,6 +119,8 @@ if ($selected) {
   $msgStmt->execute([(int) $selected['id']]);
   $messages = $msgStmt->fetchAll();
 }
+$lastMessageId = 0;
+foreach ($messages as $message) $lastMessageId = max($lastMessageId, (int) ($message['id'] ?? 0));
 
 function inbox_contact_name(array $conversation): string {
   $name = trim((string) ($conversation['display_name'] ?? ''));
@@ -182,6 +184,8 @@ function inbox_time($value): string {
     .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
     .reply-box textarea:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .reply-actions { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.88rem; }
+    .reply-box.is-sending textarea, .reply-box.is-sending button { opacity:.7; pointer-events:none; }
+    .live-status { color:var(--inbox-muted); font-size:.82rem; }
     .side-panel { padding:16px; display:grid; align-content:start; gap:14px; }
     .side-panel h2 { margin:0; font-size:1.05rem; color:var(--inbox-ink); }
     .info-row { display:grid; gap:3px; color:var(--inbox-muted); font-size:.9rem; }
@@ -210,8 +214,10 @@ function inbox_time($value): string {
           </div>
         </header>
 
-        <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
-        <?php foreach ($errors as $error): ?><div class="form-alert alert-error notice"><?= h($error) ?></div><?php endforeach; ?>
+        <div id="inboxNoticeArea">
+          <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
+          <?php foreach ($errors as $error): ?><div class="form-alert alert-error notice"><?= h($error) ?></div><?php endforeach; ?>
+        </div>
 
         <div class="inbox-layout">
           <aside class="inbox-panel" aria-label="Conversaciones">
@@ -225,7 +231,7 @@ function inbox_time($value): string {
               </select>
               <button class="inbox-btn" type="submit">Buscar</button>
             </form>
-            <div class="conversation-list">
+            <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedId ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
                 <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="inbox.php?id=<?= (int) $conversation['id'] ?><?= $filterStatus !== '' ? '&status=' . h(rawurlencode($filterStatus)) : '' ?><?= $q !== '' ? '&q=' . h(rawurlencode($q)) : '' ?>">
@@ -255,10 +261,10 @@ function inbox_time($value): string {
                 <?php if (!empty($selected['lead_id'])): ?><a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['lead_id'] ?>">Ver lead #<?= (int) $selected['lead_id'] ?></a><?php endif; ?>
               </header>
 
-              <div class="message-list">
+              <div class="message-list" id="messageList" data-last-id="<?= (int) $lastMessageId ?>">
                 <?php if ($messages): foreach ($messages as $message): ?>
                   <?php $direction = (string) ($message['direction'] ?? 'inbound'); ?>
-                  <article class="message <?= $direction === 'outbound' ? 'outbound' : 'inbound' ?>">
+                  <article class="message <?= $direction === 'outbound' ? 'outbound' : 'inbound' ?>" data-message-id="<?= (int) $message['id'] ?>">
                     <div class="message-text"><?= h($message['message_text'] ?: 'Mensaje sin texto') ?></div>
                     <div class="message-meta">
                       <?= $direction === 'outbound' ? 'Enviado' : 'Recibido' ?> · <?= h(inbox_time($message['sent_at'] ?? '')) ?>
@@ -270,12 +276,12 @@ function inbox_time($value): string {
                 <?php endif; ?>
               </div>
 
-              <form class="reply-box" method="post" action="send_instagram_message.php">
+              <form class="reply-box" id="replyForm" method="post" action="send_instagram_message.php">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
                 <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?> required></textarea>
                 <div class="reply-actions">
-                  <span>Las respuestas dependen de las ventanas y reglas de Meta para Instagram Messaging.</span>
+                  <span class="live-status" id="liveStatus">Actualizando automaticamente.</span>
                   <button class="inbox-btn primary" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
                 </div>
               </form>
@@ -316,5 +322,158 @@ function inbox_time($value): string {
       </div>
     </section>
   </main>
+  <script>
+    const inboxState = {
+      conversationId: <?= (int) $selectedId ?>,
+      q: <?= json_encode($q, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+      status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+      lastMessageId: <?= (int) $lastMessageId ?>,
+      csrf: <?= json_encode((string) ($_SESSION['csrf'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+      polling: false
+    };
+
+    const conversationList = document.getElementById('conversationList');
+    const messageList = document.getElementById('messageList');
+    const replyForm = document.getElementById('replyForm');
+    const liveStatus = document.getElementById('liveStatus');
+    const noticeArea = document.getElementById('inboxNoticeArea');
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      }[char]));
+    }
+
+    function showNotice(message, type = 'info') {
+      if (!noticeArea || !message) return;
+      noticeArea.innerHTML = `<div class="form-alert ${type === 'error' ? 'alert-error' : 'alert-info'} notice">${escapeHtml(message)}</div>`;
+      window.setTimeout(() => { if (noticeArea) noticeArea.innerHTML = ''; }, 4200);
+    }
+
+    function isNearBottom(el) {
+      if (!el) return false;
+      return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    }
+
+    function scrollMessagesToBottom() {
+      if (messageList) messageList.scrollTop = messageList.scrollHeight;
+    }
+
+    function conversationHref(id) {
+      const params = new URLSearchParams();
+      params.set('id', String(id));
+      if (inboxState.status) params.set('status', inboxState.status);
+      if (inboxState.q) params.set('q', inboxState.q);
+      return `inbox.php?${params.toString()}`;
+    }
+
+    function renderConversations(items) {
+      if (!conversationList || !Array.isArray(items)) return;
+      if (!items.length) {
+        conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo DM de Instagram.</div>';
+        return;
+      }
+      conversationList.innerHTML = items.map(item => {
+        const active = Number(item.id) === Number(inboxState.conversationId);
+        const unread = active ? 0 : Number(item.unread_count || 0);
+        return `
+          <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id))}">
+            <div class="conversation-row">
+              <span class="conversation-name">${escapeHtml(item.name)}</span>
+              <span class="conversation-time">${escapeHtml(item.time)}</span>
+            </div>
+            <div class="conversation-row" style="margin-top:6px">
+              <span class="badge">${escapeHtml(item.status_label)}</span>
+              ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
+            </div>
+            <div class="conversation-preview">${escapeHtml(item.preview)}</div>
+          </a>
+        `;
+      }).join('');
+    }
+
+    function appendMessage(message) {
+      if (!messageList || !message || !message.id) return;
+      if (messageList.querySelector(`[data-message-id="${Number(message.id)}"]`)) return;
+      const emptyState = messageList.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+      const direction = message.direction === 'outbound' ? 'outbound' : 'inbound';
+      const metaLabel = direction === 'outbound' ? 'Enviado' : 'Recibido';
+      const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
+      const article = document.createElement('article');
+      article.className = `message ${direction}`;
+      article.dataset.messageId = String(message.id);
+      article.innerHTML = `
+        <div class="message-text">${escapeHtml(message.text || 'Mensaje sin texto')}</div>
+        <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
+      `;
+      messageList.appendChild(article);
+      inboxState.lastMessageId = Math.max(inboxState.lastMessageId, Number(message.id));
+      messageList.dataset.lastId = String(inboxState.lastMessageId);
+    }
+
+    async function pollInbox(force = false) {
+      if (inboxState.polling && !force) return;
+      inboxState.polling = true;
+      try {
+        const params = new URLSearchParams();
+        if (inboxState.conversationId) params.set('id', String(inboxState.conversationId));
+        if (inboxState.q) params.set('q', inboxState.q);
+        if (inboxState.status) params.set('status', inboxState.status);
+        params.set('after_id', String(inboxState.lastMessageId || 0));
+        const response = await fetch(`inbox_updates.php?${params.toString()}`, {
+          headers: { 'Accept': 'application/json' },
+          cache: 'no-store'
+        });
+        const data = await response.json();
+        if (!data.ok) throw new Error(data.error || 'No se pudieron cargar actualizaciones.');
+        renderConversations(data.conversations || []);
+        const shouldStick = isNearBottom(messageList);
+        for (const message of (data.messages || [])) appendMessage(message);
+        if ((data.messages || []).length && shouldStick) scrollMessagesToBottom();
+        if (liveStatus) liveStatus.textContent = 'Actualizado automaticamente.';
+      } catch (error) {
+        if (liveStatus) liveStatus.textContent = 'Reintentando actualizacion...';
+      } finally {
+        inboxState.polling = false;
+      }
+    }
+
+    if (replyForm) {
+      replyForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const textarea = replyForm.querySelector('textarea[name="message"]');
+        const button = replyForm.querySelector('button[type="submit"]');
+        if (!textarea || !textarea.value.trim()) return;
+        replyForm.classList.add('is-sending');
+        if (button) button.disabled = true;
+        try {
+          const response = await fetch(replyForm.action, {
+            method: 'POST',
+            body: new FormData(replyForm),
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+            cache: 'no-store'
+          });
+          const data = await response.json();
+          if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
+          textarea.value = '';
+          const shouldStick = isNearBottom(messageList);
+          if (data.message) appendMessage(data.message);
+          if (shouldStick) scrollMessagesToBottom();
+          showNotice(data.notice || 'Mensaje enviado.');
+          pollInbox(true);
+        } catch (error) {
+          showNotice(error.message || 'No se pudo enviar el mensaje.', 'error');
+        } finally {
+          replyForm.classList.remove('is-sending');
+          if (button) button.disabled = false;
+        }
+      });
+    }
+
+    scrollMessagesToBottom();
+    window.setInterval(() => pollInbox(false), 3000);
+    window.setTimeout(() => pollInbox(true), 900);
+  </script>
 </body>
 </html>
