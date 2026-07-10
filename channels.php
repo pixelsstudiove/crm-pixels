@@ -22,6 +22,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=?");
       $stmt->execute([$id]);
       $notice = 'Canal desconectado.';
+    } elseif ($action === 'connect' && $id > 0) {
+      $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
+      $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
+      $notice = 'Canal conectado. Los proximos mensajes entraran al inbox.';
     }
   }
 }
@@ -66,7 +70,8 @@ try {
     .channel-actions { display:flex; gap:10px; flex-wrap:wrap; }
     .channel-link, .channel-btn { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; cursor:pointer; }
     .channel-link:hover, .channel-btn:hover { background:#dff6ff; border-color:#8bdfff; }
-    .channel-link.primary { background:#071120; border-color:#071120; color:#eafaff; }
+    .channel-link.primary, .channel-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
+    .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
     .channel-link.is-disabled { opacity:.55; pointer-events:none; }
     .channel-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; }
     .channel-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
@@ -117,14 +122,17 @@ try {
               <p><strong>Page ID:</strong> <?= h((string) $channel['page_id']) ?></p>
               <p><strong>Instagram ID:</strong> <?= h((string) $channel['instagram_user_id']) ?></p>
               <p><strong>Ultimo evento:</strong> <?= h((string) ($channel['last_event_at'] ?: 'Sin eventos')) ?></p>
-              <?php if ((int) $channel['is_active'] === 1): ?>
-                <form method="post" action="channels.php">
-                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+              <form method="post" action="channels.php">
+                <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                <input type="hidden" name="id" value="<?= (int) $channel['id'] ?>">
+                <?php if ((int) $channel['is_active'] === 1): ?>
                   <input type="hidden" name="action" value="disconnect">
-                  <input type="hidden" name="id" value="<?= (int) $channel['id'] ?>">
-                  <button class="channel-btn" type="submit">Desconectar</button>
-                </form>
-              <?php endif; ?>
+                  <button class="channel-btn warning" type="submit">Desconectar</button>
+                <?php else: ?>
+                  <input type="hidden" name="action" value="connect">
+                  <button class="channel-btn primary" type="submit">Conectar</button>
+                <?php endif; ?>
+              </form>
             </article>
           <?php endforeach; else: ?>
             <article class="channel-card">
