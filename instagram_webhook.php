@@ -221,7 +221,7 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
   ];
 }
 
-function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): int {
+function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): array {
   try {
     conv_ensure_schema($pdo);
     $contactId = conv_upsert_contact($pdo, [
@@ -231,7 +231,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'username' => $profileUsername,
       'last_seen_at' => $messageAt,
     ]);
-    if ($contactId <= 0) return 0;
+    if ($contactId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar el contacto.'];
 
     $conversationId = conv_upsert_conversation($pdo, [
       'channel_id' => $channel['id'] ?? null,
@@ -243,9 +243,16 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'last_message_at' => $messageAt,
       'unread_increment' => 0,
     ]);
-    if ($conversationId <= 0) return 0;
+    if ($conversationId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar la conversacion.'];
 
     $messageType = isset($event['message']['text']) ? 'text' : (isset($event['postback']) ? 'postback' : 'attachment');
+    $messagesTable = conv_messages_table();
+    $messageAlreadyExists = false;
+    if ($messageId !== null) {
+      $existsStmt = $pdo->prepare("SELECT id FROM {$messagesTable} WHERE conversation_id=? AND external_message_id=? LIMIT 1");
+      $existsStmt->execute([$conversationId, $messageId]);
+      $messageAlreadyExists = (bool) $existsStmt->fetchColumn();
+    }
     $inserted = conv_add_message($pdo, [
       'conversation_id' => $conversationId,
       'external_message_id' => $messageId,
@@ -270,10 +277,15 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
         'unread_increment' => 1,
       ]);
     }
-    return $conversationId;
+    return [
+      'conversation_id' => $conversationId,
+      'message_id' => $inserted,
+      'message_inserted' => $inserted > 0 && !$messageAlreadyExists,
+      'error' => $inserted > 0 ? null : 'No se pudo guardar el mensaje en conversation_messages.',
+    ];
   } catch (Throwable $e) {
     /* El webhook no debe fallar si el historial conversacional no pudo escribirse. */
-    return 0;
+    return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => $e->getMessage()];
   }
 }
 
@@ -351,9 +363,12 @@ SQL);
         $stamp->execute([$messageAt, (int) $channel['id']]);
       } catch (Throwable $e) { /* no-op */ }
     }
-    $conversationId = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+    $sync = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+    $conversationId = (int) ($sync['conversation_id'] ?? 0);
+    $conversationMessageId = (int) ($sync['message_id'] ?? 0);
+    $messageInserted = (bool) ($sync['message_inserted'] ?? false);
     conv_log_webhook_event($pdo, [
-      'status' => $conversationId > 0 ? 'processed' : 'lead_only',
+      'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
       'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
       'recipient_id' => $recipientId,
       'sender_id' => $senderId,
@@ -363,7 +378,7 @@ SQL);
       'lead_id' => $leadId,
       'conversation_id' => $conversationId > 0 ? $conversationId : null,
       'message_preview' => $messageText,
-      'error_message' => $conversationId > 0 ? null : 'Lead actualizado, pero no se pudo sincronizar la conversacion.',
+      'error_message' => $conversationMessageId > 0 ? null : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'),
       'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
     ]);
     return $leadId;
@@ -414,9 +429,12 @@ SQL);
   }
 
   $leadId = (int) $pdo->lastInsertId();
-  $conversationId = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+  $sync = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+  $conversationId = (int) ($sync['conversation_id'] ?? 0);
+  $conversationMessageId = (int) ($sync['message_id'] ?? 0);
+  $messageInserted = (bool) ($sync['message_inserted'] ?? false);
   conv_log_webhook_event($pdo, [
-    'status' => $conversationId > 0 ? 'processed' : 'lead_only',
+    'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
     'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
     'recipient_id' => $recipientId,
     'sender_id' => $senderId,
@@ -426,7 +444,7 @@ SQL);
     'lead_id' => $leadId,
     'conversation_id' => $conversationId > 0 ? $conversationId : null,
     'message_preview' => $messageText,
-    'error_message' => $conversationId > 0 ? null : 'Lead creado, pero no se pudo sincronizar la conversacion.',
+    'error_message' => $conversationMessageId > 0 ? null : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'),
     'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
   ]);
   return $leadId;

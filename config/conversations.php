@@ -206,13 +206,28 @@ function conv_add_message(PDO $pdo, array $data): int {
   $deliveryStatus = conv_clean($data['delivery_status'] ?? null, 40);
 
   $stmt = $pdo->prepare(<<<SQL
-INSERT IGNORE INTO {$table} (
+INSERT INTO {$table} (
   conversation_id, external_message_id, direction, sender_external_id, message_type,
   message_text, payload_json, sent_by, sent_at, delivery_status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  direction = VALUES(direction),
+  sender_external_id = VALUES(sender_external_id),
+  message_type = VALUES(message_type),
+  message_text = VALUES(message_text),
+  payload_json = VALUES(payload_json),
+  sent_by = VALUES(sent_by),
+  sent_at = VALUES(sent_at),
+  delivery_status = VALUES(delivery_status)
 SQL);
   $stmt->execute([$conversationId, $externalMessageId, $direction, $senderExternalId, $messageType, $messageText, $payloadJson, $sentBy, $sentAt, $deliveryStatus]);
-  return (int) $pdo->lastInsertId();
+  $insertedId = (int) $pdo->lastInsertId();
+  if ($insertedId > 0) return $insertedId;
+  if ($externalMessageId === null) return 0;
+
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE conversation_id=? AND external_message_id=? LIMIT 1");
+  $find->execute([$conversationId, $externalMessageId]);
+  return (int) ($find->fetchColumn() ?: 0);
 }
 
 function conv_mark_read(PDO $pdo, int $conversationId): void {

@@ -8,8 +8,51 @@ require_permission('manage_integrations');
 conv_ensure_schema($pdo);
 
 $logsTable = conv_webhook_logs_table();
+$messagesTable = conv_messages_table();
+$notice = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $csrf = (string) ($_POST['csrf'] ?? '');
+  if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
+    $notice = 'CSRF inválido. Recarga la página.';
+  } elseif ((string) ($_POST['action'] ?? '') === 'repair_missing_messages') {
+    $repairSql = <<<SQL
+SELECT l.*
+FROM {$logsTable} l
+LEFT JOIN {$messagesTable} m
+  ON m.conversation_id = l.conversation_id
+  AND m.external_message_id = l.external_message_id
+WHERE l.source='instagram'
+  AND l.conversation_id IS NOT NULL
+  AND l.external_message_id IS NOT NULL
+  AND l.message_preview IS NOT NULL
+  AND l.status IN ('processed', 'duplicate', 'lead_only')
+  AND m.id IS NULL
+ORDER BY l.id ASC
+LIMIT 500
+SQL;
+    $rows = $pdo->query($repairSql)->fetchAll();
+    $repaired = 0;
+    foreach ($rows as $row) {
+      $messageId = conv_add_message($pdo, [
+        'conversation_id' => (int) $row['conversation_id'],
+        'external_message_id' => (string) $row['external_message_id'],
+        'direction' => 'inbound',
+        'sender_external_id' => (string) ($row['sender_id'] ?? ''),
+        'message_type' => (string) ($row['event_type'] ?: 'message'),
+        'message_text' => (string) ($row['message_preview'] ?? ''),
+        'payload_json' => (string) ($row['payload_json'] ?? ''),
+        'sent_at' => (string) ($row['created_at'] ?? gmdate('Y-m-d H:i:s')),
+        'delivery_status' => 'repaired',
+      ]);
+      if ($messageId > 0) $repaired++;
+    }
+    $notice = 'Mensajes reparados desde logs: ' . $repaired . '.';
+  }
+}
+
 $status = trim((string) ($_GET['status'] ?? ''));
-$allowedStatuses = ['processed', 'lead_only', 'ignored'];
+$allowedStatuses = ['processed', 'duplicate', 'lead_only', 'ignored'];
 if ($status !== '' && !in_array($status, $allowedStatuses, true)) $status = '';
 
 $where = $status !== '' ? 'WHERE status = :status' : '';
@@ -20,6 +63,7 @@ $logs = $stmt->fetchAll();
 
 function log_badge_class(string $status): string {
   if ($status === 'processed') return 'ok';
+  if ($status === 'duplicate') return 'ok';
   if ($status === 'lead_only') return 'warn';
   return 'muted';
 }
@@ -71,8 +115,16 @@ function log_badge_class(string $status): string {
         <form class="logs-filter" method="get" action="webhook_logs.php">
           <button class="logs-btn" name="status" value="" type="submit">Todos</button>
           <button class="logs-btn" name="status" value="processed" type="submit">Procesados</button>
+          <button class="logs-btn" name="status" value="duplicate" type="submit">Duplicados</button>
           <button class="logs-btn" name="status" value="lead_only" type="submit">Solo lead</button>
           <button class="logs-btn" name="status" value="ignored" type="submit">Ignorados</button>
+        </form>
+
+        <?php if ($notice !== ''): ?><div class="form-alert alert-info" style="margin-bottom:14px"><?= h($notice) ?></div><?php endif; ?>
+        <form method="post" action="webhook_logs.php" style="margin-bottom:14px">
+          <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+          <input type="hidden" name="action" value="repair_missing_messages">
+          <button class="logs-btn" type="submit">Reparar historial desde logs</button>
         </form>
 
         <div class="logs-table-wrap">
@@ -103,7 +155,7 @@ function log_badge_class(string $status): string {
                   <td class="mono"><?= h((string) ($log['sender_id'] ?: '—')) ?></td>
                   <td class="preview"><?= h((string) ($log['message_preview'] ?: '—')) ?><br><span class="mono"><?= h((string) ($log['external_message_id'] ?: '—')) ?></span></td>
                   <td class="mono"><?= $log['lead_id'] ? '#' . (int) $log['lead_id'] : '—' ?></td>
-                  <td class="mono"><?= $log['conversation_id'] ? '#' . (int) $log['conversation_id'] : '—' ?></td>
+                  <td class="mono"><?= $log['conversation_id'] ? '<a href="conversation_debug.php?id=' . (int) $log['conversation_id'] . '">#' . (int) $log['conversation_id'] . '</a>' : '—' ?></td>
                   <td class="preview"><?= h((string) ($log['error_message'] ?: '—')) ?></td>
                   <td><?= h((string) $log['created_at']) ?></td>
                 </tr>
