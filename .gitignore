@@ -4,6 +4,7 @@
 *.tmp
 *.env
 .env
+config/local.php
 
 storage/sessions/*
 storage/security/*

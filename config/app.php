@@ -5,8 +5,16 @@ declare(strict_types=1);
 
 if (!function_exists('env_value')) {
   function env_value(string $key, $default = null) {
+    static $localConfig = null;
+    if ($localConfig === null) {
+      $localPath = __DIR__ . '/local.php';
+      $loaded = is_file($localPath) ? require $localPath : [];
+      $localConfig = is_array($loaded) ? $loaded : [];
+    }
+
     $value = getenv($key);
-    return ($value !== false && $value !== '') ? $value : $default;
+    if ($value !== false && $value !== '') return $value;
+    return array_key_exists($key, $localConfig) && $localConfig[$key] !== '' ? $localConfig[$key] : $default;
   }
 }
 

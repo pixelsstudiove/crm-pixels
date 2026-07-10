@@ -59,6 +59,14 @@ DB_USER=
 DB_PASS=
 ```
 
+En hostings compartidos también puedes crear un archivo privado:
+
+```text
+config/local.php
+```
+
+Usa `config/local.example.php` como base. Este archivo no debe subirse a GitHub.
+
 ## 3. Crear tablas automáticamente
 
 El ZIP incluye:
@@ -168,6 +176,8 @@ INSTAGRAM_APP_SECRET=
 INSTAGRAM_DM_INBOX_URL=https://www.instagram.com/direct/inbox/
 ```
 
+Si el hosting no permite variables de entorno, coloca esos valores en `config/local.php`.
+
 Flujo:
 
 - Meta envía el evento al webhook.
@@ -258,6 +268,7 @@ update_sales_status.php    Actualiza status comercial
 update_lead_notes.php      Actualiza anotaciones internas
 login.php                  Login administrativo
 config/app.php             Configuración general
+config/local.example.php   Plantilla de configuración privada
 config/db.php              Base de datos
 crear_tablas.sql           Estructura completa
 instalar_base_datos.php    Instalador automático temporal
