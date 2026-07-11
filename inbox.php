@@ -182,6 +182,7 @@ SELECT
   ch.instagram_username AS channel_username,
   l.fullname AS lead_fullname,
   l.sales_status AS lead_sales_status,
+  l.notes AS lead_notes,
   (
     SELECT MAX(im.sent_at)
     FROM {$messagesTable} im
@@ -326,6 +327,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .reply-box.is-disabled { opacity:.72; background:#f6f9fc; }
     .reply-box.is-disabled textarea { background:#f1f5f9; color:#64748b; cursor:not-allowed; }
     .reply-box.is-disabled .icon-tool, .reply-box.is-disabled .emoji-btn, .reply-box.is-disabled .composer-submit { filter:grayscale(.25); cursor:not-allowed; }
+    .reply-box.is-disabled .composer-file { pointer-events:none; }
     .composer-main { display:grid; grid-template-columns:minmax(0, 1fr) 44px 112px; gap:10px; align-items:stretch; }
     .composer-input { position:relative; }
     .reply-box textarea { width:100%; height:104px; min-height:104px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
@@ -374,6 +376,11 @@ function inbox_visible_message_text($value, array $attachments): string {
     .info-row strong { color:var(--inbox-ink); }
     .status-form { display:grid; gap:8px; }
     .status-save-hint { color:var(--inbox-muted); font-size:.78rem; font-weight:750; }
+    .side-notes-field { display:grid; gap:7px; }
+    .side-notes-field span { color:var(--inbox-ink); font-size:.9rem; font-weight:850; }
+    .side-notes-input { width:100%; min-height:92px; resize:vertical; padding:10px 12px; border:1px solid var(--line); border-radius:12px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; line-height:1.35; }
+    .side-notes-input:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
+    .side-notes-input.is-saving { opacity:.65; cursor:progress; }
     .side-window-alert { display:grid; gap:4px; padding:12px; border-radius:12px; border:1px solid #f1d589; background:#fff8df; color:#8a5b00; font-size:.88rem; line-height:1.35; font-weight:750; }
     .side-window-alert[hidden] { display:none; }
     .side-window-alert strong { color:inherit; }
@@ -524,7 +531,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php endif; ?>
               </div>
 
-              <form class="reply-box <?= ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
+              <form class="reply-box <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
                 <div class="composer-main">
@@ -543,7 +550,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   </div>
                   <div class="composer-quick-actions" aria-label="Acciones rápidas del mensaje">
                     <div class="emoji-wrap">
-                      <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false">☺</button>
+                      <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>☺</button>
                       <div class="emoji-panel" id="emojiPanel" aria-label="Emojis rápidos">
                         <?php foreach (['😀','😁','😂','😊','😍','😎','🙌','👍','🙏','🔥','✨','✅','👀','💬','📌','📍','💰','🚀'] as $emoji): ?>
                           <button class="emoji-option" type="button" data-emoji="<?= h($emoji) ?>"><?= h($emoji) ?></button>
@@ -597,6 +604,10 @@ function inbox_visible_message_text($value, array $attachments): string {
               <div class="info-row"><span>Status comercial</span><strong id="salesStatusLabel"><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
 
               <?php if (!empty($selected['lead_id'])): ?>
+              <label class="side-notes-field">
+                <span>Anotaciones</span>
+                <textarea class="side-notes-input" data-lead-notes data-lead-id="<?= (int) $selected['lead_id'] ?>" maxlength="2000" rows="4" placeholder="Agregar anotación..." <?= $canEditLeads ? '' : 'disabled' ?>><?= h((string) ($selected['lead_notes'] ?? '')) ?></textarea>
+              </label>
               <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>" data-auto-status-form data-status-target="salesStatusLabel">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_sales_status">
@@ -690,9 +701,13 @@ function inbox_visible_message_text($value, array $attachments): string {
       inboxState.canReply = Boolean(canReply);
       if (!replyForm) return;
       replyForm.classList.toggle('is-disabled', !inboxState.canReply);
-      replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, button[type="submit"]').forEach(el => {
+      replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, #emojiToggle, button[type="submit"]').forEach(el => {
         el.disabled = !inboxState.canReply;
       });
+      if (!inboxState.canReply && emojiPanel && emojiToggle) {
+        emojiPanel.classList.remove('is-open');
+        emojiToggle.setAttribute('aria-expanded', 'false');
+      }
     }
 
     function updateReplyWindow(windowInfo) {
@@ -1497,6 +1512,49 @@ function inbox_visible_message_text($value, array $attachments): string {
           showNotice(error.message || 'No se pudo actualizar.', 'error');
         } finally {
           select.disabled = false;
+        }
+      });
+    });
+
+    document.querySelectorAll('[data-lead-notes]').forEach(field => {
+      let previousValue = field.value;
+
+      field.addEventListener('focus', () => {
+        previousValue = field.value;
+      });
+
+      field.addEventListener('blur', async () => {
+        const leadId = field.getAttribute('data-lead-id');
+        const nextValue = field.value;
+        if (!leadId || nextValue === previousValue) return;
+
+        field.disabled = true;
+        field.classList.add('is-saving');
+
+        try {
+          const formData = new FormData();
+          formData.append('id', leadId);
+          formData.append('notes', nextValue);
+          formData.append('csrf', inboxState.csrf);
+
+          const response = await fetch('update_lead_notes.php', {
+            method: 'POST',
+            body: formData,
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+            cache: 'no-store'
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'No se pudieron actualizar las anotaciones.');
+
+          previousValue = nextValue;
+          showNotice('Anotaciones actualizadas.');
+          pollInbox(true);
+        } catch (error) {
+          field.value = previousValue;
+          showNotice(error.message || 'No se pudieron actualizar las anotaciones.', 'error');
+        } finally {
+          field.disabled = false;
+          field.classList.remove('is-saving');
         }
       });
     });
