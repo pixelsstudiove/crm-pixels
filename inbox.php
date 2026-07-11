@@ -287,7 +287,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .message-meta.error { color:#b83232; opacity:1; font-weight:900; }
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
-    .composer-main { display:grid; grid-template-columns:minmax(0, 1fr) 112px; gap:10px; align-items:stretch; }
+    .composer-main { display:grid; grid-template-columns:minmax(0, 1fr) 44px 112px; gap:10px; align-items:stretch; }
     .composer-input { position:relative; }
     .reply-box textarea { width:100%; height:104px; min-height:104px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
     .reply-box textarea:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
@@ -302,11 +302,12 @@ function inbox_visible_message_text($value, array $attachments): string {
     .recording-action.send { background:#071120; border-color:#071120; color:#eafaff; }
     .recording-action.cancel { background:#fff; color:#a82b2b; border-color:#f4a6a6; }
     .composer-submit { width:100%; height:100%; min-height:104px; border-radius:12px; }
+    .composer-quick-actions { display:grid; grid-template-rows:repeat(3, 1fr); gap:5px; min-height:104px; }
     .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.86rem; font-weight:750; }
-    .composer-file { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .composer-file { display:inline-flex; align-items:center; justify-content:center; }
     .composer-file input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
-    .icon-tool { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; padding:0; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-size:1.15rem; font-weight:900; cursor:pointer; }
+    .icon-tool { display:inline-flex; align-items:center; justify-content:center; width:100%; height:100%; min-height:0; padding:0; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-size:1.05rem; font-weight:900; cursor:pointer; }
     .icon-tool:hover { background:#dff6ff; border-color:#8bdfff; }
     .file-name { max-width:220px; color:var(--inbox-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .audio-recorder { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -319,9 +320,9 @@ function inbox_visible_message_text($value, array $attachments): string {
     .enter-toggle { display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
     .enter-toggle input { width:16px; height:16px; accent-color:#007ea8; }
     .emoji-wrap { position:relative; }
-    .emoji-btn { width:40px; height:36px; padding:0; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:1.05rem; font-weight:900; cursor:pointer; }
+    .emoji-btn { width:100%; height:100%; min-height:0; padding:0; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:1.05rem; font-weight:900; cursor:pointer; }
     .emoji-btn:hover { background:#dff6ff; border-color:#8bdfff; }
-    .emoji-panel { position:absolute; right:0; bottom:42px; width:232px; display:none; grid-template-columns:repeat(6, 1fr); gap:6px; padding:10px; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 14px 36px rgba(0, 76, 110, .18); z-index:5; }
+    .emoji-panel { position:absolute; right:0; bottom:calc(100% + 8px); width:232px; display:none; grid-template-columns:repeat(6, 1fr); gap:6px; padding:10px; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 14px 36px rgba(0, 76, 110, .18); z-index:5; }
     .emoji-panel.is-open { display:grid; }
     .emoji-option { width:30px; height:30px; border:1px solid transparent; border-radius:8px; background:#fff; cursor:pointer; font-size:1.05rem; }
     .emoji-option:hover { background:#eefaff; border-color:#8bdfff; }
@@ -337,7 +338,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .empty-state { display:grid; place-items:center; min-height:500px; text-align:center; color:var(--inbox-muted); padding:24px; }
     .notice { margin-bottom:14px; }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) 1fr; } .side-panel { grid-column:1 / -1; } }
-    @media (max-width: 760px) { .inbox-layout { grid-template-columns:1fr; } .conversation-list { max-height:300px; } .message-list { height:430px; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:1fr; } .composer-submit { min-height:46px; } }
+    @media (max-width: 760px) { .inbox-layout { grid-template-columns:1fr; } .conversation-list { max-height:300px; } .message-list { height:430px; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:minmax(0, 1fr) 44px; } .composer-submit { grid-column:1 / -1; min-height:46px; } }
   </style>
 </head>
 <body class="dashboard-page">
@@ -458,33 +459,33 @@ function inbox_visible_message_text($value, array $attachments): string {
                       </div>
                     </div>
                   </div>
+                  <div class="composer-quick-actions" aria-label="Acciones rápidas del mensaje">
+                    <div class="emoji-wrap">
+                      <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false">☺</button>
+                      <div class="emoji-panel" id="emojiPanel" aria-label="Emojis rápidos">
+                        <?php foreach (['😀','😁','😂','😊','😍','😎','🙌','👍','🙏','🔥','✨','✅','👀','💬','📌','📍','💰','🚀'] as $emoji): ?>
+                          <button class="emoji-option" type="button" data-emoji="<?= h($emoji) ?>"><?= h($emoji) ?></button>
+                        <?php endforeach; ?>
+                      </div>
+                    </div>
+                    <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages ? '' : 'disabled' ?>>🎙</button>
+                    <label class="composer-file" title="Adjuntar imagen o audio" aria-label="Adjuntar imagen o audio">
+                      <span class="icon-tool">📎</span>
+                      <input type="file" name="media" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" <?= $canSendMessages ? '' : 'disabled' ?>>
+                    </label>
+                  </div>
                   <button class="inbox-btn primary composer-submit" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
                 </div>
                 <div class="composer-tools">
                   <div class="composer-left">
-                    <label class="composer-file">
-                      <span class="icon-tool" title="Adjuntar imagen o audio" aria-label="Adjuntar imagen o audio">📎</span>
-                      <input type="file" name="media" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" <?= $canSendMessages ? '' : 'disabled' ?>>
-                      <span class="file-name" id="mediaFileName">Sin adjunto</span>
-                    </label>
-                    <div class="audio-recorder">
-                      <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages ? '' : 'disabled' ?>>🎙</button>
-                      <span class="record-status" id="audioRecordStatus">Sin audio grabado</span>
-                      <audio class="record-preview" id="audioRecordPreview" controls preload="metadata" hidden></audio>
-                    </div>
+                    <span class="file-name" id="mediaFileName">Sin adjunto</span>
+                    <span class="record-status" id="audioRecordStatus">Sin audio grabado</span>
+                    <audio class="record-preview" id="audioRecordPreview" controls preload="metadata" hidden></audio>
                     <label class="enter-toggle">
                       <input type="checkbox" id="sendWithEnter" checked>
                       <span>Enviar con Intro</span>
                     </label>
                     <span>Shift + Intro crea salto de línea</span>
-                  </div>
-                  <div class="emoji-wrap">
-                    <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false">☺</button>
-                    <div class="emoji-panel" id="emojiPanel" aria-label="Emojis rápidos">
-                      <?php foreach (['😀','😁','😂','😊','😍','😎','🙌','👍','🙏','🔥','✨','✅','👀','💬','📌','📍','💰','🚀'] as $emoji): ?>
-                        <button class="emoji-option" type="button" data-emoji="<?= h($emoji) ?>"><?= h($emoji) ?></button>
-                      <?php endforeach; ?>
-                    </div>
                   </div>
                 </div>
                 <div class="reply-actions">
