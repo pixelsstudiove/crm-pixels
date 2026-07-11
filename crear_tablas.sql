@@ -142,6 +142,26 @@ CREATE TABLE IF NOT EXISTS `conversation_messages` (
   KEY `idx_sent_at` (`sent_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `conversation_attachments` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `conversation_id` INT UNSIGNED NOT NULL,
+  `message_id` INT UNSIGNED NULL,
+  `direction` VARCHAR(20) NOT NULL,
+  `media_type` VARCHAR(40) NOT NULL DEFAULT 'image',
+  `mime_type` VARCHAR(120) NULL,
+  `file_size` INT UNSIGNED NULL,
+  `storage_disk` VARCHAR(40) NOT NULL DEFAULT 'r2',
+  `storage_key` VARCHAR(500) NOT NULL,
+  `original_url` TEXT NULL,
+  `filename` VARCHAR(180) NULL,
+  `external_attachment_id` VARCHAR(180) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_storage_key` (`storage_key`),
+  KEY `idx_conversation_id` (`conversation_id`),
+  KEY `idx_message_id` (`message_id`),
+  KEY `idx_media_type` (`media_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `webhook_event_logs` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `source` VARCHAR(40) NOT NULL DEFAULT 'instagram',

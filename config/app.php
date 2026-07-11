@@ -45,6 +45,7 @@ $app = [
     'conversation_contacts_table' => 'conversation_contacts',
     'conversations_table' => 'conversations',
     'conversation_messages_table' => 'conversation_messages',
+    'conversation_attachments_table' => 'conversation_attachments',
     'webhook_event_logs_table' => 'webhook_event_logs',
   ],
 
@@ -167,6 +168,21 @@ $app = [
     'default_business_type' => 'Instagram DM',
     'default_service' => 'Mensaje directo de Instagram',
     'default_objective' => 'Conversación iniciada desde Instagram',
+  ],
+
+  'media' => [
+    'max_upload_bytes' => (int) env_value('MEDIA_MAX_UPLOAD_BYTES', '8388608'),
+    'allowed_image_mimes' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
+  ],
+
+  'r2' => [
+    'account_id' => (string) env_value('R2_ACCOUNT_ID', ''),
+    'access_key_id' => (string) env_value('R2_ACCESS_KEY_ID', ''),
+    'secret_access_key' => (string) env_value('R2_SECRET_ACCESS_KEY', ''),
+    'bucket' => (string) env_value('R2_BUCKET', ''),
+    'endpoint' => (string) env_value('R2_ENDPOINT', ''),
+    'region' => (string) env_value('R2_REGION', 'auto'),
+    'public_base_url' => (string) env_value('R2_PUBLIC_BASE_URL', ''),
   ],
 
   'security' => [

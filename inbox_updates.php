@@ -130,12 +130,16 @@ SQL;
       conv_mark_read($pdo, (int) $selected['id']);
       $msgStmt = $pdo->prepare("SELECT * FROM (SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at DESC, m.id DESC LIMIT 120) recent_messages ORDER BY sent_at ASC, id ASC");
       $msgStmt->execute([(int) $selected['id']]);
-      foreach ($msgStmt->fetchAll() as $message) {
+      $messageRows = $msgStmt->fetchAll();
+      $attachmentsByMessage = conv_attachments_for_messages($pdo, array_map(static fn($message) => (int) ($message['id'] ?? 0), $messageRows));
+      foreach ($messageRows as $message) {
         $direction = (string) ($message['direction'] ?? 'inbound');
+        $messageId = (int) $message['id'];
         $messages[] = [
-          'id' => (int) $message['id'],
+          'id' => $messageId,
           'direction' => $direction === 'outbound' ? 'outbound' : 'inbound',
           'text' => (string) ($message['message_text'] ?: 'Mensaje sin texto'),
+          'attachments' => $attachmentsByMessage[$messageId] ?? [],
           'time' => updates_time($message['sent_at'] ?? ''),
           'sent_by_username' => (string) ($message['sent_by_username'] ?? ''),
           'delivery_status' => (string) ($message['delivery_status'] ?? ''),

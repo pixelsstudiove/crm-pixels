@@ -225,6 +225,76 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
   ];
 }
 
+function ig_download_media(string $url, ?string $accessToken): array {
+  $headers = [];
+  if ($accessToken) $headers[] = 'Authorization: Bearer ' . $accessToken;
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+    CURLOPT_URL => $url,
+    CURLOPT_HTTPHEADER => $headers,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 3,
+    CURLOPT_TIMEOUT => 35,
+  ]);
+  $bytes = curl_exec($ch);
+  $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $contentType = (string) curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+  $error = curl_error($ch);
+  curl_close($ch);
+  if ($error !== '' || $http < 200 || $http >= 300 || !is_string($bytes) || $bytes === '') {
+    return ['ok' => false, 'error' => $error !== '' ? $error : 'No se pudo descargar el adjunto de Meta.'];
+  }
+  return ['ok' => true, 'bytes' => $bytes, 'mime' => trim(explode(';', $contentType)[0] ?? '')];
+}
+
+function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel): void {
+  if ($conversationId <= 0 || $messageId <= 0 || !r2_is_configured()) return;
+  $attachments = $event['message']['attachments'] ?? [];
+  if (!is_array($attachments) || !$attachments) return;
+
+  $allowedMimes = (array) app_config('media.allowed_image_mimes', []);
+  $maxBytes = max(1024, (int) app_config('media.max_upload_bytes', 8388608));
+  $token = ig_clean($channel['page_access_token'] ?? null, 2000);
+
+  foreach ($attachments as $attachment) {
+    if (!is_array($attachment)) continue;
+    $type = ig_clean($attachment['type'] ?? 'image', 40) ?? 'image';
+    if ($type !== 'image') continue;
+    $payload = $attachment['payload'] ?? [];
+    $payload = is_array($payload) ? $payload : [];
+    $url = ig_clean($payload['url'] ?? null, 2000);
+    if ($url === null) continue;
+
+    $download = ig_download_media($url, $token);
+    if (!($download['ok'] ?? false)) continue;
+    $bytes = (string) ($download['bytes'] ?? '');
+    if ($bytes === '' || strlen($bytes) > $maxBytes) continue;
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = (string) ($finfo->buffer($bytes) ?: ($download['mime'] ?? ''));
+    if (!in_array($mime, $allowedMimes, true)) continue;
+
+    $key = r2_random_key('instagram/inbound/' . $conversationId, $mime);
+    $upload = r2_upload_bytes($key, $bytes, $mime);
+    if (!($upload['ok'] ?? false)) continue;
+
+    conv_add_attachment($pdo, [
+      'conversation_id' => $conversationId,
+      'message_id' => $messageId,
+      'direction' => 'inbound',
+      'media_type' => 'image',
+      'mime_type' => $mime,
+      'file_size' => strlen($bytes),
+      'storage_disk' => 'r2',
+      'storage_key' => $key,
+      'original_url' => $url,
+      'filename' => basename(parse_url($url, PHP_URL_PATH) ?: ('instagram-image.' . r2_extension_from_mime($mime))),
+      'external_attachment_id' => ig_clean($payload['attachment_id'] ?? null, 180),
+    ]);
+  }
+}
+
 function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): array {
   try {
     conv_ensure_schema($pdo);
@@ -270,6 +340,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
     ]);
 
     if ($inserted > 0) {
+      ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel);
       conv_upsert_conversation($pdo, [
         'channel_id' => $channel['id'] ?? null,
         'contact_id' => $contactId,

@@ -10,4 +10,11 @@ return [
   'INSTAGRAM_WEBHOOK_VERIFY_TOKEN' => '',
   'INSTAGRAM_APP_SECRET' => '',
   'INSTAGRAM_DM_INBOX_URL' => 'https://www.instagram.com/direct/inbox/',
+  'R2_ACCOUNT_ID' => '',
+  'R2_ACCESS_KEY_ID' => '',
+  'R2_SECRET_ACCESS_KEY' => '',
+  'R2_BUCKET' => 'crm-pixels-media',
+  'R2_ENDPOINT' => '',
+  'R2_REGION' => 'auto',
+  'R2_PUBLIC_BASE_URL' => '',
 ];

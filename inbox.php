@@ -192,6 +192,7 @@ if ($selected) {
   $msgStmt->execute([(int) $selected['id']]);
   $messages = $msgStmt->fetchAll();
 }
+$attachmentsByMessage = conv_attachments_for_messages($pdo, array_map(static fn($message) => (int) ($message['id'] ?? 0), $messages));
 $lastMessageId = 0;
 foreach ($messages as $message) $lastMessageId = max($lastMessageId, (int) ($message['id'] ?? 0));
 
@@ -262,6 +263,8 @@ function inbox_channel_label(array $channel): string {
     .message.outbound { align-self:flex-end; background:#071120; border-color:#071120; color:#eafaff; }
     .message.inbound { align-self:flex-start; }
     .message-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
+    .message-attachments { display:grid; gap:8px; margin-bottom:8px; }
+    .message-image { display:block; max-width:min(280px, 100%); max-height:320px; border-radius:12px; border:1px solid rgba(0,68,99,.12); object-fit:cover; background:#fff; }
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
     .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
@@ -367,7 +370,19 @@ function inbox_channel_label(array $channel): string {
                 <?php if ($messages): foreach ($messages as $message): ?>
                   <?php $direction = (string) ($message['direction'] ?? 'inbound'); ?>
                   <article class="message <?= $direction === 'outbound' ? 'outbound' : 'inbound' ?>" data-message-id="<?= (int) $message['id'] ?>">
-                    <div class="message-text"><?= h($message['message_text'] ?: 'Mensaje sin texto') ?></div>
+                    <?php $messageAttachments = $attachmentsByMessage[(int) $message['id']] ?? []; ?>
+                    <?php if ($messageAttachments): ?>
+                      <div class="message-attachments">
+                        <?php foreach ($messageAttachments as $attachment): ?>
+                          <?php if (($attachment['media_type'] ?? '') === 'image'): ?>
+                            <a href="<?= h($attachment['url']) ?>" target="_blank" rel="noopener">
+                              <img class="message-image" src="<?= h($attachment['url']) ?>" alt="<?= h((string) ($attachment['filename'] ?: 'Imagen adjunta')) ?>">
+                            </a>
+                          <?php endif; ?>
+                        <?php endforeach; ?>
+                      </div>
+                    <?php endif; ?>
+                    <div class="message-text"><?= h($message['message_text'] ?: ($messageAttachments ? 'Imagen' : 'Mensaje sin texto')) ?></div>
                     <div class="message-meta">
                       <?= $direction === 'outbound' ? 'Enviado' : 'Recibido' ?> · <?= h(inbox_time($message['sent_at'] ?? '')) ?>
                       <?php if ($direction === 'outbound' && !empty($message['sent_by_username'])): ?> · <?= h($message['sent_by_username']) ?><?php endif; ?>
@@ -378,12 +393,13 @@ function inbox_channel_label(array $channel): string {
                 <?php endif; ?>
               </div>
 
-              <form class="reply-box" id="replyForm" method="post" action="send_instagram_message.php">
+              <form class="reply-box" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
-                <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?> required></textarea>
+                <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
                 <div class="composer-tools">
                   <div class="composer-left">
+                    <input type="file" name="image" accept="image/jpeg,image/png,image/gif,image/webp" <?= $canSendMessages ? '' : 'disabled' ?>>
                     <label class="enter-toggle">
                       <input type="checkbox" id="sendWithEnter" checked>
                       <span>Enviar con Intro</span>
@@ -492,6 +508,20 @@ function inbox_channel_label(array $channel): string {
       window.setTimeout(() => { if (noticeArea) noticeArea.innerHTML = ''; }, 4200);
     }
 
+    function attachmentMarkup(attachments) {
+      if (!Array.isArray(attachments) || !attachments.length) return '';
+      const items = attachments.map(attachment => {
+        if (attachment.media_type !== 'image' || !attachment.url) return '';
+        const alt = attachment.filename || 'Imagen adjunta';
+        return `
+          <a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">
+            <img class="message-image" src="${escapeHtml(attachment.url)}" alt="${escapeHtml(alt)}">
+          </a>
+        `;
+      }).join('');
+      return items ? `<div class="message-attachments">${items}</div>` : '';
+    }
+
     function insertAtCursor(textarea, value) {
       if (!textarea || !value) return;
       const start = textarea.selectionStart ?? textarea.value.length;
@@ -557,7 +587,8 @@ function inbox_channel_label(array $channel): string {
       article.className = `message ${direction}`;
       article.dataset.messageId = String(message.id);
       article.innerHTML = `
-        <div class="message-text">${escapeHtml(message.text || 'Mensaje sin texto')}</div>
+        ${attachmentMarkup(message.attachments)}
+        <div class="message-text">${escapeHtml(message.text || (Array.isArray(message.attachments) && message.attachments.length ? 'Imagen' : 'Mensaje sin texto'))}</div>
         <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
       `;
       messageList.appendChild(article);
@@ -571,7 +602,8 @@ function inbox_channel_label(array $channel): string {
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
       return `
         <article class="message ${direction}" data-message-id="${Number(message.id)}">
-          <div class="message-text">${escapeHtml(message.text || 'Mensaje sin texto')}</div>
+          ${attachmentMarkup(message.attachments)}
+          <div class="message-text">${escapeHtml(message.text || (Array.isArray(message.attachments) && message.attachments.length ? 'Imagen' : 'Mensaje sin texto'))}</div>
           <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
         </article>
       `;
@@ -658,8 +690,11 @@ function inbox_channel_label(array $channel): string {
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const textarea = replyForm.querySelector('textarea[name="message"]');
+        const imageInput = replyForm.querySelector('input[name="image"]');
         const button = replyForm.querySelector('button[type="submit"]');
-        if (!textarea || !textarea.value.trim()) return;
+        const hasText = textarea && textarea.value.trim();
+        const hasImage = imageInput && imageInput.files && imageInput.files.length > 0;
+        if (!hasText && !hasImage) return;
         replyForm.classList.add('is-sending');
         if (button) button.disabled = true;
         try {
@@ -672,8 +707,10 @@ function inbox_channel_label(array $channel): string {
           const data = await response.json();
           if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
           textarea.value = '';
+          if (imageInput) imageInput.value = '';
           const shouldStick = isNearBottom(messageList);
-          if (data.message) appendMessage(data.message);
+          if (Array.isArray(data.messages)) data.messages.forEach(appendMessage);
+          else if (data.message) appendMessage(data.message);
           if (shouldStick) scrollMessagesToBottom();
           showNotice(data.notice || 'Mensaje enviado.');
           pollInbox(true);

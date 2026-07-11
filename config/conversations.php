@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/instagram_channels.php';
+require_once __DIR__ . '/r2.php';
 
 function conv_contacts_table(): string {
   return safe_identifier((string) app_config('database.conversation_contacts_table', 'conversation_contacts'), 'conversation_contacts');
@@ -16,6 +17,10 @@ function conv_messages_table(): string {
   return safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages');
 }
 
+function conv_attachments_table(): string {
+  return safe_identifier((string) app_config('database.conversation_attachments_table', 'conversation_attachments'), 'conversation_attachments');
+}
+
 function conv_webhook_logs_table(): string {
   return safe_identifier((string) app_config('database.webhook_event_logs_table', 'webhook_event_logs'), 'webhook_event_logs');
 }
@@ -24,6 +29,7 @@ function conv_ensure_schema(PDO $pdo): void {
   $contactsTable = conv_contacts_table();
   $conversationsTable = conv_conversations_table();
   $messagesTable = conv_messages_table();
+  $attachmentsTable = conv_attachments_table();
   $logsTable = conv_webhook_logs_table();
 
   $pdo->exec(<<<SQL
@@ -91,6 +97,28 @@ CREATE TABLE IF NOT EXISTS {$messagesTable} (
 SQL);
 
   $pdo->exec(<<<SQL
+CREATE TABLE IF NOT EXISTS {$attachmentsTable} (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  conversation_id INT UNSIGNED NOT NULL,
+  message_id INT UNSIGNED NULL,
+  direction VARCHAR(20) NOT NULL,
+  media_type VARCHAR(40) NOT NULL DEFAULT 'image',
+  mime_type VARCHAR(120) NULL,
+  file_size INT UNSIGNED NULL,
+  storage_disk VARCHAR(40) NOT NULL DEFAULT 'r2',
+  storage_key VARCHAR(500) NOT NULL,
+  original_url TEXT NULL,
+  filename VARCHAR(180) NULL,
+  external_attachment_id VARCHAR(180) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_storage_key (storage_key),
+  KEY idx_conversation_id (conversation_id),
+  KEY idx_message_id (message_id),
+  KEY idx_media_type (media_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+SQL);
+
+  $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$logsTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   source VARCHAR(40) NOT NULL DEFAULT 'instagram',
@@ -121,6 +149,7 @@ SQL);
   try { $pdo->exec("ALTER TABLE {$messagesTable} MODIFY external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$messagesTable} ADD UNIQUE KEY uniq_conversation_message_hash (conversation_id, external_message_hash)"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$logsTable} MODIFY external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$attachmentsTable} ADD COLUMN external_attachment_id VARCHAR(180) NULL AFTER filename"); } catch (Throwable $e) { /* no-op */ }
 }
 
 function conv_clean($value, int $max = 180): ?string {
@@ -239,6 +268,65 @@ SQL);
   return (int) ($find->fetchColumn() ?: 0);
 }
 
+function conv_add_attachment(PDO $pdo, array $data): int {
+  $table = conv_attachments_table();
+  $conversationId = (int) ($data['conversation_id'] ?? 0);
+  $storageKey = conv_clean($data['storage_key'] ?? null, 500);
+  if ($conversationId <= 0 || $storageKey === null) return 0;
+  $messageId = isset($data['message_id']) ? (int) $data['message_id'] : null;
+  $direction = conv_clean($data['direction'] ?? 'inbound', 20) ?? 'inbound';
+  $mediaType = conv_clean($data['media_type'] ?? 'image', 40) ?? 'image';
+  $mimeType = conv_clean($data['mime_type'] ?? null, 120);
+  $fileSize = isset($data['file_size']) ? (int) $data['file_size'] : null;
+  $storageDisk = conv_clean($data['storage_disk'] ?? 'r2', 40) ?? 'r2';
+  $originalUrl = isset($data['original_url']) ? (string) $data['original_url'] : null;
+  $filename = conv_clean($data['filename'] ?? null, 180);
+  $externalAttachmentId = conv_clean($data['external_attachment_id'] ?? null, 180);
+
+  $stmt = $pdo->prepare(<<<SQL
+INSERT INTO {$table} (
+  conversation_id, message_id, direction, media_type, mime_type, file_size,
+  storage_disk, storage_key, original_url, filename, external_attachment_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+  message_id = COALESCE(VALUES(message_id), message_id),
+  mime_type = COALESCE(VALUES(mime_type), mime_type),
+  file_size = COALESCE(VALUES(file_size), file_size),
+  original_url = COALESCE(VALUES(original_url), original_url),
+  filename = COALESCE(VALUES(filename), filename),
+  external_attachment_id = COALESCE(VALUES(external_attachment_id), external_attachment_id)
+SQL);
+  $stmt->execute([$conversationId, $messageId, $direction, $mediaType, $mimeType, $fileSize, $storageDisk, $storageKey, $originalUrl, $filename, $externalAttachmentId]);
+  $insertedId = (int) $pdo->lastInsertId();
+  if ($insertedId > 0) return $insertedId;
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE storage_key=? LIMIT 1");
+  $find->execute([$storageKey]);
+  return (int) ($find->fetchColumn() ?: 0);
+}
+
+function conv_attachments_for_messages(PDO $pdo, array $messageIds): array {
+  $messageIds = array_values(array_unique(array_filter(array_map('intval', $messageIds), static fn($id) => $id > 0)));
+  if (!$messageIds) return [];
+  $table = conv_attachments_table();
+  $placeholders = implode(',', array_fill(0, count($messageIds), '?'));
+  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE message_id IN ({$placeholders}) ORDER BY id ASC");
+  $stmt->execute($messageIds);
+  $grouped = [];
+  foreach ($stmt->fetchAll() as $row) {
+    $messageId = (int) ($row['message_id'] ?? 0);
+    if ($messageId <= 0) continue;
+    $grouped[$messageId][] = [
+      'id' => (int) ($row['id'] ?? 0),
+      'media_type' => (string) ($row['media_type'] ?? 'image'),
+      'mime_type' => (string) ($row['mime_type'] ?? ''),
+      'file_size' => (int) ($row['file_size'] ?? 0),
+      'filename' => (string) ($row['filename'] ?? ''),
+      'url' => 'media.php?id=' . (int) ($row['id'] ?? 0),
+    ];
+  }
+  return $grouped;
+}
+
 function conv_mark_read(PDO $pdo, int $conversationId): void {
   if ($conversationId <= 0) return;
   $table = conv_conversations_table();
@@ -325,6 +413,52 @@ function conv_send_instagram_message(PDO $pdo, array $conversation, string $mess
   ], static fn($value) => trim($value) !== ''));
 
   $lastError = 'No se pudo enviar el mensaje.';
+  foreach (array_unique($targets) as $target) {
+    $response = conv_graph_post_json($target . '/messages', $payload, $token);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+    }
+    $lastError = (string) ($response['error'] ?? $lastError);
+  }
+
+  return ['ok' => false, 'error' => $lastError];
+}
+
+function conv_send_instagram_image(PDO $pdo, array $conversation, string $imageUrl): array {
+  $imageUrl = trim($imageUrl);
+  if ($imageUrl === '') return ['ok' => false, 'error' => 'La imagen no esta disponible.'];
+
+  $channelsTable = ig_channels_table();
+  $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 LIMIT 1");
+  $stmt->execute([(int) ($conversation['channel_id'] ?? 0)]);
+  $channel = $stmt->fetch();
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de Instagram no disponible.'];
+
+  $token = (string) ($channel['page_access_token'] ?? '');
+  $recipientId = (string) ($conversation['contact_external_id'] ?? '');
+  if ($token === '' || $recipientId === '') return ['ok' => false, 'error' => 'Faltan credenciales del canal o destinatario.'];
+
+  $payload = [
+    'recipient' => ['id' => $recipientId],
+    'message' => [
+      'attachment' => [
+        'type' => 'image',
+        'payload' => [
+          'url' => $imageUrl,
+          'is_reusable' => true,
+        ],
+      ],
+    ],
+    'messaging_type' => 'RESPONSE',
+  ];
+
+  $targets = array_values(array_filter([
+    (string) ($channel['instagram_user_id'] ?? ''),
+    (string) ($channel['page_id'] ?? ''),
+    'me',
+  ], static fn($value) => trim($value) !== ''));
+
+  $lastError = 'No se pudo enviar la imagen.';
   foreach (array_unique($targets) as $target) {
     $response = conv_graph_post_json($target . '/messages', $payload, $token);
     if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
