@@ -515,6 +515,12 @@ function dash_channel_label(array $channel): string {
     .funnel-wrap { margin-top:18px; overflow-x:auto; padding-bottom:6px; }
     .funnel-board { display:flex; gap:12px; align-items:flex-start; min-width:max-content; }
     .funnel-column { --status-color:#00a9e0; --status-bg:#eefaff; width:clamp(270px, 18vw, 340px); max-height:72vh; display:flex; flex-direction:column; border:1px solid rgba(0,212,255,.16); border-top:5px solid var(--status-color); border-radius:16px; background:var(--status-bg); overflow:hidden; }
+    .funnel-wrap.is-filtered { overflow:visible; }
+    .funnel-board.is-filtered { display:block; min-width:0; }
+    .funnel-column.is-filtered { width:100%; max-height:none; overflow:visible; }
+    .funnel-column.is-filtered .funnel-column-header { position:static; }
+    .funnel-column.is-filtered .funnel-list { grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); align-items:start; overflow:visible; padding:14px; }
+    .funnel-column.is-filtered .funnel-empty { grid-column:1 / -1; }
     .funnel-column[data-status="nuevo_lead"] { --status-color:#00a9e0; --status-bg:#eefaff; }
     .funnel-column[data-status="contactado"] { --status-color:#5f7cff; --status-bg:#eef2ff; }
     .funnel-column[data-status="en_conversacion"] { --status-color:#7c5cff; --status-bg:#f2efff; }
@@ -569,6 +575,9 @@ function dash_channel_label(array $channel): string {
       .filters-form { grid-template-columns:1fr; }
       .funnel-wrap { margin-left:-12px; margin-right:-12px; padding-left:12px; padding-right:12px; }
       .funnel-column { width:min(86vw, 320px); max-height:68vh; }
+      .funnel-board.is-filtered { min-width:0; }
+      .funnel-column.is-filtered { width:100%; max-height:none; }
+      .funnel-column.is-filtered .funnel-list { grid-template-columns:1fr; }
     }
     @media (max-width: 700px) { .topbar-right { width:100%; } .menu-dropdown { flex:1; } .menu-trigger { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
   </style>
@@ -650,11 +659,11 @@ function dash_channel_label(array $channel): string {
           <?php endif; ?>
         </div>
 
-        <div class="funnel-wrap" aria-label="Embudo comercial">
-          <div class="funnel-board">
+        <div class="funnel-wrap<?= $filterSalesStatus !== '' ? ' is-filtered' : '' ?>" aria-label="Embudo comercial">
+          <div class="funnel-board<?= $filterSalesStatus !== '' ? ' is-filtered' : '' ?>">
             <?php foreach ($visibleStatusOptions as $statusValue => $statusLabel): ?>
               <?php $cards = $funnelLeadsByStatus[(string) $statusValue] ?? []; ?>
-              <section class="funnel-column" data-status="<?= h((string) $statusValue) ?>" aria-labelledby="funnel-<?= h((string) $statusValue) ?>">
+              <section class="funnel-column<?= $filterSalesStatus !== '' ? ' is-filtered' : '' ?>" data-status="<?= h((string) $statusValue) ?>" aria-labelledby="funnel-<?= h((string) $statusValue) ?>">
                 <header class="funnel-column-header">
                   <h2 id="funnel-<?= h((string) $statusValue) ?>"><?= h($statusLabel) ?></h2>
                   <span class="funnel-count"><?= (int) ($statusCounts[(string) $statusValue] ?? 0) ?></span>
