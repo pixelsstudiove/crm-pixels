@@ -278,11 +278,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message { max-width:min(78%, 620px); border:1px solid var(--inbox-line); border-radius:14px; padding:10px 12px; background:#fff; color:var(--inbox-ink); box-shadow:0 4px 14px rgba(0, 76, 110, .05); }
     .message.outbound { align-self:flex-end; background:#071120; border-color:#071120; color:#eafaff; }
     .message.inbound { align-self:flex-start; }
+    .message.is-pending { opacity:.78; }
+    .message.is-failed { background:#fff3f3; border-color:#f4a6a6; color:#7e1e1e; }
     .message-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
     .message-attachments { display:grid; gap:8px; margin-bottom:8px; }
     .message-image { display:block; max-width:min(280px, 100%); max-height:320px; border-radius:12px; border:1px solid rgba(0,68,99,.12); object-fit:cover; background:#fff; }
     .message-audio { display:block; width:min(320px, 100%); max-width:100%; }
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
+    .message-meta.error { color:#b83232; opacity:1; font-weight:900; }
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
     .composer-input { position:relative; }
     .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
@@ -702,6 +705,69 @@ function inbox_visible_message_text($value, array $attachments): string {
       messageList.dataset.lastId = String(inboxState.lastMessageId);
     }
 
+    function appendOptimisticMessage(message) {
+      if (!messageList || !message || !message.id) return null;
+      const emptyState = messageList.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+      const article = document.createElement('article');
+      article.className = 'message outbound is-pending';
+      article.dataset.messageId = String(message.id);
+      article.dataset.optimistic = '1';
+      const visibleText = visibleMessageText(message);
+      article.innerHTML = `
+        ${attachmentMarkup(message.attachments)}
+        ${visibleText ? `<div class="message-text">${escapeHtml(visibleText)}</div>` : ''}
+        <div class="message-meta">Enviando...</div>
+      `;
+      messageList.appendChild(article);
+      scrollMessagesToBottom();
+      return article;
+    }
+
+    function messageNodeById(id) {
+      if (!messageList) return null;
+      return Array.from(messageList.querySelectorAll('[data-message-id]')).find(node => node.dataset.messageId === String(id)) || null;
+    }
+
+    function replaceOptimisticMessage(tempId, message) {
+      if (!messageList || !tempId || !message || !message.id) return false;
+      const tempNode = messageNodeById(tempId);
+      if (!tempNode) {
+        appendMessage(message);
+        return false;
+      }
+      const existingRealNode = messageNodeById(Number(message.id));
+      if (existingRealNode) {
+        tempNode.remove();
+        inboxState.lastMessageId = Math.max(inboxState.lastMessageId, Number(message.id || 0));
+        messageList.dataset.lastId = String(inboxState.lastMessageId);
+        return true;
+      }
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = messageMarkup(message).trim();
+      const realNode = wrapper.firstElementChild;
+      if (!realNode) return false;
+      tempNode.replaceWith(realNode);
+      inboxState.lastMessageId = Math.max(inboxState.lastMessageId, Number(message.id || 0));
+      messageList.dataset.lastId = String(inboxState.lastMessageId);
+      return true;
+    }
+
+    function markOptimisticFailed(tempIds, errorMessage) {
+      if (!messageList) return;
+      tempIds.forEach(tempId => {
+        const node = messageNodeById(tempId);
+        if (!node) return;
+        node.classList.remove('is-pending');
+        node.classList.add('is-failed');
+        const meta = node.querySelector('.message-meta');
+        if (meta) {
+          meta.classList.add('error');
+          meta.textContent = errorMessage || 'Error al enviar';
+        }
+      });
+    }
+
     function messageMarkup(message) {
       const direction = message.direction === 'outbound' ? 'outbound' : 'inbound';
       const metaLabel = direction === 'outbound' ? 'Enviado' : 'Recibido';
@@ -1069,12 +1135,88 @@ function inbox_visible_message_text($value, array $attachments): string {
         audioCancelButton.addEventListener('click', cancelAudioRecording);
       }
 
+      function mediaKindFromFile(file) {
+        const type = String(file?.type || '').toLowerCase();
+        if (type.startsWith('image/')) return 'image';
+        if (type.startsWith('audio/') || type === 'video/mp4' || type === 'video/webm' || type === 'application/ogg') return 'audio';
+        return 'file';
+      }
+
+      function optimisticAttachmentForFile(file) {
+        if (!file) return null;
+        const mediaType = mediaKindFromFile(file);
+        if (!['image', 'audio'].includes(mediaType)) return null;
+        return {
+          id: `local-${Date.now()}`,
+          media_type: mediaType,
+          mime_type: file.type || '',
+          file_size: file.size || 0,
+          filename: file.name || (mediaType === 'audio' ? 'Audio' : 'Imagen'),
+          url: URL.createObjectURL(file),
+          is_local: true
+        };
+      }
+
+      function cleanupOptimisticUrls(messages) {
+        messages.forEach(message => {
+          (message.attachments || []).forEach(attachment => {
+            if (attachment.is_local && attachment.url) {
+              window.setTimeout(() => URL.revokeObjectURL(attachment.url), 2000);
+            }
+          });
+        });
+      }
+
+      function buildOptimisticMessages(text, file) {
+        const messages = [];
+        const stamp = Date.now();
+        if (text) {
+          messages.push({
+            id: `tmp-text-${stamp}`,
+            direction: 'outbound',
+            text,
+            attachments: [],
+            time: 'ahora'
+          });
+        }
+        if (file) {
+          const attachment = optimisticAttachmentForFile(file);
+          if (attachment) {
+            messages.push({
+              id: `tmp-media-${stamp}`,
+              direction: 'outbound',
+              text: attachment.media_type === 'audio' ? 'Audio enviado' : 'Imagen enviada',
+              attachments: [attachment],
+              time: 'ahora'
+            });
+          }
+        }
+        return messages;
+      }
+
+      function reconcileOptimisticMessages(tempMessages, serverMessages) {
+        const realMessages = Array.isArray(serverMessages) ? serverMessages : [];
+        realMessages.forEach((message, index) => {
+          const temp = tempMessages[index];
+          if (temp) replaceOptimisticMessage(temp.id, message);
+          else appendMessage(message);
+        });
+        if (realMessages.length < tempMessages.length) {
+          tempMessages.slice(realMessages.length).forEach(message => {
+            const node = messageNodeById(message.id);
+            if (node) node.remove();
+          });
+        }
+        cleanupOptimisticUrls(tempMessages);
+      }
+
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const textarea = replyForm.querySelector('textarea[name="message"]');
         const mediaInput = replyForm.querySelector('input[name="media"]');
         const button = replyForm.querySelector('button[type="submit"]');
-        const hasText = textarea && textarea.value.trim();
+        const messageText = textarea ? textarea.value.trim() : '';
+        const hasText = Boolean(messageText);
         const hasMedia = mediaInput && mediaInput.files && mediaInput.files.length > 0;
         const hasRecordedAudio = recordedAudioBlob && recordedAudioBlob.size > 0;
         if (mediaRecorder && mediaRecorder.state === 'recording') {
@@ -1082,14 +1224,18 @@ function inbox_visible_message_text($value, array $attachments): string {
           return;
         }
         if (!hasText && !hasMedia && !hasRecordedAudio) return;
+        const optimisticFile = hasRecordedAudio
+          ? new File([recordedAudioBlob], `nota-de-voz-${Date.now()}.${audioExtensionFromMime(recordedAudioBlob.type)}`, { type: recordedAudioBlob.type || 'audio/webm' })
+          : (hasMedia ? mediaInput.files[0] : null);
+        const optimisticMessages = buildOptimisticMessages(messageText, optimisticFile);
+        optimisticMessages.forEach(appendOptimisticMessage);
         replyForm.classList.add('is-sending');
         if (button) button.disabled = true;
         try {
           const formData = new FormData(replyForm);
           if (hasRecordedAudio) {
-            const ext = audioExtensionFromMime(recordedAudioBlob.type);
             formData.delete('media');
-            formData.append('media', recordedAudioBlob, `nota-de-voz-${Date.now()}.${ext}`);
+            formData.append('media', optimisticFile);
           }
           const response = await fetch(replyForm.action, {
             method: 'POST',
@@ -1103,13 +1249,12 @@ function inbox_visible_message_text($value, array $attachments): string {
           if (mediaInput) mediaInput.value = '';
           if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
           clearRecordedAudio();
-          const shouldStick = isNearBottom(messageList);
-          if (Array.isArray(data.messages)) data.messages.forEach(appendMessage);
-          else if (data.message) appendMessage(data.message);
-          if (shouldStick) scrollMessagesToBottom();
+          reconcileOptimisticMessages(optimisticMessages, Array.isArray(data.messages) ? data.messages : (data.message ? [data.message] : []));
+          scrollMessagesToBottom();
           showNotice(data.notice || 'Mensaje enviado.');
           pollInbox(true);
         } catch (error) {
+          markOptimisticFailed(optimisticMessages.map(message => message.id), error.message || 'Error al enviar');
           showNotice(error.message || 'No se pudo enviar el mensaje.', 'error');
         } finally {
           replyForm.classList.remove('is-sending');
