@@ -1229,14 +1229,21 @@ function inbox_visible_message_text($value, array $attachments): string {
           : (hasMedia ? mediaInput.files[0] : null);
         const optimisticMessages = buildOptimisticMessages(messageText, optimisticFile);
         optimisticMessages.forEach(appendOptimisticMessage);
+        const formData = new FormData(replyForm);
+        if (hasRecordedAudio) {
+          formData.delete('media');
+          formData.append('media', optimisticFile);
+        }
+        if (textarea) {
+          textarea.value = '';
+          textarea.focus();
+        }
+        if (mediaInput) mediaInput.value = '';
+        if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
+        clearRecordedAudio();
         replyForm.classList.add('is-sending');
         if (button) button.disabled = true;
         try {
-          const formData = new FormData(replyForm);
-          if (hasRecordedAudio) {
-            formData.delete('media');
-            formData.append('media', optimisticFile);
-          }
           const response = await fetch(replyForm.action, {
             method: 'POST',
             body: formData,
@@ -1245,10 +1252,6 @@ function inbox_visible_message_text($value, array $attachments): string {
           });
           const data = await response.json();
           if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
-          textarea.value = '';
-          if (mediaInput) mediaInput.value = '';
-          if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
-          clearRecordedAudio();
           reconcileOptimisticMessages(optimisticMessages, Array.isArray(data.messages) ? data.messages : (data.message ? [data.message] : []));
           scrollMessagesToBottom();
           showNotice(data.notice || 'Mensaje enviado.');
