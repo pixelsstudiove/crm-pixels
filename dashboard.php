@@ -416,10 +416,6 @@ function dash_channel_label(array $channel): string {
     .menu-item:hover { background:#eefaff; color:#007ea8; }
     .menu-meta { display:block; padding:6px 10px 9px; color:var(--brand-muted); font-size:.78rem; font-weight:850; border-bottom:1px solid rgba(0,68,99,.10); margin-bottom:6px; }
     .menu-form { margin:0; }
-    .search-form { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .search-input { height:40px; min-width:360px; padding:0 12px; color:var(--brand-ink); border-radius:10px; border:1px solid var(--line); background:#fff; outline:none; }
-    .search-input::placeholder { color:#7b8ca5; }
-    .search-input:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .summary-grid { display:grid; grid-template-columns:repeat(6, minmax(130px, 1fr)); gap:10px; margin-top:18px; }
     .summary-card { min-height:82px; padding:14px; border-radius:14px; border:1px solid var(--line); background:#fff; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .summary-card strong { display:block; color:var(--brand-ink); font-size:1.7rem; line-height:1; font-weight:900; }
@@ -434,11 +430,12 @@ function dash_channel_label(array $channel): string {
     .filters-toggle { display:none; align-items:center; justify-content:center; min-height:40px; margin-top:14px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:800; cursor:pointer; }
     .filters-toggle:hover { background:#dff6ff; border-color:#8bdfff; }
     .filters-toggle:active { transform:translateY(1px); }
-    .filters-form { display:grid; grid-template-columns:minmax(220px, 320px) auto; gap:10px; align-items:end; justify-content:start; }
+    .filters-form { display:grid; grid-template-columns:minmax(260px, 420px) minmax(220px, 320px) auto; gap:10px; align-items:end; justify-content:start; }
     .filter-field { display:grid; gap:6px; min-width:0; }
     .filter-field span { color:var(--brand-muted); font-size:.78rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
-    .filter-field select { width:100%; height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font-weight:700; }
-    .filter-field select:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
+    .filter-field input, .filter-field select { width:100%; height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; font-weight:700; }
+    .filter-field input::placeholder { color:#7b8ca5; font-weight:650; }
+    .filter-field input:focus, .filter-field select:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .filter-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .clear-filters { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 12px; border-radius:10px; border:1px solid var(--line); color:#007ea8; background:#fff; font-weight:800; text-decoration:none; }
     .clear-filters:hover { background:#dff6ff; }
@@ -520,7 +517,7 @@ function dash_channel_label(array $channel): string {
       .filters-form { grid-template-columns:1fr; }
       .funnel-column { width:280px; max-height:68vh; }
     }
-    @media (max-width: 700px) { .search-input { min-width:220px; width:100%; } .search-form { width:100%; } .topbar-right { width:100%; } .menu-dropdown { flex:1; } .menu-dropdown summary { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
+    @media (max-width: 700px) { .topbar-right { width:100%; } .menu-dropdown { flex:1; } .menu-dropdown summary { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
   </style>
 </head>
 <body class="dashboard-page">
@@ -533,11 +530,15 @@ function dash_channel_label(array $channel): string {
             <h1 class="title"><?= h(app_config('ui.dashboard_heading', 'Dashboard')) ?></h1>
           </div>
           <div class="topbar-right">
-            <form class="search-form" method="get" action="dashboard.php">
-              <input class="search-input" type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar conversación, cliente, Instagram o mensaje">
-              <?php if ($filterChannelId > 0): ?><input type="hidden" name="channel_id" value="<?= (int) $filterChannelId ?>"><?php endif; ?>
-              <button class="search-btn" type="submit">Buscar</button>
-            </form>
+            <?php if (can('view_conversations') || $canManageIntegrations): ?>
+              <details class="menu-dropdown">
+                <summary>CRM</summary>
+                <div class="menu-panel">
+                  <?php if (can('view_conversations')): ?><a class="menu-item" href="inbox.php">Inbox</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Gestionar canales</a><?php endif; ?>
+                </div>
+              </details>
+            <?php endif; ?>
             <details class="menu-dropdown">
               <summary><?= h((string) ($_SESSION['username'] ?? 'Usuario')) ?></summary>
               <div class="menu-panel">
@@ -550,15 +551,6 @@ function dash_channel_label(array $channel): string {
                 </form>
               </div>
             </details>
-            <?php if (can('view_conversations') || $canManageIntegrations): ?>
-              <details class="menu-dropdown">
-                <summary>CRM</summary>
-                <div class="menu-panel">
-                  <?php if (can('view_conversations')): ?><a class="menu-item" href="inbox.php">Inbox</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Gestionar canales</a><?php endif; ?>
-                </div>
-              </details>
-            <?php endif; ?>
           </div>
         </div>
 
@@ -579,7 +571,10 @@ function dash_channel_label(array $channel): string {
 
         <div class="lead-filters" id="leadFilters" aria-label="Filtros de conversaciones">
           <form class="filters-form" method="get" action="dashboard.php">
-            <?php if ($q !== ''): ?><input type="hidden" name="q" value="<?= h($q) ?>"><?php endif; ?>
+            <label class="filter-field">
+              <span>Buscar</span>
+              <input type="text" name="q" value="<?= h($q) ?>" placeholder="Cliente, Instagram o mensaje">
+            </label>
 
             <label class="filter-field">
               <span>Canal</span>
@@ -592,7 +587,7 @@ function dash_channel_label(array $channel): string {
             </label>
 
             <div class="filter-actions">
-              <button class="search-btn" type="submit">Filtrar canal</button>
+              <button class="search-btn" type="submit">Filtrar</button>
               <?php if ($activeFilters): ?><a class="clear-filters" href="dashboard.php">Limpiar</a><?php endif; ?>
             </div>
           </form>
