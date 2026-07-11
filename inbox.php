@@ -471,7 +471,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages ? '' : 'disabled' ?>>🎙</button>
                     <label class="composer-file" title="Adjuntar imagen o audio" aria-label="Adjuntar imagen o audio">
                       <span class="icon-tool">📎</span>
-                      <input type="file" name="media" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" <?= $canSendMessages ? '' : 'disabled' ?>>
+                      <input type="file" name="media[]" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" multiple <?= $canSendMessages ? '' : 'disabled' ?>>
                     </label>
                   </div>
                   <button class="inbox-btn primary composer-submit" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
@@ -893,7 +893,7 @@ function inbox_visible_message_text($value, array $attachments): string {
 
     if (replyForm) {
       const textarea = replyForm.querySelector('textarea[name="message"]');
-      const mediaInput = replyForm.querySelector('input[name="media"]');
+      const mediaInput = document.getElementById('mediaInput');
       const mediaFileName = document.getElementById('mediaFileName');
       let mediaRecorder = null;
       let recordingStream = null;
@@ -1135,8 +1135,18 @@ function inbox_visible_message_text($value, array $attachments): string {
       }
       if (mediaInput && mediaFileName) {
         mediaInput.addEventListener('change', () => {
-          if (mediaInput.files && mediaInput.files.length) clearRecordedAudio();
-          mediaFileName.textContent = mediaInput.files && mediaInput.files.length ? mediaInput.files[0].name : 'Sin adjunto';
+          const files = selectedMediaFiles();
+          if (!files.length) {
+            mediaFileName.textContent = 'Sin adjunto';
+            return;
+          }
+          if (!validateSelectedMediaFiles(files)) {
+            mediaInput.value = '';
+            mediaFileName.textContent = 'Sin adjunto';
+            return;
+          }
+          clearRecordedAudio();
+          mediaFileName.textContent = files.length === 1 ? files[0].name : `${files.length} fotos seleccionadas`;
         });
       }
       if (audioRecordButton) {
@@ -1164,6 +1174,23 @@ function inbox_visible_message_text($value, array $attachments): string {
         return 'file';
       }
 
+      function selectedMediaFiles() {
+        return mediaInput && mediaInput.files ? Array.from(mediaInput.files) : [];
+      }
+
+      function validateSelectedMediaFiles(files) {
+        if (!Array.isArray(files) || !files.length) return true;
+        if (files.length > 5) {
+          showNotice('Puedes adjuntar un maximo de 5 fotos por envio.', 'error');
+          return false;
+        }
+        if (files.length > 1 && files.some(file => mediaKindFromFile(file) !== 'image')) {
+          showNotice('Solo puedes adjuntar varias fotos juntas. Los audios se envian uno por uno.', 'error');
+          return false;
+        }
+        return true;
+      }
+
       function optimisticAttachmentForFile(file) {
         if (!file) return null;
         const mediaType = mediaKindFromFile(file);
@@ -1189,9 +1216,10 @@ function inbox_visible_message_text($value, array $attachments): string {
         });
       }
 
-      function buildOptimisticMessages(text, file) {
+      function buildOptimisticMessages(text, files) {
         const messages = [];
         const stamp = Date.now();
+        const mediaFiles = Array.isArray(files) ? files : (files ? [files] : []);
         if (text) {
           messages.push({
             id: `tmp-text-${stamp}`,
@@ -1201,18 +1229,18 @@ function inbox_visible_message_text($value, array $attachments): string {
             time: 'ahora'
           });
         }
-        if (file) {
+        mediaFiles.forEach((file, index) => {
           const attachment = optimisticAttachmentForFile(file);
           if (attachment) {
             messages.push({
-              id: `tmp-media-${stamp}`,
+              id: `tmp-media-${stamp}-${index}`,
               direction: 'outbound',
               text: attachment.media_type === 'audio' ? 'Audio enviado' : 'Imagen enviada',
               attachments: [attachment],
               time: 'ahora'
             });
           }
-        }
+        });
         return messages;
       }
 
@@ -1235,25 +1263,29 @@ function inbox_visible_message_text($value, array $attachments): string {
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const textarea = replyForm.querySelector('textarea[name="message"]');
-        const mediaInput = replyForm.querySelector('input[name="media"]');
+        const mediaInput = document.getElementById('mediaInput');
         const button = replyForm.querySelector('button[type="submit"]');
         const messageText = textarea ? textarea.value.trim() : '';
         const hasText = Boolean(messageText);
-        const hasMedia = mediaInput && mediaInput.files && mediaInput.files.length > 0;
+        const mediaFiles = selectedMediaFiles();
+        const hasMedia = mediaFiles.length > 0;
         const hasRecordedAudio = recordedAudioBlob && recordedAudioBlob.size > 0;
         if (mediaRecorder && mediaRecorder.state === 'recording') {
           showNotice('Deten la grabacion antes de enviar.', 'error');
           return;
         }
         if (!hasText && !hasMedia && !hasRecordedAudio) return;
-        const optimisticFile = hasRecordedAudio
+        if (hasMedia && !validateSelectedMediaFiles(mediaFiles)) return;
+        const optimisticFiles = hasRecordedAudio
           ? new File([recordedAudioBlob], `nota-de-voz-${Date.now()}.${audioExtensionFromMime(recordedAudioBlob.type)}`, { type: recordedAudioBlob.type || 'audio/webm' })
-          : (hasMedia ? mediaInput.files[0] : null);
-        const optimisticMessages = buildOptimisticMessages(messageText, optimisticFile);
+          : mediaFiles;
+        const optimisticMessages = buildOptimisticMessages(messageText, optimisticFiles);
         optimisticMessages.forEach(appendOptimisticMessage);
         const formData = new FormData(replyForm);
         if (hasRecordedAudio) {
           formData.delete('media');
+          formData.delete('media[]');
+          const optimisticFile = Array.isArray(optimisticFiles) ? optimisticFiles[0] : optimisticFiles;
           formData.append('media', optimisticFile);
         }
         if (textarea) {

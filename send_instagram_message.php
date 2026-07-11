@@ -43,6 +43,33 @@ function send_public_media_text(string $type): string {
   return $type === 'audio' ? 'Audio enviado' : 'Imagen enviada';
 }
 
+function send_normalize_uploads($upload): array {
+  if (!is_array($upload)) return [];
+  $errors = $upload['error'] ?? UPLOAD_ERR_NO_FILE;
+  if (is_array($errors)) {
+    $files = [];
+    foreach ($errors as $index => $error) {
+      if ((int) $error === UPLOAD_ERR_NO_FILE) continue;
+      $files[] = [
+        'name' => (string) (($upload['name'][$index] ?? '') ?: ''),
+        'type' => (string) (($upload['type'][$index] ?? '') ?: ''),
+        'tmp_name' => (string) (($upload['tmp_name'][$index] ?? '') ?: ''),
+        'error' => (int) $error,
+        'size' => (int) (($upload['size'][$index] ?? 0) ?: 0),
+      ];
+    }
+    return $files;
+  }
+  if ((int) $errors === UPLOAD_ERR_NO_FILE) return [];
+  return [[
+    'name' => (string) (($upload['name'] ?? '') ?: ''),
+    'type' => (string) (($upload['type'] ?? '') ?: ''),
+    'tmp_name' => (string) (($upload['tmp_name'] ?? '') ?: ''),
+    'error' => (int) $errors,
+    'size' => (int) (($upload['size'] ?? 0) ?: 0),
+  ]];
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   if (send_wants_json()) send_json(['ok' => false, 'error' => 'Metodo no permitido.'], 405);
   http_response_code(405);
@@ -59,7 +86,8 @@ if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf
 
 $message = trim((string) ($_POST['message'] ?? ''));
 $mediaUpload = $_FILES['media'] ?? ($_FILES['image'] ?? null);
-$hasMedia = is_array($mediaUpload) && (int) ($mediaUpload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+$mediaUploads = send_normalize_uploads($mediaUpload);
+$hasMedia = count($mediaUploads) > 0;
 if ($message === '' && !$hasMedia) send_redirect($conversationId, 'Escribe un mensaje o adjunta una imagen/audio antes de enviar.');
 if (mb_strlen($message) > 1000) send_redirect($conversationId, 'El mensaje supera el limite permitido.');
 
@@ -81,40 +109,44 @@ if (!$conversation) send_redirect($conversationId, 'No se encontro la conversaci
 $now = gmdate('Y-m-d H:i:s');
 $responseMessages = [];
 $lastPreview = $message;
-$pendingMedia = null;
+$pendingMedia = [];
 
 if ($hasMedia) {
   if (!r2_is_configured()) send_redirect($conversationId, 'R2 no esta configurado para enviar adjuntos.');
-  $errorCode = (int) ($mediaUpload['error'] ?? UPLOAD_ERR_OK);
-  if ($errorCode !== UPLOAD_ERR_OK) send_redirect($conversationId, 'No se pudo recibir el adjunto.');
-  $tmp = (string) ($mediaUpload['tmp_name'] ?? '');
-  if ($tmp === '' || !is_uploaded_file($tmp)) send_redirect($conversationId, 'Adjunto invalido.');
-  $bytes = file_get_contents($tmp);
-  if (!is_string($bytes) || $bytes === '') send_redirect($conversationId, 'El adjunto esta vacio.');
+  if (count($mediaUploads) > 5) send_redirect($conversationId, 'Puedes adjuntar un maximo de 5 fotos por envio.');
   $maxBytes = max(1024, (int) app_config('media.max_upload_bytes', 8388608));
-  if (strlen($bytes) > $maxBytes) send_redirect($conversationId, 'El adjunto supera el tamaño permitido.');
   $finfo = new finfo(FILEINFO_MIME_TYPE);
-  $mime = (string) ($finfo->buffer($bytes) ?: '');
-  $mediaType = send_media_type_from_mime($mime);
-  if ($mediaType === null) send_redirect($conversationId, 'Solo se permiten imagenes JPG, PNG, GIF, WEBP o audios MP3, M4A, AAC, OGG, WAV, WEBM.');
-  if ($mediaType === 'audio' && $mime === 'video/mp4') $mime = 'audio/mp4';
-  if ($mediaType === 'audio' && $mime === 'video/webm') $mime = 'audio/webm';
-  if ($mediaType === 'audio' && $mime === 'application/ogg') $mime = 'audio/ogg';
+  foreach ($mediaUploads as $mediaUpload) {
+    $errorCode = (int) ($mediaUpload['error'] ?? UPLOAD_ERR_OK);
+    if ($errorCode !== UPLOAD_ERR_OK) send_redirect($conversationId, 'No se pudo recibir uno de los adjuntos.');
+    $tmp = (string) ($mediaUpload['tmp_name'] ?? '');
+    if ($tmp === '' || !is_uploaded_file($tmp)) send_redirect($conversationId, 'Adjunto invalido.');
+    $bytes = file_get_contents($tmp);
+    if (!is_string($bytes) || $bytes === '') send_redirect($conversationId, 'El adjunto esta vacio.');
+    if (strlen($bytes) > $maxBytes) send_redirect($conversationId, 'Uno de los adjuntos supera el tamaño permitido.');
+    $mime = (string) ($finfo->buffer($bytes) ?: '');
+    $mediaType = send_media_type_from_mime($mime);
+    if ($mediaType === null) send_redirect($conversationId, 'Solo se permiten imagenes JPG, PNG, GIF, WEBP o audios MP3, M4A, AAC, OGG, WAV, WEBM.');
+    if (count($mediaUploads) > 1 && $mediaType !== 'image') send_redirect($conversationId, 'Solo puedes adjuntar varias fotos juntas. Los audios se envian uno por uno.');
+    if ($mediaType === 'audio' && $mime === 'video/mp4') $mime = 'audio/mp4';
+    if ($mediaType === 'audio' && $mime === 'video/webm') $mime = 'audio/webm';
+    if ($mediaType === 'audio' && $mime === 'application/ogg') $mime = 'audio/ogg';
 
-  $key = r2_random_key('instagram/outbound/' . $mediaType . '/' . $conversationId, $mime);
-  $upload = r2_upload_bytes($key, $bytes, $mime);
-  if (!($upload['ok'] ?? false)) send_redirect($conversationId, 'No se pudo subir el adjunto a R2.');
-  $signedUrl = r2_presigned_url($key, 3600);
-  if (!$signedUrl) send_redirect($conversationId, 'No se pudo preparar el adjunto para Meta.');
+    $key = r2_random_key('instagram/outbound/' . $mediaType . '/' . $conversationId, $mime);
+    $upload = r2_upload_bytes($key, $bytes, $mime);
+    if (!($upload['ok'] ?? false)) send_redirect($conversationId, 'No se pudo subir uno de los adjuntos a R2.');
+    $signedUrl = r2_presigned_url($key, 3600);
+    if (!$signedUrl) send_redirect($conversationId, 'No se pudo preparar uno de los adjuntos para Meta.');
 
-  $pendingMedia = [
-    'bytes' => $bytes,
-    'mime' => $mime,
-    'type' => $mediaType,
-    'key' => $key,
-    'signed_url' => $signedUrl,
-    'filename' => (string) ($mediaUpload['name'] ?? (send_media_label($mediaType) . '.' . r2_extension_from_mime($mime))),
-  ];
+    $pendingMedia[] = [
+      'bytes' => $bytes,
+      'mime' => $mime,
+      'type' => $mediaType,
+      'key' => $key,
+      'signed_url' => $signedUrl,
+      'filename' => (string) (($mediaUpload['name'] ?? '') ?: (send_media_label($mediaType) . '.' . r2_extension_from_mime($mime))),
+    ];
+  }
 }
 
 if ($message !== '') {
@@ -150,57 +182,60 @@ if ($message !== '') {
 }
 
 if ($hasMedia) {
-  if (!is_array($pendingMedia)) send_redirect($conversationId, 'No se pudo preparar el adjunto.');
-  $mediaType = (string) ($pendingMedia['type'] ?? 'image');
-  $result = conv_send_instagram_attachment($pdo, $conversation, (string) $pendingMedia['signed_url'], $mediaType);
-  if (!($result['ok'] ?? false)) {
-    send_redirect($conversationId, 'Meta no pudo enviar el ' . send_media_label($mediaType) . ': ' . (string) ($result['error'] ?? 'Error desconocido.'));
-  }
+  if (!$pendingMedia) send_redirect($conversationId, 'No se pudo preparar el adjunto.');
+  foreach ($pendingMedia as $pendingMediaItem) {
+    $mediaType = (string) ($pendingMediaItem['type'] ?? 'image');
+    $result = conv_send_instagram_attachment($pdo, $conversation, (string) $pendingMediaItem['signed_url'], $mediaType);
+    if (!($result['ok'] ?? false)) {
+      send_redirect($conversationId, 'Meta no pudo enviar el ' . send_media_label($mediaType) . ': ' . (string) ($result['error'] ?? 'Error desconocido.'));
+    }
 
-  $data = is_array($result['data'] ?? null) ? $result['data'] : [];
-  $externalMessageId = (string) ($data['message_id'] ?? $data['id'] ?? '');
-  $externalMessageId = $externalMessageId !== '' ? $externalMessageId : null;
-  $mediaText = send_public_media_text($mediaType);
-  $mediaMessageId = conv_add_message($pdo, [
-    'conversation_id' => $conversationId,
-    'external_message_id' => $externalMessageId,
-    'direction' => 'outbound',
-    'sender_external_id' => (string) ($result['target'] ?? ''),
-    'message_type' => $mediaType,
-    'message_text' => $mediaText,
-    'payload_json' => json_encode($data, JSON_UNESCAPED_UNICODE),
-    'sent_by' => (int) ($_SESSION['user_id'] ?? 0),
-    'sent_at' => $now,
-    'delivery_status' => 'sent',
-  ]);
-  $attachmentId = conv_add_attachment($pdo, [
-    'conversation_id' => $conversationId,
-    'message_id' => $mediaMessageId,
-    'direction' => 'outbound',
-    'media_type' => $mediaType,
-    'mime_type' => (string) $pendingMedia['mime'],
-    'file_size' => strlen((string) $pendingMedia['bytes']),
-    'storage_disk' => 'r2',
-    'storage_key' => (string) $pendingMedia['key'],
-    'filename' => (string) $pendingMedia['filename'],
-  ]);
-  $responseMessages[] = [
-    'id' => $mediaMessageId,
-    'direction' => 'outbound',
-    'text' => $mediaText,
-    'attachments' => [[
-      'id' => $attachmentId,
+    $data = is_array($result['data'] ?? null) ? $result['data'] : [];
+    $externalMessageId = (string) ($data['message_id'] ?? $data['id'] ?? '');
+    $externalMessageId = $externalMessageId !== '' ? $externalMessageId : null;
+    $mediaText = send_public_media_text($mediaType);
+    $mediaMessageId = conv_add_message($pdo, [
+      'conversation_id' => $conversationId,
+      'external_message_id' => $externalMessageId,
+      'direction' => 'outbound',
+      'sender_external_id' => (string) ($result['target'] ?? ''),
+      'message_type' => $mediaType,
+      'message_text' => $mediaText,
+      'payload_json' => json_encode($data, JSON_UNESCAPED_UNICODE),
+      'sent_by' => (int) ($_SESSION['user_id'] ?? 0),
+      'sent_at' => $now,
+      'delivery_status' => 'sent',
+    ]);
+    $attachmentId = conv_add_attachment($pdo, [
+      'conversation_id' => $conversationId,
+      'message_id' => $mediaMessageId,
+      'direction' => 'outbound',
       'media_type' => $mediaType,
-      'mime_type' => (string) $pendingMedia['mime'],
-      'file_size' => strlen((string) $pendingMedia['bytes']),
-      'filename' => (string) $pendingMedia['filename'],
-      'url' => 'media.php?id=' . $attachmentId,
-    ]],
-    'time' => date('d/m/Y H:i', strtotime($now)),
-    'sent_by_username' => (string) ($_SESSION['username'] ?? ''),
-    'delivery_status' => 'sent',
-  ];
-  $lastPreview = $mediaText;
+      'mime_type' => (string) $pendingMediaItem['mime'],
+      'file_size' => strlen((string) $pendingMediaItem['bytes']),
+      'storage_disk' => 'r2',
+      'storage_key' => (string) $pendingMediaItem['key'],
+      'filename' => (string) $pendingMediaItem['filename'],
+    ]);
+    $responseMessages[] = [
+      'id' => $mediaMessageId,
+      'direction' => 'outbound',
+      'text' => $mediaText,
+      'attachments' => [[
+        'id' => $attachmentId,
+        'media_type' => $mediaType,
+        'mime_type' => (string) $pendingMediaItem['mime'],
+        'file_size' => strlen((string) $pendingMediaItem['bytes']),
+        'filename' => (string) $pendingMediaItem['filename'],
+        'url' => 'media.php?id=' . $attachmentId,
+      ]],
+      'time' => date('d/m/Y H:i', strtotime($now)),
+      'sent_by_username' => (string) ($_SESSION['username'] ?? ''),
+      'delivery_status' => 'sent',
+    ];
+    $lastPreview = $mediaText;
+  }
+  if (count($pendingMedia) > 1) $lastPreview = count($pendingMedia) . ' imagenes enviadas';
 }
 
 conv_upsert_conversation($pdo, [
