@@ -599,9 +599,6 @@ function inbox_visible_message_text($value, array $attachments): string {
               <div class="info-row"><span>Instagram</span><strong><?= !empty($selected['username']) ? '<a href="' . h((string) ($selected['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $selected['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $selected['username']) . '</a>' : '—' ?></strong></div>
               <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
               <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
-              <div class="info-row"><span>Último mensaje recibido</span><strong><?= h(inbox_time($selected['last_inbound_at'] ?? '')) ?></strong></div>
-              <div class="info-row"><span>Lead vinculado</span><strong><?= !empty($selected['lead_id']) ? '#' . (int) $selected['lead_id'] . ' · ' . h((string) ($selected['lead_fullname'] ?? '')) : 'Sin vincular' ?></strong></div>
-              <div class="info-row"><span>Status comercial</span><strong id="salesStatusLabel"><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
 
               <?php if (!empty($selected['lead_id'])): ?>
               <label class="side-notes-field">
@@ -621,7 +618,6 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <?php endforeach; ?>
                   </select>
                 </label>
-                <span class="status-save-hint">Se guarda al seleccionar.</span>
               </form>
               <?php endif; ?>
 
@@ -637,7 +633,6 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <?php endforeach; ?>
                   </select>
                 </label>
-                <span class="status-save-hint">Se guarda al seleccionar.</span>
               </form>
             <?php else: ?>
               <h2>Ficha conversacional</h2>
