@@ -392,10 +392,10 @@ function dash_channel_label(array $channel): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title><?= h(app_config('ui.dashboard_title', 'Dashboard')) ?></title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <meta name="csrf" content="<?= h($_SESSION['csrf'] ?? '') ?>">
   <style>
-    :root { --container-w: min(98vw, 1480px); }
+    :root { --container-w: 100vw; }
     .notes-input { width:240px; min-height:38px; resize:vertical; padding:9px 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; line-height:1.35; }
     .notes-input:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .notes-input.is-saving { opacity:.65; cursor:progress; }
@@ -416,7 +416,7 @@ function dash_channel_label(array $channel): string {
     .menu-item:hover { background:#eefaff; color:#007ea8; }
     .menu-meta { display:block; padding:6px 10px 9px; color:var(--brand-muted); font-size:.78rem; font-weight:850; border-bottom:1px solid rgba(0,68,99,.10); margin-bottom:6px; }
     .menu-form { margin:0; }
-    .summary-grid { display:grid; grid-template-columns:repeat(6, minmax(130px, 1fr)); gap:10px; margin-top:18px; }
+    .summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px; margin-top:18px; }
     .summary-card { min-height:82px; padding:14px; border-radius:14px; border:1px solid var(--line); background:#fff; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .summary-card strong { display:block; color:var(--brand-ink); font-size:1.7rem; line-height:1; font-weight:900; }
     .summary-card span { display:block; margin-top:8px; color:var(--brand-muted); font-size:.78rem; font-weight:850; letter-spacing:.03em; text-transform:uppercase; line-height:1.25; }
@@ -465,7 +465,7 @@ function dash_channel_label(array $channel): string {
     .readonly-text { min-width:220px; max-width:300px; color:var(--brand-ink); line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
     .funnel-wrap { margin-top:18px; overflow-x:auto; padding-bottom:6px; }
     .funnel-board { display:flex; gap:12px; align-items:flex-start; min-width:max-content; }
-    .funnel-column { --status-color:#00a9e0; --status-bg:#eefaff; width:300px; max-height:72vh; display:flex; flex-direction:column; border:1px solid rgba(0,212,255,.16); border-top:5px solid var(--status-color); border-radius:16px; background:var(--status-bg); overflow:hidden; }
+    .funnel-column { --status-color:#00a9e0; --status-bg:#eefaff; width:clamp(270px, 18vw, 340px); max-height:72vh; display:flex; flex-direction:column; border:1px solid rgba(0,212,255,.16); border-top:5px solid var(--status-color); border-radius:16px; background:var(--status-bg); overflow:hidden; }
     .funnel-column[data-status="nuevo_lead"] { --status-color:#00a9e0; --status-bg:#eefaff; }
     .funnel-column[data-status="contactado"] { --status-color:#5f7cff; --status-bg:#eef2ff; }
     .funnel-column[data-status="en_conversacion"] { --status-color:#7c5cff; --status-bg:#f2efff; }
@@ -505,7 +505,7 @@ function dash_channel_label(array $channel): string {
     .modal input { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.22); color:#fff; }
     .btn-secondary { appearance:none; border:1px solid rgba(255,255,255,.35); background:transparent; color:#eafaff; padding:10px 14px; border-radius:12px; cursor:pointer; }
     .btn-secondary:hover { background:rgba(255,255,255,.08); }
-    @media (max-width: 1200px) { .summary-grid { grid-template-columns:repeat(3, minmax(150px, 1fr)); } }
+    @media (max-width: 1200px) { .filters-form { grid-template-columns:minmax(220px, 1fr) minmax(220px, 320px) auto; } }
     @media (max-width: 760px) {
       .summary-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
       .summary-card { min-height:72px; padding:12px; }
@@ -515,7 +515,8 @@ function dash_channel_label(array $channel): string {
       .lead-filters { display:none; }
       .lead-filters.is-open { display:block; }
       .filters-form { grid-template-columns:1fr; }
-      .funnel-column { width:280px; max-height:68vh; }
+      .funnel-wrap { margin-left:-12px; margin-right:-12px; padding-left:12px; padding-right:12px; }
+      .funnel-column { width:min(86vw, 320px); max-height:68vh; }
     }
     @media (max-width: 700px) { .topbar-right { width:100%; } .menu-dropdown { flex:1; } .menu-trigger { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
   </style>

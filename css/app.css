@@ -198,17 +198,21 @@ body{
   color:var(--brand-ink);
 }
 .dashboard-shell{
-  width:min(96vw, 1480px);
-  margin:0 auto;
-  padding:34px 0 24px;
+  --dashboard-pad:clamp(8px, 1.25vw, 22px);
+  width:100%;
+  max-width:none;
+  margin:0;
+  padding:var(--dashboard-pad);
 }
 .dashboard-card{
   width:100%;
+  min-height:calc(100vh - (var(--dashboard-pad) * 2));
   background:var(--surface);
   border:1px solid rgba(255,255,255,.4);
+  border-radius:clamp(14px, 1.5vw, 28px);
 }
 .dashboard-card .panel{
-  padding:26px 18px 24px;
+  padding:clamp(16px, 1.6vw, 30px);
 }
 .dashboard-card .title{
   margin:0;
@@ -225,8 +229,17 @@ body{
 }
 .dashboard-card .credit{padding-top:16px}
 @media (min-width:768px){
-  .dashboard-card .panel{padding:34px 28px 30px;}
-  .dashboard-shell{padding-top:44px;}
+  .dashboard-card .panel{padding:clamp(22px, 1.9vw, 34px);}
+}
+@media (max-width:760px){
+  .dashboard-shell{--dashboard-pad:0;}
+  .dashboard-card{
+    min-height:100vh;
+    border-left:0;
+    border-right:0;
+    border-radius:0;
+  }
+  .dashboard-card .panel{padding:16px 12px 18px;}
 }
 
 

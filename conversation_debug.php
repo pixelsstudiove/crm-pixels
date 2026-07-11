@@ -37,7 +37,7 @@ if ($conversationId > 0) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Diagnóstico de conversación - Pixels Studio</title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <style>
     :root { --container-w:min(98vw, 1320px); }
     .debug-header { display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }

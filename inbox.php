@@ -247,7 +247,7 @@ function inbox_visible_message_text($value, array $attachments): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Inbox conversacional - Pixels Studio</title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <style>
     :root { --container-w:min(98vw, 1440px); --inbox-line:#d6ecf8; --inbox-soft:#eef9ff; --inbox-ink:#071120; --inbox-muted:#5d6d86; }
     .inbox-card { min-height:calc(100vh - 54px); }

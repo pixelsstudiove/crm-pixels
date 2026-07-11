@@ -16,7 +16,7 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title><?= h(app_config('ui.page_title', 'Formulario')) ?></title>
-  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
 </head>
 <body>
   <main class="shell">
