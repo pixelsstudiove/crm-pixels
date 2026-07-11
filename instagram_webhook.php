@@ -352,6 +352,7 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
       $result['errors'][] = 'MIME no permitido: ' . $mime;
       continue;
     }
+    if ($type === 'audio' && $mime === 'video/mp4') $mime = 'audio/mp4';
 
     $key = r2_random_key('instagram/inbound/' . $type . '/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);

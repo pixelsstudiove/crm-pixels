@@ -97,6 +97,7 @@ if ($hasMedia) {
   $mime = (string) ($finfo->buffer($bytes) ?: '');
   $mediaType = send_media_type_from_mime($mime);
   if ($mediaType === null) send_redirect($conversationId, 'Solo se permiten imagenes JPG, PNG, GIF, WEBP o audios MP3, M4A, AAC, OGG, WAV, WEBM.');
+  if ($mediaType === 'audio' && $mime === 'video/mp4') $mime = 'audio/mp4';
 
   $key = r2_random_key('instagram/outbound/' . $mediaType . '/' . $conversationId, $mime);
   $upload = r2_upload_bytes($key, $bytes, $mime);

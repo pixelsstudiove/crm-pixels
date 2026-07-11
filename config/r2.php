@@ -40,7 +40,7 @@ function r2_extension_from_mime(string $mime): string {
     'image/gif' => 'gif',
     'image/webp' => 'webp',
     'audio/mpeg', 'audio/mp3' => 'mp3',
-    'audio/mp4', 'audio/m4a', 'audio/x-m4a' => 'm4a',
+    'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'video/mp4' => 'm4a',
     'audio/aac' => 'aac',
     'audio/ogg' => 'ogg',
     'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave' => 'wav',
