@@ -148,7 +148,12 @@ SELECT
   ct.profile_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
-  l.fullname AS lead_fullname
+  l.fullname AS lead_fullname,
+  (
+    SELECT MAX(im.sent_at)
+    FROM {$messagesTable} im
+    WHERE im.conversation_id = c.id AND im.direction = 'inbound'
+  ) AS last_inbound_at
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
@@ -176,7 +181,12 @@ SELECT
   ch.page_name,
   ch.instagram_username AS channel_username,
   l.fullname AS lead_fullname,
-  l.sales_status AS lead_sales_status
+  l.sales_status AS lead_sales_status,
+  (
+    SELECT MAX(im.sent_at)
+    FROM {$messagesTable} im
+    WHERE im.conversation_id = c.id AND im.direction = 'inbound'
+  ) AS last_inbound_at
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
@@ -199,6 +209,7 @@ if ($selected) {
 $attachmentsByMessage = conv_attachments_for_messages($pdo, array_map(static fn($message) => (int) ($message['id'] ?? 0), $messages));
 $lastMessageId = 0;
 foreach ($messages as $message) $lastMessageId = max($lastMessageId, (int) ($message['id'] ?? 0));
+$replyWindow = $selected ? meta_reply_window_info($selected['last_inbound_at'] ?? '') : null;
 
 function inbox_contact_name(array $conversation): string {
   $name = trim((string) ($conversation['display_name'] ?? ''));
@@ -215,10 +226,7 @@ function inbox_short($value, int $max = 70): string {
 }
 
 function inbox_time($value): string {
-  $value = trim((string) $value);
-  if ($value === '') return 'Sin fecha';
-  $time = strtotime($value);
-  return $time ? date('d/m/Y H:i', $time) : $value;
+  return app_datetime($value);
 }
 
 function inbox_channel_label(array $channel): string {
@@ -291,10 +299,17 @@ function inbox_visible_message_text($value, array $attachments): string {
     .conversation-preview { color:var(--inbox-muted); margin-top:5px; font-size:.9rem; line-height:1.35; }
     .badge { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:999px; font-size:.74rem; font-weight:900; background:#eef9f0; color:#217a43; border:1px solid #a8e0ba; }
     .badge.unread { background:#071120; color:#eafaff; border-color:#071120; }
+    .window-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:999px; font-size:.72rem; font-weight:900; border:1px solid #bfe2c5; background:#eef9f0; color:#217a43; }
+    .window-pill.warning { border-color:#f1d589; background:#fff8df; color:#8a5b00; }
+    .window-pill.expired, .window-pill.unknown { border-color:#f1c2c6; background:#fff1f2; color:#85232a; }
     .chat-header { flex:0 0 auto; padding:16px; border-bottom:1px solid var(--inbox-line); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; background:#fbfdff; }
     .chat-header h2 { margin:0; font-size:1.15rem; color:var(--inbox-ink); }
     .chat-header p { margin:4px 0 0; color:var(--inbox-muted); }
     .message-list { flex:1 1 auto; min-height:0; overflow:auto; padding:18px; background:linear-gradient(180deg,#f8fdff,#eef8ff); display:flex; flex-direction:column; gap:10px; }
+    .reply-window-alert { margin:12px 16px 0; padding:12px 14px; border-radius:12px; border:1px solid #bfe2c5; background:#eef9f0; color:#184f2b; font-size:.9rem; line-height:1.35; font-weight:750; }
+    .reply-window-alert strong { display:block; margin-bottom:3px; color:inherit; }
+    .reply-window-alert.warning { border-color:#f1d589; background:#fff8df; color:#8a5b00; }
+    .reply-window-alert.expired, .reply-window-alert.unknown { border-color:#f1c2c6; background:#fff1f2; color:#85232a; }
     .message { max-width:min(78%, 620px); border:1px solid var(--inbox-line); border-radius:14px; padding:10px 12px; background:#fff; color:var(--inbox-ink); box-shadow:0 4px 14px rgba(0, 76, 110, .05); }
     .message.outbound { align-self:flex-end; background:#071120; border-color:#071120; color:#eafaff; }
     .message.inbound { align-self:flex-start; }
@@ -443,6 +458,8 @@ function inbox_visible_message_text($value, array $attachments): string {
                   </div>
                   <div class="conversation-row" style="margin-top:6px">
                     <span class="badge"><?= h($statusOptions[(string) ($conversation['status'] ?? '')] ?? 'Abierta') ?></span>
+                    <?php $conversationWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? ''); ?>
+                    <?php if (($conversationWindow['status'] ?? '') !== 'active'): ?><span class="window-pill <?= h((string) ($conversationWindow['status'] ?? '')) ?>"><?= h((string) ($conversationWindow['label'] ?? 'Ventana Meta')) ?></span><?php endif; ?>
                     <?php if ((int) ($conversation['unread_count'] ?? 0) > 0): ?><span class="badge unread"><?= (int) $conversation['unread_count'] ?></span><?php endif; ?>
                   </div>
                   <div class="conversation-preview"><?= h(inbox_short($conversation['last_message_preview'] ?? '', 92)) ?></div>
@@ -462,6 +479,12 @@ function inbox_visible_message_text($value, array $attachments): string {
                 </div>
                 <a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['id'] ?>">Ver en embudo</a>
               </header>
+              <?php if ($replyWindow): ?>
+                <div class="reply-window-alert <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" id="replyWindowAlert">
+                  <strong><?= h((string) ($replyWindow['label'] ?? 'Ventana Meta')) ?></strong>
+                  <span><?= h((string) ($replyWindow['detail'] ?? '')) ?><?= !empty($replyWindow['last_inbound_at']) ? ' Último mensaje recibido: ' . h((string) $replyWindow['last_inbound_at']) . '.' : '' ?></span>
+                </div>
+              <?php endif; ?>
 
               <div class="message-list" id="messageList" data-last-id="<?= (int) $lastMessageId ?>">
                 <?php if ($messages): foreach ($messages as $message): ?>
@@ -498,7 +521,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
                 <div class="composer-main">
                   <div class="composer-input">
-                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
+                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>></textarea>
                     <div class="recording-surface" id="audioRecordingSurface" hidden>
                       <canvas class="recording-canvas" id="audioWaveCanvas" width="900" height="180" aria-hidden="true"></canvas>
                       <div class="recording-center">
@@ -519,13 +542,13 @@ function inbox_visible_message_text($value, array $attachments): string {
                         <?php endforeach; ?>
                       </div>
                     </div>
-                    <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages ? '' : 'disabled' ?>>🎙</button>
+                    <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>🎙</button>
                     <label class="composer-file" title="Adjuntar imagen o audio" aria-label="Adjuntar imagen o audio">
                       <span class="icon-tool">📎</span>
-                      <input type="file" name="media[]" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" multiple <?= $canSendMessages ? '' : 'disabled' ?>>
+                      <input type="file" name="media[]" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" multiple <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>
                     </label>
                   </div>
-                  <button class="inbox-btn primary composer-submit" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
+                  <button class="inbox-btn primary composer-submit" type="submit" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>Enviar</button>
                 </div>
                 <div class="composer-tools">
                   <div class="composer-left">
@@ -555,6 +578,8 @@ function inbox_visible_message_text($value, array $attachments): string {
               <div class="info-row"><span>Instagram</span><strong><?= !empty($selected['username']) ? '<a href="' . h((string) ($selected['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $selected['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $selected['username']) . '</a>' : '—' ?></strong></div>
               <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
               <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
+              <div class="info-row"><span>Último mensaje recibido</span><strong><?= h(inbox_time($selected['last_inbound_at'] ?? '')) ?></strong></div>
+              <?php if ($replyWindow): ?><div class="info-row"><span>Ventana Meta</span><strong><?= h((string) ($replyWindow['label'] ?? '—')) ?></strong></div><?php endif; ?>
               <div class="info-row"><span>Lead vinculado</span><strong><?= !empty($selected['lead_id']) ? '#' . (int) $selected['lead_id'] . ' · ' . h((string) ($selected['lead_fullname'] ?? '')) : 'Sin vincular' ?></strong></div>
               <div class="info-row"><span>Status comercial</span><strong id="salesStatusLabel"><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
 
@@ -625,6 +650,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       lastMessageId: <?= (int) $lastMessageId ?>,
       csrf: <?= json_encode((string) ($_SESSION['csrf'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+      canReply: <?= ($replyWindow['can_reply'] ?? true) ? 'true' : 'false' ?>,
       polling: false
     };
 
@@ -644,6 +670,27 @@ function inbox_visible_message_text($value, array $attachments): string {
     const audioRecordingTime = document.getElementById('audioRecordingTime');
     const audioQuickSendButton = document.getElementById('audioQuickSendButton');
     const audioCancelButton = document.getElementById('audioCancelButton');
+    const replyWindowAlert = document.getElementById('replyWindowAlert');
+
+    function setComposerEnabled(canReply) {
+      inboxState.canReply = Boolean(canReply);
+      if (!replyForm) return;
+      replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, button[type="submit"]').forEach(el => {
+        el.disabled = !inboxState.canReply;
+      });
+    }
+
+    function updateReplyWindow(windowInfo) {
+      if (!windowInfo) return;
+      setComposerEnabled(Boolean(windowInfo.can_reply));
+      if (!replyWindowAlert) return;
+      replyWindowAlert.className = `reply-window-alert ${escapeHtml(windowInfo.status || 'unknown')}`;
+      const lastInbound = windowInfo.last_inbound_at ? ` Último mensaje recibido: ${escapeHtml(windowInfo.last_inbound_at)}.` : '';
+      replyWindowAlert.innerHTML = `
+        <strong>${escapeHtml(windowInfo.label || 'Ventana Meta')}</strong>
+        <span>${escapeHtml(windowInfo.detail || '')}${lastInbound}</span>
+      `;
+    }
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -772,6 +819,7 @@ function inbox_visible_message_text($value, array $attachments): string {
             </div>
             <div class="conversation-row" style="margin-top:6px">
               <span class="badge">${escapeHtml(item.status_label)}</span>
+              ${item.reply_window && item.reply_window.status !== 'active' ? `<span class="window-pill ${escapeHtml(item.reply_window.status || 'unknown')}">${escapeHtml(item.reply_window.label || 'Ventana Meta')}</span>` : ''}
               ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
             </div>
             <div class="conversation-preview">${escapeHtml(item.preview)}</div>
@@ -949,6 +997,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'No se pudieron cargar actualizaciones.');
         renderConversations(data.conversations || []);
+        updateReplyWindow(data.reply_window || null);
         const shouldStick = isNearBottom(messageList);
         syncMessages(data.messages || []);
         if (shouldStick) scrollMessagesToBottom();
@@ -1343,6 +1392,10 @@ function inbox_visible_message_text($value, array $attachments): string {
           showNotice('Deten la grabacion antes de enviar.', 'error');
           return;
         }
+        if (!inboxState.canReply) {
+          showNotice('Ventana de Meta vencida. Espera un nuevo mensaje del cliente para responder desde el CRM.', 'error');
+          return;
+        }
         if (!hasText && !hasMedia && !hasRecordedAudio) return;
         if (hasMedia && !validateSelectedMediaFiles(mediaFiles)) return;
         const optimisticFiles = hasRecordedAudio
@@ -1384,7 +1437,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           showNotice(error.message || 'No se pudo enviar el mensaje.', 'error');
         } finally {
           replyForm.classList.remove('is-sending');
-          if (button) button.disabled = false;
+          setComposerEnabled(inboxState.canReply);
         }
       });
     }

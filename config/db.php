@@ -53,6 +53,7 @@ try {
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     PDO::ATTR_PERSISTENT => false,
   ]);
+  $pdo->exec("SET time_zone = '+00:00'");
 } catch (Throwable $e) {
   if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
   http_response_code(500);

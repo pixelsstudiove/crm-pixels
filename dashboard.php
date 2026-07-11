@@ -157,6 +157,7 @@ conv_ensure_schema($pdo);
 $contactsTable = conv_contacts_table();
 $conversationsTable = conv_conversations_table();
 $channelsTable = ig_channels_table();
+$messagesTable = conv_messages_table();
 
 $currentRole = current_user_role();
 $currentRoleLabel = role_label($currentRole);
@@ -273,6 +274,11 @@ SELECT
   COALESCE(l.external_source, c.external_source) AS external_source,
   COALESCE(l.external_contact_id, ct.external_contact_id) AS external_contact_id,
   c.external_thread_id,
+  (
+    SELECT MAX(im.sent_at)
+    FROM {$messagesTable} im
+    WHERE im.conversation_id = c.id AND im.direction = 'inbound'
+  ) AS last_inbound_at,
   COALESCE(l.last_message_at, c.last_message_at) AS last_message_at,
   COALESCE(l.last_inbound_message, c.last_message_preview) AS last_inbound_message,
   COALESCE(l.created_at, c.created_at) AS created_at,
@@ -352,7 +358,7 @@ function business_type_display(array $lead): string {
   return $type;
 }
 function updated_display(array $lead): string {
-  return dash_value($lead['updated_at'] ?? null) !== '—' ? (string) $lead['updated_at'] : 'Sin cambios';
+  return dash_value($lead['updated_at'] ?? null) !== '—' ? app_datetime($lead['updated_at']) : 'Sin cambios';
 }
 function lead_message_display(array $lead): string {
   $last = dash_value($lead['last_inbound_message'] ?? null);
@@ -366,10 +372,7 @@ function lead_contact_display(array $lead): string {
   return '—';
 }
 function datetime_local_value($value): string {
-  $value = trim((string) $value);
-  if ($value === '') return '';
-  $time = strtotime($value);
-  return $time ? date('Y-m-d\TH:i', $time) : '';
+  return app_datetime($value, 'Y-m-d\TH:i', '');
 }
 function reminder_display(array $lead): string {
   $at = dash_value($lead['reminder_at'] ?? null);
@@ -490,6 +493,9 @@ function dash_channel_label(array $channel): string {
     .funnel-meta-line { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
     .funnel-meta a { color:#007ea8; font-weight:800; text-decoration:none; }
     .funnel-meta a:hover { text-decoration:underline; }
+    .reply-window-badge { display:inline-flex; align-items:center; min-height:28px; width:max-content; padding:0 9px; border-radius:999px; border:1px solid #bfe2c5; background:#eef9f0; color:#217a43; font-size:.75rem; font-weight:900; }
+    .reply-window-badge.warning { border-color:#f1d589; background:#fff8df; color:#8a5b00; }
+    .reply-window-badge.expired, .reply-window-badge.unknown { border-color:#f1c2c6; background:#fff1f2; color:#85232a; }
     .funnel-note { color:var(--brand-ink); font-size:.86rem; line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
     .funnel-card .sales-status-select { width:100%; }
     .funnel-card .notes-input { width:100%; min-height:74px; font-size:.86rem; }
@@ -619,6 +625,7 @@ function dash_channel_label(array $channel): string {
                       $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
                       $igUrl = instagram_url($lead['brand_instagram'] ?? '');
                       $igHandle = instagram_handle($lead['brand_instagram'] ?? '');
+                      $replyWindow = meta_reply_window_info($lead['last_inbound_at'] ?? '');
                     ?>
                     <article class="funnel-card" data-id="<?= $leadId ?>" data-conversation-id="<?= $conversationId ?>">
                       <div class="funnel-card-title">
@@ -640,6 +647,7 @@ function dash_channel_label(array $channel): string {
                           <?php endif; ?>
                         </span>
                         <span>Actualizado: <?= h(updated_display($lead)) ?></span>
+                        <span class="reply-window-badge <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" title="<?= h((string) ($replyWindow['detail'] ?? '')) ?>"><?= h((string) ($replyWindow['label'] ?? 'Ventana Meta')) ?></span>
                         <?php if ($adValue !== '—'): ?><span><?= h(short_value($adValue, 46)) ?></span><?php endif; ?>
                       </div>
                       <?php if (lead_message_display($lead) !== '—'): ?>

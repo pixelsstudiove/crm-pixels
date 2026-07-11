@@ -78,7 +78,7 @@ if ($conversationId > 0) {
             <p><strong>Contacto:</strong> <?= h((string) ($conversation['display_name'] ?: $conversation['username'] ?: 'Contacto')) ?></p>
             <p><strong>External thread:</strong> <span class="mono"><?= h((string) $conversation['external_thread_id']) ?></span></p>
             <p><strong>Último preview:</strong> <?= h((string) ($conversation['last_message_preview'] ?: '—')) ?></p>
-            <p><strong>Último mensaje:</strong> <?= h((string) ($conversation['last_message_at'] ?: '—')) ?></p>
+            <p><strong>Último mensaje:</strong> <?= h(app_datetime($conversation['last_message_at'] ?? '', 'd/m/Y H:i', '—')) ?></p>
           </div>
 
           <div class="debug-grid">
@@ -93,7 +93,7 @@ if ($conversationId > 0) {
                       <td><?= h((string) $message['direction']) ?></td>
                       <td class="mono"><?= h((string) ($message['external_message_id'] ?: '—')) ?></td>
                       <td class="preview"><?= h((string) ($message['message_text'] ?: '—')) ?></td>
-                      <td><?= h((string) $message['sent_at']) ?></td>
+                      <td><?= h(app_datetime($message['sent_at'] ?? '', 'd/m/Y H:i', '—')) ?></td>
                     </tr>
                   <?php endforeach; else: ?>
                     <tr><td colspan="5">No hay mensajes guardados.</td></tr>
@@ -114,7 +114,7 @@ if ($conversationId > 0) {
                       <td class="mono"><?= h((string) ($log['external_message_id'] ?: '—')) ?></td>
                       <td class="preview"><?= h((string) ($log['message_preview'] ?: '—')) ?></td>
                       <td class="preview"><?= h((string) ($log['error_message'] ?: '—')) ?></td>
-                      <td><?= h((string) $log['created_at']) ?></td>
+                      <td><?= h(app_datetime($log['created_at'] ?? '', 'd/m/Y H:i', '—')) ?></td>
                     </tr>
                   <?php endforeach; else: ?>
                     <tr><td colspan="6">No hay logs asociados a esta conversación.</td></tr>

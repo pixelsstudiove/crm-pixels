@@ -9,6 +9,7 @@ conv_ensure_schema($pdo);
 
 $conversationsTable = conv_conversations_table();
 $contactsTable = conv_contacts_table();
+$messagesTable = conv_messages_table();
 
 function send_wants_json(): bool {
   $accept = (string) ($_SERVER['HTTP_ACCEPT'] ?? '');
@@ -96,7 +97,12 @@ SELECT
   c.*,
   ct.external_contact_id AS contact_external_id,
   ct.display_name,
-  ct.username
+  ct.username,
+  (
+    SELECT MAX(im.sent_at)
+    FROM {$messagesTable} im
+    WHERE im.conversation_id = c.id AND im.direction = 'inbound'
+  ) AS last_inbound_at
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 WHERE c.id = ?
@@ -105,6 +111,11 @@ SQL);
 $stmt->execute([$conversationId]);
 $conversation = $stmt->fetch();
 if (!$conversation) send_redirect($conversationId, 'No se encontro la conversacion.');
+
+$replyWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? '');
+if (!($replyWindow['can_reply'] ?? false)) {
+  send_redirect($conversationId, 'Ventana de Meta vencida. No se puede responder desde el CRM hasta recibir un nuevo mensaje del cliente.');
+}
 
 $now = gmdate('Y-m-d H:i:s');
 $responseMessages = [];
@@ -175,7 +186,7 @@ if ($message !== '') {
     'direction' => 'outbound',
     'text' => $message,
     'attachments' => [],
-    'time' => date('d/m/Y H:i', strtotime($now)),
+    'time' => app_datetime($now),
     'sent_by_username' => (string) ($_SESSION['username'] ?? ''),
     'delivery_status' => 'sent',
   ];
@@ -229,7 +240,7 @@ if ($hasMedia) {
         'filename' => (string) $pendingMediaItem['filename'],
         'url' => 'media.php?id=' . $attachmentId,
       ]],
-      'time' => date('d/m/Y H:i', strtotime($now)),
+      'time' => app_datetime($now),
       'sent_by_username' => (string) ($_SESSION['username'] ?? ''),
       'delivery_status' => 'sent',
     ];

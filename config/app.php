@@ -53,6 +53,10 @@ $app = [
     'name' => 'pixels_lead_capture_sess',
   ],
 
+  'system' => [
+    'timezone' => (string) env_value('APP_TIMEZONE', 'America/Caracas'),
+  ],
+
   'phone' => [
     'country_code' => '58',
   ],
@@ -168,6 +172,8 @@ $app = [
     'default_business_type' => 'Instagram DM',
     'default_service' => 'Mensaje directo de Instagram',
     'default_objective' => 'Conversación iniciada desde Instagram',
+    'reply_window_hours' => (int) env_value('META_REPLY_WINDOW_HOURS', '24'),
+    'reply_warning_hours' => (int) env_value('META_REPLY_WARNING_HOURS', '20'),
   ],
 
   'media' => [
@@ -218,6 +224,101 @@ if (!function_exists('app_config')) {
 if (!function_exists('h')) {
   function h($value): string {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+  }
+}
+
+if (!function_exists('app_timezone')) {
+  function app_timezone(): DateTimeZone {
+    static $timezone = null;
+    if ($timezone instanceof DateTimeZone) return $timezone;
+    $name = (string) app_config('system.timezone', 'America/Caracas');
+    try {
+      $timezone = new DateTimeZone($name);
+    } catch (Throwable $e) {
+      $timezone = new DateTimeZone('America/Caracas');
+    }
+    return $timezone;
+  }
+}
+
+if (!function_exists('app_utc_datetime')) {
+  function app_utc_datetime($value): ?DateTimeImmutable {
+    $value = trim((string) $value);
+    if ($value === '') return null;
+    try {
+      return new DateTimeImmutable($value, new DateTimeZone('UTC'));
+    } catch (Throwable $e) {
+      return null;
+    }
+  }
+}
+
+if (!function_exists('app_datetime')) {
+  function app_datetime($value, string $format = 'd/m/Y H:i', string $fallback = 'Sin fecha'): string {
+    $date = app_utc_datetime($value);
+    if (!$date) return $fallback;
+    return $date->setTimezone(app_timezone())->format($format);
+  }
+}
+
+if (!function_exists('app_now_utc')) {
+  function app_now_utc(): DateTimeImmutable {
+    return new DateTimeImmutable('now', new DateTimeZone('UTC'));
+  }
+}
+
+if (!function_exists('app_hours_since')) {
+  function app_hours_since($value): ?float {
+    $date = app_utc_datetime($value);
+    if (!$date) return null;
+    return max(0, app_now_utc()->getTimestamp() - $date->getTimestamp()) / 3600;
+  }
+}
+
+if (!function_exists('meta_reply_window_info')) {
+  function meta_reply_window_info($lastInboundAt): array {
+    $windowHours = max(1, (int) app_config('instagram.reply_window_hours', 24));
+    $warningHours = max(0, min($windowHours, (int) app_config('instagram.reply_warning_hours', 20)));
+    $hoursElapsed = app_hours_since($lastInboundAt);
+    if ($hoursElapsed === null) {
+      return [
+        'status' => 'unknown',
+        'label' => 'Sin mensaje entrante',
+        'detail' => 'No hay un mensaje recibido para calcular la ventana de Meta.',
+        'last_inbound_at' => '',
+        'hours_elapsed' => null,
+        'hours_remaining' => null,
+        'can_reply' => false,
+      ];
+    }
+
+    $remaining = $windowHours - $hoursElapsed;
+    if ($hoursElapsed >= $windowHours) {
+      $status = 'expired';
+      $label = 'Ventana Meta vencida';
+      $detail = 'Pasaron más de ' . $windowHours . 'h desde el último mensaje del cliente. Evita responder desde el CRM.';
+      $canReply = false;
+    } elseif ($hoursElapsed >= $warningHours) {
+      $status = 'warning';
+      $label = 'Ventana Meta por vencer';
+      $detail = 'Quedan aprox. ' . max(0, (int) floor($remaining)) . 'h para responder dentro de la ventana de Meta.';
+      $canReply = true;
+    } else {
+      $status = 'active';
+      $label = 'Ventana Meta activa';
+      $detail = 'Puedes responder dentro de la ventana de Meta.';
+      $canReply = true;
+    }
+
+    return [
+      'status' => $status,
+      'label' => $label,
+      'detail' => $detail,
+      'last_inbound_at' => app_datetime($lastInboundAt),
+      'hours_elapsed' => round($hoursElapsed, 2),
+      'hours_remaining' => round(max(0, $remaining), 2),
+      'can_reply' => $canReply,
+    ];
   }
 }
 

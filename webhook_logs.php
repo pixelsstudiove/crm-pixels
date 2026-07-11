@@ -165,7 +165,7 @@ function log_badge_class(string $status): string {
                   <td class="mono"><?= $log['lead_id'] ? '#' . (int) $log['lead_id'] : '—' ?></td>
                   <td class="mono"><?= $log['conversation_id'] ? '<a href="conversation_debug.php?id=' . (int) $log['conversation_id'] . '">#' . (int) $log['conversation_id'] . '</a>' : '—' ?></td>
                   <td class="preview"><?= h((string) ($log['error_message'] ?: '—')) ?></td>
-                  <td><?= h((string) $log['created_at']) ?></td>
+                  <td><?= h(app_datetime($log['created_at'] ?? '')) ?></td>
                 </tr>
               <?php endforeach; else: ?>
                 <tr><td colspan="11">Todavia no hay eventos registrados.</td></tr>

@@ -37,10 +37,7 @@ function updates_short($value, int $max = 92): string {
 }
 
 function updates_time($value): string {
-  $value = trim((string) $value);
-  if ($value === '') return 'Sin fecha';
-  $time = strtotime($value);
-  return $time ? date('d/m/Y H:i', $time) : $value;
+  return app_datetime($value);
 }
 
 try {
@@ -75,7 +72,12 @@ SELECT
   ct.profile_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
-  l.fullname AS lead_fullname
+  l.fullname AS lead_fullname,
+  (
+    SELECT MAX(im.sent_at)
+    FROM {$messagesTable} im
+    WHERE im.conversation_id = c.id AND im.direction = 'inbound'
+  ) AS last_inbound_at
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
@@ -99,6 +101,7 @@ SQL;
       'status_label' => (string) ($statusOptions[(string) ($row['status'] ?? '')] ?? 'Abierta'),
       'preview' => updates_short($row['last_message_preview'] ?? '', 92),
       'unread_count' => (int) ($row['unread_count'] ?? 0),
+      'reply_window' => meta_reply_window_info($row['last_inbound_at'] ?? ''),
     ];
   }
 
@@ -115,7 +118,12 @@ SELECT
   ch.page_name,
   ch.instagram_username AS channel_username,
   l.fullname AS lead_fullname,
-  l.sales_status AS lead_sales_status
+  l.sales_status AS lead_sales_status,
+  (
+    SELECT MAX(im.sent_at)
+    FROM {$messagesTable} im
+    WHERE im.conversation_id = c.id AND im.direction = 'inbound'
+  ) AS last_inbound_at
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
@@ -153,7 +161,8 @@ SQL;
     'conversation_id' => $selectedId,
     'conversations' => $conversations,
     'messages' => $messages,
-    'server_time' => gmdate('c'),
+    'reply_window' => $selected ? meta_reply_window_info($selected['last_inbound_at'] ?? '') : null,
+    'server_time' => app_datetime(gmdate('Y-m-d H:i:s'), 'c'),
   ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
   http_response_code(500);
