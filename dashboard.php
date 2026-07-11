@@ -187,6 +187,8 @@ if ($filterChannelId > 0 && !in_array($filterChannelId, $channelIds, true)) $fil
 $salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
 
 $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
+$filterSalesStatus = trim((string) ($_GET['sales_status'] ?? ''));
+if ($filterSalesStatus !== '' && !array_key_exists($filterSalesStatus, $salesStatusOptions)) $filterSalesStatus = '';
 $whereConditions = [];
 $whereParams = [];
 if ($filterChannelId > 0) {
@@ -201,9 +203,18 @@ if ($q !== '') {
 }
 
 $whereSql = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
+$funnelWhereConditions = $whereConditions;
+$funnelWhereParams = $whereParams;
+if ($filterSalesStatus !== '') {
+  $funnelWhereConditions[] = 'COALESCE(l.sales_status, :default_sales_status_filter) = :sales_status_filter';
+  $funnelWhereParams[':default_sales_status_filter'] = $defaultSalesStatus;
+  $funnelWhereParams[':sales_status_filter'] = $filterSalesStatus;
+}
+$funnelWhereSql = $funnelWhereConditions ? 'WHERE ' . implode(' AND ', $funnelWhereConditions) : '';
 $activeFilters = array_filter([
   'channel_id' => $filterChannelId > 0 ? $filterChannelId : null,
   'q' => $q,
+  'sales_status' => $filterSalesStatus,
 ], static fn($v) => $v !== '' && $v !== null);
 
 $conversationFromSql = "FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id = c.contact_id LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id";
@@ -235,13 +246,28 @@ $summaryToneByStatus = [
   'cliente_perdido' => 'lost',
   'no_responde' => 'muted',
 ];
-$summaryCards = [['label' => 'Resultados', 'value' => $total, 'tone' => 'total']];
+$summaryBaseParams = [];
+if ($filterChannelId > 0) $summaryBaseParams['channel_id'] = $filterChannelId;
+if ($q !== '') $summaryBaseParams['q'] = $q;
+function dashboard_query_url(array $params): string {
+  $query = http_build_query($params);
+  return 'dashboard.php' . ($query !== '' ? '?' . $query : '');
+}
+$summaryCards = [[
+  'label' => 'Resultados',
+  'value' => $total,
+  'tone' => 'total',
+  'href' => dashboard_query_url($summaryBaseParams),
+  'active' => $filterSalesStatus === '',
+]];
 foreach ($salesStatusOptions as $statusValue => $statusLabel) {
   $statusValue = (string) $statusValue;
   $summaryCards[] = [
     'label' => (string) $statusLabel,
     'value' => $statusCounts[$statusValue] ?? 0,
     'tone' => $summaryToneByStatus[$statusValue] ?? 'default',
+    'href' => dashboard_query_url($summaryBaseParams + ['sales_status' => $statusValue]),
+    'active' => $filterSalesStatus === $statusValue,
   ];
 }
 $funnelLimit = 300;
@@ -300,14 +326,15 @@ SELECT
 ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
 LIMIT :limit
 SQL;
-$funnelSql = str_replace('%WHERE%', $whereSql, $funnelSql);
+$funnelSql = str_replace('%WHERE%', $funnelWhereSql, $funnelSql);
 $funnelStmt = $pdo->prepare($funnelSql);
 $funnelStmt->bindValue(':default_sales_status_select', $defaultSalesStatus);
-foreach ($whereParams as $key => $value) $funnelStmt->bindValue($key, $value);
+foreach ($funnelWhereParams as $key => $value) $funnelStmt->bindValue($key, $value);
 $funnelStmt->bindValue(':limit', $funnelLimit, PDO::PARAM_INT);
 $funnelStmt->execute();
 $funnelLeads = $funnelStmt->fetchAll();
-$funnelOverflow = $total > $funnelLimit && count($funnelLeads) >= $funnelLimit;
+$displayTotal = $filterSalesStatus !== '' ? ($statusCounts[$filterSalesStatus] ?? 0) : $total;
+$funnelOverflow = $displayTotal > $funnelLimit && count($funnelLeads) >= $funnelLimit;
 
 foreach ($funnelLeads as $lead) {
   $statusValue = (string) ($lead['sales_status'] ?? '');
@@ -317,6 +344,7 @@ foreach ($funnelLeads as $lead) {
   if (!isset($funnelLeadsByStatus[$statusValue])) $funnelLeadsByStatus[$statusValue] = [];
   $funnelLeadsByStatus[$statusValue][] = $lead;
 }
+$visibleStatusOptions = $filterSalesStatus !== '' ? [$filterSalesStatus => (string) $salesStatusOptions[$filterSalesStatus]] : sales_status_options();
 
 function wa_number_from_formatted(string $phone): string {
   $countryCode = (string) app_config('phone.country_code', '58');
@@ -432,7 +460,9 @@ function dash_channel_label(array $channel): string {
     .menu-meta { display:block; padding:6px 10px 9px; color:var(--brand-muted); font-size:.78rem; font-weight:850; border-bottom:1px solid rgba(0,68,99,.10); margin-bottom:6px; }
     .menu-form { margin:0; }
     .summary-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:10px; margin-top:18px; }
-    .summary-card { min-height:82px; padding:14px; border-radius:14px; border:1px solid var(--line); background:#fff; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
+    .summary-card { min-height:82px; padding:14px; border-radius:14px; border:1px solid var(--line); background:#fff; box-shadow:0 8px 22px rgba(0, 76, 110, .07); text-decoration:none; transition:transform .08s ease, border-color .18s ease, box-shadow .18s ease; }
+    .summary-card:hover { transform:translateY(-1px); border-color:#8bdfff; box-shadow:0 12px 26px rgba(0, 76, 110, .12); }
+    .summary-card.is-active { outline:3px solid rgba(0,212,255,.22); border-color:#00a9e0; }
     .summary-card strong { display:block; color:var(--brand-ink); font-size:1.7rem; line-height:1; font-weight:900; }
     .summary-card span { display:block; margin-top:8px; color:var(--brand-muted); font-size:.78rem; font-weight:850; letter-spacing:.03em; text-transform:uppercase; line-height:1.25; }
     .summary-card[data-tone="total"] { border-color:#8bdfff; background:#eefaff; }
@@ -583,10 +613,10 @@ function dash_channel_label(array $channel): string {
 
         <div class="summary-grid" aria-label="Resumen comercial">
           <?php foreach ($summaryCards as $card): ?>
-            <div class="summary-card" data-tone="<?= h($card['tone']) ?>">
+            <a class="summary-card <?= !empty($card['active']) ? 'is-active' : '' ?>" href="<?= h((string) $card['href']) ?>" data-tone="<?= h($card['tone']) ?>" aria-current="<?= !empty($card['active']) ? 'true' : 'false' ?>">
               <strong><?= (int) $card['value'] ?></strong>
               <span><?= h($card['label']) ?></span>
-            </div>
+            </a>
           <?php endforeach; ?>
         </div>
 
@@ -594,6 +624,7 @@ function dash_channel_label(array $channel): string {
 
         <div class="lead-filters" id="leadFilters" aria-label="Filtros de conversaciones">
           <form class="filters-form" method="get" action="dashboard.php">
+            <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
             <label class="filter-field">
               <span>Buscar</span>
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Cliente, Instagram o mensaje">
@@ -615,13 +646,13 @@ function dash_channel_label(array $channel): string {
             </div>
           </form>
           <?php if ($activeFilters): ?>
-            <p class="active-filter-note">Mostrando <?= (int) $total ?> conversacion<?= $total === 1 ? '' : 'es' ?> con los filtros activos.</p>
+            <p class="active-filter-note">Mostrando <?= (int) $displayTotal ?> conversacion<?= $displayTotal === 1 ? '' : 'es' ?><?= $filterSalesStatus !== '' ? ' en ' . h((string) $salesStatusOptions[$filterSalesStatus]) : '' ?> con los filtros activos.</p>
           <?php endif; ?>
         </div>
 
         <div class="funnel-wrap" aria-label="Embudo comercial">
           <div class="funnel-board">
-            <?php foreach (sales_status_options() as $statusValue => $statusLabel): ?>
+            <?php foreach ($visibleStatusOptions as $statusValue => $statusLabel): ?>
               <?php $cards = $funnelLeadsByStatus[(string) $statusValue] ?? []; ?>
               <section class="funnel-column" data-status="<?= h((string) $statusValue) ?>" aria-labelledby="funnel-<?= h((string) $statusValue) ?>">
                 <header class="funnel-column-header">
