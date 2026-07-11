@@ -248,10 +248,25 @@ function ig_download_media(string $url, ?string $accessToken): array {
   return ['ok' => true, 'bytes' => $bytes, 'mime' => trim(explode(';', $contentType)[0] ?? '')];
 }
 
-function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel): void {
-  if ($conversationId <= 0 || $messageId <= 0 || !r2_is_configured()) return;
+function ig_download_media_with_fallback(string $url, ?string $accessToken): array {
+  $download = ig_download_media($url, $accessToken);
+  if (($download['ok'] ?? false) || !$accessToken) return $download;
+  return ig_download_media($url, null);
+}
+
+function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel): array {
+  $result = ['total' => 0, 'stored' => 0, 'errors' => []];
+  if ($conversationId <= 0 || $messageId <= 0) {
+    $result['errors'][] = 'Conversación o mensaje inválido para adjuntos.';
+    return $result;
+  }
   $attachments = $event['message']['attachments'] ?? [];
-  if (!is_array($attachments) || !$attachments) return;
+  if (!is_array($attachments) || !$attachments) return $result;
+  if (!r2_is_configured()) {
+    $result['total'] = count($attachments);
+    $result['errors'][] = 'R2 no está configurado en el servidor.';
+    return $result;
+  }
 
   $allowedMimes = (array) app_config('media.allowed_image_mimes', []);
   $maxBytes = max(1024, (int) app_config('media.max_upload_bytes', 8388608));
@@ -259,27 +274,47 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
 
   foreach ($attachments as $attachment) {
     if (!is_array($attachment)) continue;
+    $result['total']++;
     $type = ig_clean($attachment['type'] ?? 'image', 40) ?? 'image';
     if ($type !== 'image') continue;
     $payload = $attachment['payload'] ?? [];
     $payload = is_array($payload) ? $payload : [];
-    $url = ig_clean($payload['url'] ?? null, 2000);
-    if ($url === null) continue;
+    $url = trim(str_replace("\0", '', (string) ($payload['url'] ?? '')));
+    if ($url === '') {
+      $result['errors'][] = 'Adjunto de imagen sin payload.url.';
+      continue;
+    }
 
-    $download = ig_download_media($url, $token);
-    if (!($download['ok'] ?? false)) continue;
+    $download = ig_download_media_with_fallback($url, $token);
+    if (!($download['ok'] ?? false)) {
+      $result['errors'][] = 'No se pudo descargar imagen desde Meta: ' . (string) ($download['error'] ?? 'error desconocido');
+      continue;
+    }
     $bytes = (string) ($download['bytes'] ?? '');
-    if ($bytes === '' || strlen($bytes) > $maxBytes) continue;
+    if ($bytes === '') {
+      $result['errors'][] = 'Meta devolvió una imagen vacía.';
+      continue;
+    }
+    if (strlen($bytes) > $maxBytes) {
+      $result['errors'][] = 'Imagen supera el tamaño permitido.';
+      continue;
+    }
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = (string) ($finfo->buffer($bytes) ?: ($download['mime'] ?? ''));
-    if (!in_array($mime, $allowedMimes, true)) continue;
+    if (!in_array($mime, $allowedMimes, true)) {
+      $result['errors'][] = 'MIME no permitido: ' . $mime;
+      continue;
+    }
 
     $key = r2_random_key('instagram/inbound/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);
-    if (!($upload['ok'] ?? false)) continue;
+    if (!($upload['ok'] ?? false)) {
+      $result['errors'][] = 'R2 no aceptó la imagen: ' . (string) ($upload['error'] ?? 'error desconocido');
+      continue;
+    }
 
-    conv_add_attachment($pdo, [
+    $attachmentId = conv_add_attachment($pdo, [
       'conversation_id' => $conversationId,
       'message_id' => $messageId,
       'direction' => 'inbound',
@@ -292,7 +327,10 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
       'filename' => basename(parse_url($url, PHP_URL_PATH) ?: ('instagram-image.' . r2_extension_from_mime($mime))),
       'external_attachment_id' => ig_clean($payload['attachment_id'] ?? null, 180),
     ]);
+    if ($attachmentId > 0) $result['stored']++;
+    else $result['errors'][] = 'La imagen subió a R2, pero no se guardó en la base de datos.';
   }
+  return $result;
 }
 
 function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): array {
@@ -339,8 +377,9 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'delivery_status' => 'received',
     ]);
 
+    $attachmentResult = ['total' => 0, 'stored' => 0, 'errors' => []];
     if ($inserted > 0) {
-      ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel);
+      $attachmentResult = ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel);
       conv_upsert_conversation($pdo, [
         'channel_id' => $channel['id'] ?? null,
         'contact_id' => $contactId,
@@ -356,6 +395,9 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'conversation_id' => $conversationId,
       'message_id' => $inserted,
       'message_inserted' => $inserted > 0 && !$messageAlreadyExists,
+      'attachments_total' => (int) ($attachmentResult['total'] ?? 0),
+      'attachments_stored' => (int) ($attachmentResult['stored'] ?? 0),
+      'attachment_errors' => (array) ($attachmentResult['errors'] ?? []),
       'error' => $inserted > 0 ? null : 'No se pudo guardar el mensaje en conversation_messages.',
     ];
   } catch (Throwable $e) {
@@ -442,6 +484,8 @@ SQL);
     $conversationId = (int) ($sync['conversation_id'] ?? 0);
     $conversationMessageId = (int) ($sync['message_id'] ?? 0);
     $messageInserted = (bool) ($sync['message_inserted'] ?? false);
+    $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
+    $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
     conv_log_webhook_event($pdo, [
       'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
       'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
@@ -453,7 +497,7 @@ SQL);
       'lead_id' => $leadId,
       'conversation_id' => $conversationId > 0 ? $conversationId : null,
       'message_preview' => $messageText,
-      'error_message' => $conversationMessageId > 0 ? null : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'),
+      'error_message' => $conversationMessageId > 0 ? $attachmentError : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'),
       'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
     ]);
     return $leadId;
@@ -508,6 +552,8 @@ SQL);
   $conversationId = (int) ($sync['conversation_id'] ?? 0);
   $conversationMessageId = (int) ($sync['message_id'] ?? 0);
   $messageInserted = (bool) ($sync['message_inserted'] ?? false);
+  $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
+  $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
   conv_log_webhook_event($pdo, [
     'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
     'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
@@ -519,7 +565,7 @@ SQL);
     'lead_id' => $leadId,
     'conversation_id' => $conversationId > 0 ? $conversationId : null,
     'message_preview' => $messageText,
-    'error_message' => $conversationMessageId > 0 ? null : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'),
+    'error_message' => $conversationMessageId > 0 ? $attachmentError : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'),
     'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
   ]);
   return $leadId;
