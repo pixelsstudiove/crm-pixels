@@ -15,6 +15,10 @@ $channelsTable = ig_channels_table();
 $canSendMessages = can('send_messages');
 $canManageConversations = can('manage_conversations') || can('send_messages');
 $canEditLeads = can('edit_leads');
+$canManageUsers = can('manage_users');
+$canManageIntegrations = can('manage_integrations');
+$canViewDashboard = can('view_dashboard');
+$currentRoleLabel = role_label(current_user_role());
 $statusOptions = [
   'abierta' => 'Abierta',
   'pendiente' => 'Pendiente',
@@ -248,6 +252,7 @@ function inbox_visible_message_text($value, array $attachments): string {
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Inbox conversacional - Pixels Studio</title>
   <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
+  <meta name="csrf" content="<?= h($_SESSION['csrf'] ?? '') ?>">
   <style>
     :root { --container-w:min(98vw, 1440px); --inbox-line:#d6ecf8; --inbox-soft:#eef9ff; --inbox-ink:#071120; --inbox-muted:#5d6d86; }
     .inbox-card { height:calc(100vh - (var(--dashboard-pad) * 2)); min-height:0; display:flex; }
@@ -257,6 +262,17 @@ function inbox_visible_message_text($value, array $attachments): string {
     .inbox-link, .inbox-btn { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-weight:850; text-decoration:none; cursor:pointer; }
     .inbox-link.primary, .inbox-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .inbox-link:hover, .inbox-btn:hover { background:#dff6ff; border-color:#8bdfff; }
+    .menu-dropdown { position:relative; }
+    .menu-trigger { appearance:none; display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font:inherit; font-size:.95rem; font-weight:850; cursor:pointer; user-select:none; transition:background .2s ease, border-color .2s ease, transform .06s ease; }
+    .menu-trigger::after { content:"⌄"; color:#007ea8; font-size:.95rem; line-height:1; transform:translateY(-1px); }
+    .menu-dropdown.is-open .menu-trigger, .menu-trigger:hover { background:#dff6ff; border-color:#8bdfff; }
+    .menu-trigger:active { transform:translateY(1px); }
+    .menu-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:30; min-width:220px; padding:8px; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 16px 36px rgba(0, 76, 110, .18); display:none; }
+    .menu-dropdown.is-open .menu-panel { display:block; }
+    .menu-item { width:100%; min-height:40px; display:flex; align-items:center; justify-content:flex-start; gap:8px; padding:0 10px; border:0; border-radius:10px; background:transparent; color:var(--brand-ink); font:inherit; font-weight:800; text-align:left; text-decoration:none; cursor:pointer; }
+    .menu-item:hover { background:#eefaff; color:#007ea8; }
+    .menu-meta { display:block; padding:6px 10px 9px; color:var(--brand-muted); font-size:.78rem; font-weight:850; border-bottom:1px solid rgba(0,68,99,.10); margin-bottom:6px; }
+    .menu-form { margin:0; }
     #inboxNoticeArea { flex:0 0 auto; }
     .inbox-layout { flex:1 1 auto; display:grid; grid-template-columns:minmax(280px, 360px) minmax(0, 1fr) minmax(260px, 320px); gap:12px; min-height:0; overflow:hidden; }
     .inbox-panel { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; overflow:hidden; box-shadow:0 8px 22px rgba(0, 76, 110, .06); }
@@ -343,8 +359,19 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-list > .empty-state { flex:1; min-height:0; }
     .conversation-list > .empty-state { min-height:0; }
     .notice { margin-bottom:14px; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,8,18,.72); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .modal-backdrop.is-open { display:flex; }
+    .modal { width:min(92vw, 520px); border-radius:22px; border:1px solid rgba(255,255,255,.32); background:rgba(7,17,32,.96); backdrop-filter:blur(18px) saturate(120%); box-shadow:0 20px 60px rgba(0,0,0,.45); padding:24px; color:#eafaff; }
+    .modal h2 { margin:0 0 10px; font-size:1.4rem; color:#fff; }
+    .modal .subtitle { color:rgba(234,250,255,.86); }
+    .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
+    .modal .field-label { color:#eafaff; }
+    .modal input { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.22); color:#fff; }
+    .btn-secondary { appearance:none; border:1px solid rgba(255,255,255,.35); background:transparent; color:#eafaff; padding:10px 14px; border-radius:12px; cursor:pointer; }
+    .btn-secondary:hover { background:rgba(255,255,255,.08); }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); grid-template-rows:minmax(0, 1fr) auto; overflow:auto; } .side-panel { grid-column:1 / -1; max-height:none; } }
     @media (max-width: 760px) { .inbox-card { height:auto; min-height:calc(100vh - (var(--dashboard-pad) * 2)); } .inbox-card > .panel { height:auto; overflow:visible; } .inbox-layout { flex:0 0 auto; grid-template-columns:1fr; overflow:visible; } .conversation-list { flex:0 0 auto; max-height:300px; } .message-list { min-height:320px; max-height:52vh; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:minmax(0, 1fr) 44px; } .composer-submit { grid-column:1 / -1; min-height:46px; } }
+    @media (max-width: 700px) { .inbox-actions { width:100%; } .menu-dropdown { flex:1; } .menu-trigger { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
   </style>
 </head>
 <body class="dashboard-page">
@@ -358,10 +385,28 @@ function inbox_visible_message_text($value, array $attachments): string {
             <p class="subtitle">Gestiona conversaciones de Instagram y su avance comercial desde el CRM.</p>
           </div>
           <div class="inbox-actions">
-            <a class="inbox-link" href="dashboard.php">Embudo comercial</a>
-            <?php if (can('manage_integrations')): ?><a class="inbox-link" href="channels.php">Canales</a><?php endif; ?>
-            <?php if (can('manage_integrations')): ?><a class="inbox-link" href="webhook_logs.php">Eventos</a><?php endif; ?>
-            <span class="role-pill"><?= h(role_label(current_user_role())) ?></span>
+            <?php if ($canViewDashboard || $canManageIntegrations): ?>
+              <div class="menu-dropdown" data-menu>
+                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Embudo</button>
+                <div class="menu-panel" role="menu">
+                  <?php if ($canViewDashboard): ?><a class="menu-item" href="dashboard.php">Embudo</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Ver canales</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="webhook_logs.php">Ver eventos</a><?php endif; ?>
+                </div>
+              </div>
+            <?php endif; ?>
+            <div class="menu-dropdown" data-menu>
+              <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false"><?= h((string) ($_SESSION['username'] ?? 'Usuario')) ?></button>
+              <div class="menu-panel" role="menu">
+                <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
+                <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
+                <?php if ($canManageUsers): ?><a class="menu-item" href="users.php">Gestión de usuarios</a><?php endif; ?>
+                <form class="menu-form" action="logout.php" method="post">
+                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                  <button class="menu-item" type="submit">Cerrar sesión</button>
+                </form>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -554,6 +599,24 @@ function inbox_visible_message_text($value, array $attachments): string {
       </div>
     </section>
   </main>
+  <div id="profileModal" class="modal-backdrop" data-modal>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
+      <h2 id="profileTitle">Actualizar contraseña</h2>
+      <p class="subtitle">Usuario: <strong><?= h((string) ($_SESSION['username'] ?? 'Usuario')) ?></strong></p>
+      <form id="profileForm" class="form" action="account_update.php" method="post" novalidate>
+        <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+        <label class="field"><span class="field-label">Contraseña actual</span><input type="password" name="currentpass" minlength="8" required autocomplete="current-password"></label>
+        <label class="field"><span class="field-label">Nueva contraseña</span><input type="password" name="newpass" minlength="8" required autocomplete="new-password"></label>
+        <label class="field"><span class="field-label">Confirmar contraseña</span><input type="password" name="confirm" minlength="8" required autocomplete="new-password"></label>
+        <div id="profileAlert" class="form-alert" aria-live="polite"></div>
+        <div class="actions">
+          <button type="button" class="btn-secondary" data-modal-close>Cancelar</button>
+          <button type="submit" class="btn-secondary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="js/dashboard.js?v=<?= (int) @filemtime(__DIR__ . '/js/dashboard.js') ?>" defer></script>
   <script>
     const inboxState = {
       conversationId: <?= (int) $selectedId ?>,
