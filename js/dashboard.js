@@ -1,8 +1,27 @@
 (function(){
+  function closestFromEventTarget(target, selector){
+    if(target && target.nodeType === 3) target = target.parentElement;
+    return target && typeof target.closest === 'function' ? target.closest(selector) : null;
+  }
+
+  function setMenuOpen(menu, isOpen){
+    if(!menu) return;
+    menu.classList.toggle('is-open', isOpen);
+    const trigger = menu.querySelector('[data-menu-trigger]');
+    if(trigger) trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  }
+
   function closeMenus(except){
-    document.querySelectorAll('.menu-dropdown[open]').forEach(menu=>{
-      if(menu !== except) menu.removeAttribute('open');
+    document.querySelectorAll('[data-menu].is-open').forEach(menu=>{
+      if(menu !== except) setMenuOpen(menu, false);
     });
+  }
+
+  function toggleMenu(menu){
+    if(!menu) return;
+    const willOpen = !menu.classList.contains('is-open');
+    closeMenus(menu);
+    setMenuOpen(menu, willOpen);
   }
 
   function openModal(id){
@@ -18,28 +37,25 @@
   }
 
   document.addEventListener('click', (e)=>{
-    const openBtn = e.target.closest('[data-modal-open]');
+    const menuTrigger = closestFromEventTarget(e.target, '[data-menu-trigger]');
+    if(menuTrigger){
+      e.preventDefault();
+      toggleMenu(menuTrigger.closest('[data-menu]'));
+      return;
+    }
+
+    const openBtn = closestFromEventTarget(e.target, '[data-modal-open]');
     if(openBtn){
       const id = openBtn.getAttribute('data-modal-open');
       if(id) openModal(id);
     }
-    const closeBtn = e.target.closest('[data-modal-close]');
+    const closeBtn = closestFromEventTarget(e.target, '[data-modal-close]');
     if(closeBtn){
       const modal = closeBtn.closest('[data-modal]');
       if(modal) closeModal(modal);
     }
-    const clickedMenu = e.target.closest('.menu-dropdown');
-    if(clickedMenu && e.target.closest('summary')){
-      closeMenus(clickedMenu);
-      return;
-    }
+    const clickedMenu = closestFromEventTarget(e.target, '[data-menu]');
     if(!clickedMenu) closeMenus();
-  });
-
-  document.querySelectorAll('.menu-dropdown').forEach(menu=>{
-    menu.addEventListener('toggle', ()=>{
-      if(menu.open) closeMenus(menu);
-    });
   });
 
   document.querySelectorAll('[data-modal]').forEach(modal=>{
