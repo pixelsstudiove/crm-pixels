@@ -287,11 +287,12 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .message-meta.error { color:#b83232; opacity:1; font-weight:900; }
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
+    .composer-main { display:grid; grid-template-columns:minmax(0, 1fr) 112px; gap:10px; align-items:stretch; }
     .composer-input { position:relative; }
-    .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
+    .reply-box textarea { width:100%; height:104px; min-height:104px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
     .reply-box textarea:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .reply-box.is-recording textarea { display:none; }
-    .recording-surface { position:relative; min-height:126px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:linear-gradient(180deg,#f8fdff,#eef9ff); }
+    .recording-surface { position:relative; height:104px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:linear-gradient(180deg,#f8fdff,#eef9ff); }
     .recording-surface[hidden] { display:none; }
     .recording-canvas { position:absolute; inset:0; width:100%; height:100%; }
     .recording-center { position:absolute; inset:0; display:grid; place-items:center; gap:10px; align-content:center; padding:16px; background:linear-gradient(90deg,rgba(248,253,255,.86),rgba(248,253,255,.48),rgba(248,253,255,.86)); }
@@ -300,15 +301,16 @@ function inbox_visible_message_text($value, array $attachments): string {
     .recording-action { min-height:38px; padding:0 14px; border-radius:10px; border:1px solid var(--line); font-weight:950; cursor:pointer; }
     .recording-action.send { background:#071120; border-color:#071120; color:#eafaff; }
     .recording-action.cancel { background:#fff; color:#a82b2b; border-color:#f4a6a6; }
+    .composer-submit { width:100%; height:100%; min-height:104px; border-radius:12px; }
     .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.86rem; font-weight:750; }
     .composer-file { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .composer-file input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
-    .file-trigger { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-weight:900; cursor:pointer; }
-    .file-trigger:hover { background:#dff6ff; border-color:#8bdfff; }
+    .icon-tool { display:inline-flex; align-items:center; justify-content:center; width:38px; height:38px; padding:0; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-size:1.15rem; font-weight:900; cursor:pointer; }
+    .icon-tool:hover { background:#dff6ff; border-color:#8bdfff; }
     .file-name { max-width:220px; color:var(--inbox-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .audio-recorder { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .record-btn { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:#fff6f6; color:#a82b2b; font-weight:900; cursor:pointer; }
+    .record-btn { background:#fff6f6; color:#a82b2b; }
     .record-btn:hover { background:#ffe7e7; border-color:#f4a6a6; }
     .record-btn.is-recording { background:#a82b2b; border-color:#a82b2b; color:#fff; }
     .record-status { color:var(--inbox-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
@@ -335,7 +337,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .empty-state { display:grid; place-items:center; min-height:500px; text-align:center; color:var(--inbox-muted); padding:24px; }
     .notice { margin-bottom:14px; }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) 1fr; } .side-panel { grid-column:1 / -1; } }
-    @media (max-width: 760px) { .inbox-layout { grid-template-columns:1fr; } .conversation-list { max-height:300px; } .message-list { height:430px; padding:12px; } .message { max-width:92%; } }
+    @media (max-width: 760px) { .inbox-layout { grid-template-columns:1fr; } .conversation-list { max-height:300px; } .message-list { height:430px; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:1fr; } .composer-submit { min-height:46px; } }
   </style>
 </head>
 <body class="dashboard-page">
@@ -442,28 +444,31 @@ function inbox_visible_message_text($value, array $attachments): string {
               <form class="reply-box" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
-                <div class="composer-input">
-                  <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
-                  <div class="recording-surface" id="audioRecordingSurface" hidden>
-                    <canvas class="recording-canvas" id="audioWaveCanvas" width="900" height="180" aria-hidden="true"></canvas>
-                    <div class="recording-center">
-                      <div class="recording-time" id="audioRecordingTime">Grabando 0s</div>
-                      <div class="recording-actions">
-                        <button class="recording-action send" type="button" id="audioQuickSendButton">Enviar audio</button>
-                        <button class="recording-action cancel" type="button" id="audioCancelButton">Cancelar</button>
+                <div class="composer-main">
+                  <div class="composer-input">
+                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
+                    <div class="recording-surface" id="audioRecordingSurface" hidden>
+                      <canvas class="recording-canvas" id="audioWaveCanvas" width="900" height="180" aria-hidden="true"></canvas>
+                      <div class="recording-center">
+                        <div class="recording-time" id="audioRecordingTime">Grabando 0s</div>
+                        <div class="recording-actions">
+                          <button class="recording-action send" type="button" id="audioQuickSendButton">Enviar audio</button>
+                          <button class="recording-action cancel" type="button" id="audioCancelButton">Cancelar</button>
+                        </div>
                       </div>
                     </div>
                   </div>
+                  <button class="inbox-btn primary composer-submit" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
                 </div>
                 <div class="composer-tools">
                   <div class="composer-left">
                     <label class="composer-file">
-                      <span class="file-trigger">Adjuntar archivo</span>
+                      <span class="icon-tool" title="Adjuntar imagen o audio" aria-label="Adjuntar imagen o audio">📎</span>
                       <input type="file" name="media" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" <?= $canSendMessages ? '' : 'disabled' ?>>
                       <span class="file-name" id="mediaFileName">Sin adjunto</span>
                     </label>
                     <div class="audio-recorder">
-                      <button class="record-btn" type="button" id="audioRecordButton" <?= $canSendMessages ? '' : 'disabled' ?>>Grabar audio</button>
+                      <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages ? '' : 'disabled' ?>>🎙</button>
                       <span class="record-status" id="audioRecordStatus">Sin audio grabado</span>
                       <audio class="record-preview" id="audioRecordPreview" controls preload="metadata" hidden></audio>
                     </div>
@@ -484,7 +489,6 @@ function inbox_visible_message_text($value, array $attachments): string {
                 </div>
                 <div class="reply-actions">
                   <span class="live-status" id="liveStatus">Actualizando automaticamente.</span>
-                  <button class="inbox-btn primary" type="submit" <?= $canSendMessages ? '' : 'disabled' ?>>Enviar</button>
                 </div>
               </form>
             <?php else: ?>
@@ -634,6 +638,29 @@ function inbox_visible_message_text($value, array $attachments): string {
       if (messageList) messageList.scrollTop = messageList.scrollHeight;
     }
 
+    function scrollMessagesToBottomSoon() {
+      scrollMessagesToBottom();
+      window.requestAnimationFrame(scrollMessagesToBottom);
+      window.setTimeout(scrollMessagesToBottom, 80);
+      window.setTimeout(scrollMessagesToBottom, 350);
+    }
+
+    function bindMessageMediaScroll(container) {
+      if (!container) return;
+      container.querySelectorAll('img, audio, video').forEach(media => {
+        media.addEventListener('load', scrollMessagesToBottomSoon, { once: true });
+        media.addEventListener('loadedmetadata', scrollMessagesToBottomSoon, { once: true });
+      });
+    }
+
+    function setRecordButtonState(isRecording) {
+      if (!audioRecordButton) return;
+      audioRecordButton.textContent = isRecording ? '■' : '🎙';
+      audioRecordButton.title = isRecording ? 'Detener audio' : 'Grabar audio';
+      audioRecordButton.setAttribute('aria-label', audioRecordButton.title);
+      audioRecordButton.classList.toggle('is-recording', isRecording);
+    }
+
     function bestAudioMimeType() {
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
       const preferred = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
@@ -701,6 +728,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
       `;
       messageList.appendChild(article);
+      bindMessageMediaScroll(article);
       inboxState.lastMessageId = Math.max(inboxState.lastMessageId, Number(message.id));
       messageList.dataset.lastId = String(inboxState.lastMessageId);
     }
@@ -720,7 +748,8 @@ function inbox_visible_message_text($value, array $attachments): string {
         <div class="message-meta">Enviando...</div>
       `;
       messageList.appendChild(article);
-      scrollMessagesToBottom();
+      bindMessageMediaScroll(article);
+      scrollMessagesToBottomSoon();
       return article;
     }
 
@@ -1035,15 +1064,13 @@ function inbox_visible_message_text($value, array $attachments): string {
           recordingStartedAt = Date.now();
           updateRecordingStatus();
           recordingTimer = window.setInterval(updateRecordingStatus, 500);
-          if (audioRecordButton) {
-            audioRecordButton.textContent = 'Detener audio';
-            audioRecordButton.classList.add('is-recording');
-          }
+          setRecordButtonState(true);
         } catch (error) {
           stopRecordingTimer();
           stopAudioWave();
           stopRecordingTracks();
           setRecordingSurface(false);
+          setRecordButtonState(false);
           showNotice('No se pudo acceder al microfono.', 'error');
         }
       }
@@ -1051,10 +1078,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       function stopAudioRecording() {
         if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
         stopAudioWave();
-        if (audioRecordButton) {
-          audioRecordButton.textContent = 'Grabar audio';
-          audioRecordButton.classList.remove('is-recording');
-        }
+        setRecordButtonState(false);
         recordingStartedAt = 0;
       }
 
@@ -1070,10 +1094,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         stopRecordingTracks();
         setRecordingSurface(false);
         clearRecordedAudio();
-        if (audioRecordButton) {
-          audioRecordButton.textContent = 'Grabar audio';
-          audioRecordButton.classList.remove('is-recording');
-        }
+        setRecordButtonState(false);
         recordingStartedAt = 0;
       }
       if (sendWithEnter) {
@@ -1253,7 +1274,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           const data = await response.json();
           if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
           reconcileOptimisticMessages(optimisticMessages, Array.isArray(data.messages) ? data.messages : (data.message ? [data.message] : []));
-          scrollMessagesToBottom();
+          scrollMessagesToBottomSoon();
           showNotice(data.notice || 'Mensaje enviado.');
           pollInbox(true);
         } catch (error) {
@@ -1300,7 +1321,9 @@ function inbox_visible_message_text($value, array $attachments): string {
       });
     });
 
-    scrollMessagesToBottom();
+    bindMessageMediaScroll(messageList);
+    scrollMessagesToBottomSoon();
+    window.addEventListener('load', scrollMessagesToBottomSoon);
     window.setInterval(() => pollInbox(false), 3000);
     window.setTimeout(() => pollInbox(true), 900);
   </script>
