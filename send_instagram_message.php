@@ -114,7 +114,7 @@ if (!$conversation) send_redirect($conversationId, 'No se encontro la conversaci
 
 $replyWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? '');
 if (!($replyWindow['can_reply'] ?? false)) {
-  send_redirect($conversationId, 'Ventana de Meta vencida. No se puede responder desde el CRM hasta recibir un nuevo mensaje del cliente.');
+  send_redirect($conversationId, 'Chat vencido. No se puede responder desde el CRM hasta recibir un nuevo mensaje del cliente.');
 }
 
 $now = gmdate('Y-m-d H:i:s');

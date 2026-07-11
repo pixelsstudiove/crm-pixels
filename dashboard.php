@@ -647,7 +647,7 @@ function dash_channel_label(array $channel): string {
                           <?php endif; ?>
                         </span>
                         <span>Actualizado: <?= h(updated_display($lead)) ?></span>
-                        <span class="reply-window-badge <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" title="<?= h((string) ($replyWindow['detail'] ?? '')) ?>"><?= h((string) ($replyWindow['label'] ?? 'Ventana Meta')) ?></span>
+                        <span class="reply-window-badge <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" title="<?= h((string) ($replyWindow['detail'] ?? '')) ?>"><?= h((string) ($replyWindow['label'] ?? 'Chat')) ?></span>
                         <?php if ($adValue !== '—'): ?><span><?= h(short_value($adValue, 46)) ?></span><?php endif; ?>
                       </div>
                       <?php if (lead_message_display($lead) !== '—'): ?>

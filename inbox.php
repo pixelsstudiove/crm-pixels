@@ -307,6 +307,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .chat-header p { margin:4px 0 0; color:var(--inbox-muted); }
     .message-list { flex:1 1 auto; min-height:0; overflow:auto; padding:18px; background:linear-gradient(180deg,#f8fdff,#eef8ff); display:flex; flex-direction:column; gap:10px; }
     .reply-window-alert { margin:12px 16px 0; padding:12px 14px; border-radius:12px; border:1px solid #bfe2c5; background:#eef9f0; color:#184f2b; font-size:.9rem; line-height:1.35; font-weight:750; }
+    .reply-window-alert[hidden] { display:none; }
     .reply-window-alert strong { display:block; margin-bottom:3px; color:inherit; }
     .reply-window-alert.warning { border-color:#f1d589; background:#fff8df; color:#8a5b00; }
     .reply-window-alert.expired, .reply-window-alert.unknown { border-color:#f1c2c6; background:#fff1f2; color:#85232a; }
@@ -322,6 +323,9 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .message-meta.error { color:#b83232; opacity:1; font-weight:900; }
     .reply-box { flex:0 0 auto; padding:10px 12px 8px; border-top:1px solid var(--inbox-line); background:#fff; }
+    .reply-box.is-disabled { opacity:.72; background:#f6f9fc; }
+    .reply-box.is-disabled textarea { background:#f1f5f9; color:#64748b; cursor:not-allowed; }
+    .reply-box.is-disabled .icon-tool, .reply-box.is-disabled .emoji-btn, .reply-box.is-disabled .composer-submit { filter:grayscale(.25); cursor:not-allowed; }
     .composer-main { display:grid; grid-template-columns:minmax(0, 1fr) 44px 112px; gap:10px; align-items:stretch; }
     .composer-input { position:relative; }
     .reply-box textarea { width:100%; height:104px; min-height:104px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
@@ -370,6 +374,9 @@ function inbox_visible_message_text($value, array $attachments): string {
     .info-row strong { color:var(--inbox-ink); }
     .status-form { display:grid; gap:8px; }
     .status-save-hint { color:var(--inbox-muted); font-size:.78rem; font-weight:750; }
+    .side-window-alert { display:grid; gap:4px; padding:12px; border-radius:12px; border:1px solid #f1d589; background:#fff8df; color:#8a5b00; font-size:.88rem; line-height:1.35; font-weight:750; }
+    .side-window-alert[hidden] { display:none; }
+    .side-window-alert strong { color:inherit; }
     .empty-state { display:grid; place-items:center; min-height:260px; text-align:center; color:var(--inbox-muted); padding:24px; }
     .message-list > .empty-state { flex:1; min-height:0; }
     .conversation-list > .empty-state { min-height:0; }
@@ -459,7 +466,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <div class="conversation-row" style="margin-top:6px">
                     <span class="badge"><?= h($statusOptions[(string) ($conversation['status'] ?? '')] ?? 'Abierta') ?></span>
                     <?php $conversationWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? ''); ?>
-                    <?php if (($conversationWindow['status'] ?? '') !== 'active'): ?><span class="window-pill <?= h((string) ($conversationWindow['status'] ?? '')) ?>"><?= h((string) ($conversationWindow['label'] ?? 'Ventana Meta')) ?></span><?php endif; ?>
+                    <?php if (($conversationWindow['status'] ?? '') !== 'active'): ?><span class="window-pill <?= h((string) ($conversationWindow['status'] ?? '')) ?>"><?= h((string) ($conversationWindow['label'] ?? 'Chat')) ?></span><?php endif; ?>
                     <?php if ((int) ($conversation['unread_count'] ?? 0) > 0): ?><span class="badge unread"><?= (int) $conversation['unread_count'] ?></span><?php endif; ?>
                   </div>
                   <div class="conversation-preview"><?= h(inbox_short($conversation['last_message_preview'] ?? '', 92)) ?></div>
@@ -479,10 +486,11 @@ function inbox_visible_message_text($value, array $attachments): string {
                 </div>
                 <a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['id'] ?>">Ver en embudo</a>
               </header>
+              <?php $showChatWindowAlert = in_array((string) ($replyWindow['status'] ?? ''), ['expired', 'unknown'], true); ?>
               <?php if ($replyWindow): ?>
-                <div class="reply-window-alert <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" id="replyWindowAlert">
-                  <strong><?= h((string) ($replyWindow['label'] ?? 'Ventana Meta')) ?></strong>
-                  <span><?= h((string) ($replyWindow['detail'] ?? '')) ?><?= !empty($replyWindow['last_inbound_at']) ? ' Último mensaje recibido: ' . h((string) $replyWindow['last_inbound_at']) . '.' : '' ?></span>
+                <div class="reply-window-alert <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" id="replyWindowAlert" <?= $showChatWindowAlert ? '' : 'hidden' ?>>
+                  <strong><?= h((string) ($replyWindow['label'] ?? 'Chat vencido')) ?></strong>
+                  <span><?= h((string) ($replyWindow['detail'] ?? '')) ?></span>
                 </div>
               <?php endif; ?>
 
@@ -516,7 +524,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php endif; ?>
               </div>
 
-              <form class="reply-box" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
+              <form class="reply-box <?= ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
                 <div class="composer-main">
@@ -579,7 +587,12 @@ function inbox_visible_message_text($value, array $attachments): string {
               <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
               <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
               <div class="info-row"><span>Último mensaje recibido</span><strong><?= h(inbox_time($selected['last_inbound_at'] ?? '')) ?></strong></div>
-              <?php if ($replyWindow): ?><div class="info-row"><span>Ventana Meta</span><strong><?= h((string) ($replyWindow['label'] ?? '—')) ?></strong></div><?php endif; ?>
+              <?php if ($replyWindow): ?>
+                <div class="side-window-alert" id="sideReplyWindowAlert" <?= (string) ($replyWindow['status'] ?? '') === 'warning' ? '' : 'hidden' ?>>
+                  <strong><?= h((string) ($replyWindow['label'] ?? 'Chat por vencer')) ?></strong>
+                  <span><?= h((string) ($replyWindow['detail'] ?? '')) ?></span>
+                </div>
+              <?php endif; ?>
               <div class="info-row"><span>Lead vinculado</span><strong><?= !empty($selected['lead_id']) ? '#' . (int) $selected['lead_id'] . ' · ' . h((string) ($selected['lead_fullname'] ?? '')) : 'Sin vincular' ?></strong></div>
               <div class="info-row"><span>Status comercial</span><strong id="salesStatusLabel"><?= h((string) ($salesStatusOptions[(string) ($selected['lead_sales_status'] ?? '')] ?? ($selected['lead_sales_status'] ?: 'Sin status'))) ?></strong></div>
 
@@ -671,10 +684,12 @@ function inbox_visible_message_text($value, array $attachments): string {
     const audioQuickSendButton = document.getElementById('audioQuickSendButton');
     const audioCancelButton = document.getElementById('audioCancelButton');
     const replyWindowAlert = document.getElementById('replyWindowAlert');
+    const sideReplyWindowAlert = document.getElementById('sideReplyWindowAlert');
 
     function setComposerEnabled(canReply) {
       inboxState.canReply = Boolean(canReply);
       if (!replyForm) return;
+      replyForm.classList.toggle('is-disabled', !inboxState.canReply);
       replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, button[type="submit"]').forEach(el => {
         el.disabled = !inboxState.canReply;
       });
@@ -683,13 +698,23 @@ function inbox_visible_message_text($value, array $attachments): string {
     function updateReplyWindow(windowInfo) {
       if (!windowInfo) return;
       setComposerEnabled(Boolean(windowInfo.can_reply));
-      if (!replyWindowAlert) return;
-      replyWindowAlert.className = `reply-window-alert ${escapeHtml(windowInfo.status || 'unknown')}`;
-      const lastInbound = windowInfo.last_inbound_at ? ` Último mensaje recibido: ${escapeHtml(windowInfo.last_inbound_at)}.` : '';
-      replyWindowAlert.innerHTML = `
-        <strong>${escapeHtml(windowInfo.label || 'Ventana Meta')}</strong>
-        <span>${escapeHtml(windowInfo.detail || '')}${lastInbound}</span>
-      `;
+      const status = String(windowInfo.status || 'unknown');
+      if (replyWindowAlert) {
+        const showChatAlert = ['expired', 'unknown'].includes(status);
+        replyWindowAlert.hidden = !showChatAlert;
+        replyWindowAlert.className = `reply-window-alert ${escapeHtml(status)}`;
+        replyWindowAlert.innerHTML = `
+          <strong>${escapeHtml(windowInfo.label || 'Chat vencido')}</strong>
+          <span>${escapeHtml(windowInfo.detail || '')}</span>
+        `;
+      }
+      if (sideReplyWindowAlert) {
+        sideReplyWindowAlert.hidden = status !== 'warning';
+        sideReplyWindowAlert.innerHTML = `
+          <strong>${escapeHtml(windowInfo.label || 'Chat por vencer')}</strong>
+          <span>${escapeHtml(windowInfo.detail || '')}</span>
+        `;
+      }
     }
 
     function escapeHtml(value) {
@@ -819,7 +844,7 @@ function inbox_visible_message_text($value, array $attachments): string {
             </div>
             <div class="conversation-row" style="margin-top:6px">
               <span class="badge">${escapeHtml(item.status_label)}</span>
-              ${item.reply_window && item.reply_window.status !== 'active' ? `<span class="window-pill ${escapeHtml(item.reply_window.status || 'unknown')}">${escapeHtml(item.reply_window.label || 'Ventana Meta')}</span>` : ''}
+              ${item.reply_window && item.reply_window.status !== 'active' ? `<span class="window-pill ${escapeHtml(item.reply_window.status || 'unknown')}">${escapeHtml(item.reply_window.label || 'Chat')}</span>` : ''}
               ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
             </div>
             <div class="conversation-preview">${escapeHtml(item.preview)}</div>
@@ -1393,7 +1418,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           return;
         }
         if (!inboxState.canReply) {
-          showNotice('Ventana de Meta vencida. Espera un nuevo mensaje del cliente para responder desde el CRM.', 'error');
+          showNotice('Chat vencido. Espera un nuevo mensaje del cliente para responder desde el CRM.', 'error');
           return;
         }
         if (!hasText && !hasMedia && !hasRecordedAudio) return;

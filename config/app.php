@@ -283,8 +283,8 @@ if (!function_exists('meta_reply_window_info')) {
     if ($hoursElapsed === null) {
       return [
         'status' => 'unknown',
-        'label' => 'Sin mensaje entrante',
-        'detail' => 'No hay un mensaje recibido para calcular la ventana de Meta.',
+        'label' => 'Chat sin actividad',
+        'detail' => 'No hay un mensaje recibido para calcular el estado del chat.',
         'last_inbound_at' => '',
         'hours_elapsed' => null,
         'hours_remaining' => null,
@@ -295,18 +295,24 @@ if (!function_exists('meta_reply_window_info')) {
     $remaining = $windowHours - $hoursElapsed;
     if ($hoursElapsed >= $windowHours) {
       $status = 'expired';
-      $label = 'Ventana Meta vencida';
-      $detail = 'Pasaron más de ' . $windowHours . 'h desde el último mensaje del cliente. Evita responder desde el CRM.';
+      $label = 'Chat vencido';
+      $detail = 'Esta conversación estuvo inactiva por más de ' . $windowHours . 'h. Por políticas de Meta no es posible continuar con la conversación a través de este CRM.';
       $canReply = false;
     } elseif ($hoursElapsed >= $warningHours) {
       $status = 'warning';
-      $label = 'Ventana Meta por vencer';
-      $detail = 'Quedan aprox. ' . max(0, (int) floor($remaining)) . 'h para responder dentro de la ventana de Meta.';
+      $label = 'Chat por vencer';
+      if ($remaining < 1) {
+        $timeLeft = max(1, (int) ceil($remaining * 60)) . ' minutos';
+      } else {
+        $hoursLeft = max(1, (int) floor($remaining));
+        $timeLeft = $hoursLeft . ' hora' . ($hoursLeft === 1 ? '' : 's');
+      }
+      $detail = 'Si este chat se mantiene inactivo por los próximos ' . $timeLeft . ' se vencerá y no podrás retomar la conversación con el cliente a través del CRM.';
       $canReply = true;
     } else {
       $status = 'active';
-      $label = 'Ventana Meta activa';
-      $detail = 'Puedes responder dentro de la ventana de Meta.';
+      $label = 'Chat activo';
+      $detail = 'Puedes continuar la conversación desde el CRM.';
       $canReply = true;
     }
 
