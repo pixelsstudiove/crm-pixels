@@ -225,20 +225,20 @@ function inbox_channel_label(array $channel): string {
   return trim((string) ($channel['page_id'] ?? 'Canal de Instagram'));
 }
 
-function inbox_has_image_attachment(array $attachments): bool {
+function inbox_has_displayable_attachment(array $attachments): bool {
   foreach ($attachments as $attachment) {
-    if (($attachment['media_type'] ?? '') === 'image' && !empty($attachment['url'])) return true;
+    if (in_array(($attachment['media_type'] ?? ''), ['image', 'audio'], true) && !empty($attachment['url'])) return true;
   }
   return false;
 }
 
 function inbox_visible_message_text($value, array $attachments): string {
   $text = trim((string) $value);
-  $hasImage = inbox_has_image_attachment($attachments);
-  $imageOnlyLabels = ['Adjunto recibido: image', 'Imagen enviada', 'Imagen'];
-  if ($hasImage && in_array($text, $imageOnlyLabels, true)) return '';
+  $hasAttachment = inbox_has_displayable_attachment($attachments);
+  $attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Imagen enviada', 'Audio enviado', 'Imagen', 'Audio'];
+  if ($hasAttachment && in_array($text, $attachmentOnlyLabels, true)) return '';
   if ($text !== '') return $text;
-  return $hasImage ? '' : 'Mensaje sin texto';
+  return $hasAttachment ? '' : 'Mensaje sin texto';
 }
 ?>
 <!DOCTYPE html>
@@ -281,6 +281,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
     .message-attachments { display:grid; gap:8px; margin-bottom:8px; }
     .message-image { display:block; max-width:min(280px, 100%); max-height:320px; border-radius:12px; border:1px solid rgba(0,68,99,.12); object-fit:cover; background:#fff; }
+    .message-audio { display:block; width:min(320px, 100%); max-width:100%; }
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
     .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
@@ -400,6 +401,8 @@ function inbox_visible_message_text($value, array $attachments): string {
                             <a href="<?= h($attachment['url']) ?>" target="_blank" rel="noopener">
                               <img class="message-image" src="<?= h($attachment['url']) ?>" alt="<?= h((string) ($attachment['filename'] ?: 'Imagen adjunta')) ?>">
                             </a>
+                          <?php elseif (($attachment['media_type'] ?? '') === 'audio'): ?>
+                            <audio class="message-audio" controls preload="none" src="<?= h($attachment['url']) ?>"></audio>
                           <?php endif; ?>
                         <?php endforeach; ?>
                       </div>
@@ -422,9 +425,9 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <div class="composer-tools">
                   <div class="composer-left">
                     <label class="composer-file">
-                      <span class="file-trigger">Adjuntar imagen</span>
-                      <input type="file" name="image" id="imageInput" accept="image/jpeg,image/png,image/gif,image/webp" <?= $canSendMessages ? '' : 'disabled' ?>>
-                      <span class="file-name" id="imageFileName">Sin imagen</span>
+                      <span class="file-trigger">Adjuntar archivo</span>
+                      <input type="file" name="media" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" <?= $canSendMessages ? '' : 'disabled' ?>>
+                      <span class="file-name" id="mediaFileName">Sin adjunto</span>
                     </label>
                     <label class="enter-toggle">
                       <input type="checkbox" id="sendWithEnter" checked>
@@ -537,27 +540,33 @@ function inbox_visible_message_text($value, array $attachments): string {
     function attachmentMarkup(attachments) {
       if (!Array.isArray(attachments) || !attachments.length) return '';
       const items = attachments.map(attachment => {
-        if (attachment.media_type !== 'image' || !attachment.url) return '';
-        const alt = attachment.filename || 'Imagen adjunta';
-        return `
-          <a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">
-            <img class="message-image" src="${escapeHtml(attachment.url)}" alt="${escapeHtml(alt)}">
-          </a>
-        `;
+        if (!attachment.url) return '';
+        if (attachment.media_type === 'image') {
+          const alt = attachment.filename || 'Imagen adjunta';
+          return `
+            <a href="${escapeHtml(attachment.url)}" target="_blank" rel="noopener">
+              <img class="message-image" src="${escapeHtml(attachment.url)}" alt="${escapeHtml(alt)}">
+            </a>
+          `;
+        }
+        if (attachment.media_type === 'audio') {
+          return `<audio class="message-audio" controls preload="none" src="${escapeHtml(attachment.url)}"></audio>`;
+        }
+        return '';
       }).join('');
       return items ? `<div class="message-attachments">${items}</div>` : '';
     }
 
-    function hasImageAttachment(attachments) {
-      return Array.isArray(attachments) && attachments.some(attachment => attachment && attachment.media_type === 'image' && attachment.url);
+    function hasDisplayableAttachment(attachments) {
+      return Array.isArray(attachments) && attachments.some(attachment => attachment && ['image', 'audio'].includes(attachment.media_type) && attachment.url);
     }
 
     function visibleMessageText(message) {
       const text = String(message?.text ?? '').trim();
-      const imageOnlyLabels = ['Adjunto recibido: image', 'Imagen enviada', 'Imagen'];
-      if (hasImageAttachment(message?.attachments) && imageOnlyLabels.includes(text)) return '';
+      const attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Imagen enviada', 'Audio enviado', 'Imagen', 'Audio'];
+      if (hasDisplayableAttachment(message?.attachments) && attachmentOnlyLabels.includes(text)) return '';
       if (text) return text;
-      return hasImageAttachment(message?.attachments) ? '' : 'Mensaje sin texto';
+      return hasDisplayableAttachment(message?.attachments) ? '' : 'Mensaje sin texto';
     }
 
     function insertAtCursor(textarea, value) {
@@ -691,8 +700,8 @@ function inbox_visible_message_text($value, array $attachments): string {
 
     if (replyForm) {
       const textarea = replyForm.querySelector('textarea[name="message"]');
-      const imageInput = replyForm.querySelector('input[name="image"]');
-      const imageFileName = document.getElementById('imageFileName');
+      const mediaInput = replyForm.querySelector('input[name="media"]');
+      const mediaFileName = document.getElementById('mediaFileName');
       if (sendWithEnter) {
         const stored = window.localStorage.getItem('pixels_send_with_enter');
         sendWithEnter.checked = stored === null ? true : stored === '1';
@@ -728,20 +737,20 @@ function inbox_visible_message_text($value, array $attachments): string {
           emojiToggle.setAttribute('aria-expanded', 'false');
         });
       }
-      if (imageInput && imageFileName) {
-        imageInput.addEventListener('change', () => {
-          imageFileName.textContent = imageInput.files && imageInput.files.length ? imageInput.files[0].name : 'Sin imagen';
+      if (mediaInput && mediaFileName) {
+        mediaInput.addEventListener('change', () => {
+          mediaFileName.textContent = mediaInput.files && mediaInput.files.length ? mediaInput.files[0].name : 'Sin adjunto';
         });
       }
 
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const textarea = replyForm.querySelector('textarea[name="message"]');
-        const imageInput = replyForm.querySelector('input[name="image"]');
+        const mediaInput = replyForm.querySelector('input[name="media"]');
         const button = replyForm.querySelector('button[type="submit"]');
         const hasText = textarea && textarea.value.trim();
-        const hasImage = imageInput && imageInput.files && imageInput.files.length > 0;
-        if (!hasText && !hasImage) return;
+        const hasMedia = mediaInput && mediaInput.files && mediaInput.files.length > 0;
+        if (!hasText && !hasMedia) return;
         replyForm.classList.add('is-sending');
         if (button) button.disabled = true;
         try {
@@ -754,8 +763,8 @@ function inbox_visible_message_text($value, array $attachments): string {
           const data = await response.json();
           if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
           textarea.value = '';
-          if (imageInput) imageInput.value = '';
-          if (imageFileName) imageFileName.textContent = 'Sin imagen';
+          if (mediaInput) mediaInput.value = '';
+          if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
           const shouldStick = isNearBottom(messageList);
           if (Array.isArray(data.messages)) data.messages.forEach(appendMessage);
           else if (data.message) appendMessage(data.message);

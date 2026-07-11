@@ -424,9 +424,11 @@ function conv_send_instagram_message(PDO $pdo, array $conversation, string $mess
   return ['ok' => false, 'error' => $lastError];
 }
 
-function conv_send_instagram_image(PDO $pdo, array $conversation, string $imageUrl): array {
-  $imageUrl = trim($imageUrl);
-  if ($imageUrl === '') return ['ok' => false, 'error' => 'La imagen no esta disponible.'];
+function conv_send_instagram_attachment(PDO $pdo, array $conversation, string $mediaUrl, string $mediaType): array {
+  $mediaUrl = trim($mediaUrl);
+  $mediaType = conv_clean($mediaType, 40) ?? 'image';
+  if (!in_array($mediaType, ['image', 'audio'], true)) return ['ok' => false, 'error' => 'Tipo de adjunto no permitido.'];
+  if ($mediaUrl === '') return ['ok' => false, 'error' => 'El adjunto no esta disponible.'];
 
   $channelsTable = ig_channels_table();
   $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 LIMIT 1");
@@ -442,9 +444,9 @@ function conv_send_instagram_image(PDO $pdo, array $conversation, string $imageU
     'recipient' => ['id' => $recipientId],
     'message' => [
       'attachment' => [
-        'type' => 'image',
+        'type' => $mediaType,
         'payload' => [
-          'url' => $imageUrl,
+          'url' => $mediaUrl,
           'is_reusable' => true,
         ],
       ],
@@ -458,7 +460,7 @@ function conv_send_instagram_image(PDO $pdo, array $conversation, string $imageU
     'me',
   ], static fn($value) => trim($value) !== ''));
 
-  $lastError = 'No se pudo enviar la imagen.';
+  $lastError = 'No se pudo enviar el adjunto.';
   foreach (array_unique($targets) as $target) {
     $response = conv_graph_post_json($target . '/messages', $payload, $token);
     if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
@@ -468,6 +470,14 @@ function conv_send_instagram_image(PDO $pdo, array $conversation, string $imageU
   }
 
   return ['ok' => false, 'error' => $lastError];
+}
+
+function conv_send_instagram_image(PDO $pdo, array $conversation, string $imageUrl): array {
+  return conv_send_instagram_attachment($pdo, $conversation, $imageUrl, 'image');
+}
+
+function conv_send_instagram_audio(PDO $pdo, array $conversation, string $audioUrl): array {
+  return conv_send_instagram_attachment($pdo, $conversation, $audioUrl, 'audio');
 }
 
 function conv_backfill_from_leads(PDO $pdo, string $leadsTable): int {

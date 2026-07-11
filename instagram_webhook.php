@@ -227,7 +227,7 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
 
 function ig_download_media(string $url, ?string $accessToken): array {
   $headers = [
-    'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,audio/*,*/*;q=0.8',
     'User-Agent: PixelsCRM/1.0',
   ];
   if ($accessToken) $headers[] = 'Authorization: Bearer ' . $accessToken;
@@ -281,11 +281,22 @@ function ig_download_media_with_fallback(string $url, ?string $accessToken): arr
       'http' => $download['http'] ?? null,
       'mime' => $download['mime'] ?? null,
       'detected_mime' => $mime,
-      'error' => 'Meta devolvió ' . $mime . ' en lugar de una imagen.',
+      'error' => 'Meta devolvió ' . $mime . ' en lugar de un adjunto multimedia.',
     ];
   }
 
   return $lastDownload;
+}
+
+function ig_media_allowed_mimes(string $type): array {
+  return match ($type) {
+    'audio' => (array) app_config('media.allowed_audio_mimes', []),
+    default => (array) app_config('media.allowed_image_mimes', []),
+  };
+}
+
+function ig_media_label(string $type): string {
+  return $type === 'audio' ? 'audio' : 'imagen';
 }
 
 function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel): array {
@@ -302,7 +313,6 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
     return $result;
   }
 
-  $allowedMimes = (array) app_config('media.allowed_image_mimes', []);
   $maxBytes = max(1024, (int) app_config('media.max_upload_bytes', 8388608));
   $token = ig_clean($channel['page_access_token'] ?? null, 2000);
 
@@ -310,41 +320,43 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
     if (!is_array($attachment)) continue;
     $result['total']++;
     $type = ig_clean($attachment['type'] ?? 'image', 40) ?? 'image';
-    if ($type !== 'image') continue;
+    if (!in_array($type, ['image', 'audio'], true)) continue;
+    $label = ig_media_label($type);
     $payload = $attachment['payload'] ?? [];
     $payload = is_array($payload) ? $payload : [];
     $url = trim(str_replace("\0", '', (string) ($payload['url'] ?? '')));
     if ($url === '') {
-      $result['errors'][] = 'Adjunto de imagen sin payload.url.';
+      $result['errors'][] = 'Adjunto de ' . $label . ' sin payload.url.';
       continue;
     }
 
     $download = ig_download_media_with_fallback($url, $token);
     if (!($download['ok'] ?? false)) {
-      $result['errors'][] = 'No se pudo descargar imagen desde Meta: ' . (string) ($download['error'] ?? 'error desconocido');
+      $result['errors'][] = 'No se pudo descargar ' . $label . ' desde Meta: ' . (string) ($download['error'] ?? 'error desconocido');
       continue;
     }
     $bytes = (string) ($download['bytes'] ?? '');
     if ($bytes === '') {
-      $result['errors'][] = 'Meta devolvió una imagen vacía.';
+      $result['errors'][] = 'Meta devolvió un adjunto vacío.';
       continue;
     }
     if (strlen($bytes) > $maxBytes) {
-      $result['errors'][] = 'Imagen supera el tamaño permitido.';
+      $result['errors'][] = 'Adjunto supera el tamaño permitido.';
       continue;
     }
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = (string) ($download['detected_mime'] ?? ($finfo->buffer($bytes) ?: ($download['mime'] ?? '')));
+    $allowedMimes = ig_media_allowed_mimes($type);
     if (!in_array($mime, $allowedMimes, true)) {
       $result['errors'][] = 'MIME no permitido: ' . $mime;
       continue;
     }
 
-    $key = r2_random_key('instagram/inbound/' . $conversationId, $mime);
+    $key = r2_random_key('instagram/inbound/' . $type . '/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);
     if (!($upload['ok'] ?? false)) {
-      $result['errors'][] = 'R2 no aceptó la imagen: ' . (string) ($upload['error'] ?? 'error desconocido');
+      $result['errors'][] = 'R2 no aceptó el adjunto: ' . (string) ($upload['error'] ?? 'error desconocido');
       continue;
     }
 
@@ -352,17 +364,17 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
       'conversation_id' => $conversationId,
       'message_id' => $messageId,
       'direction' => 'inbound',
-      'media_type' => 'image',
+      'media_type' => $type,
       'mime_type' => $mime,
       'file_size' => strlen($bytes),
       'storage_disk' => 'r2',
       'storage_key' => $key,
       'original_url' => $url,
-      'filename' => basename(parse_url($url, PHP_URL_PATH) ?: ('instagram-image.' . r2_extension_from_mime($mime))),
+      'filename' => basename(parse_url($url, PHP_URL_PATH) ?: ('instagram-' . $type . '.' . r2_extension_from_mime($mime))),
       'external_attachment_id' => ig_clean($payload['attachment_id'] ?? null, 180),
     ]);
     if ($attachmentId > 0) $result['stored']++;
-    else $result['errors'][] = 'La imagen subió a R2, pero no se guardó en la base de datos.';
+    else $result['errors'][] = 'El adjunto subió a R2, pero no se guardó en la base de datos.';
   }
   return $result;
 }

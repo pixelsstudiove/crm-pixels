@@ -39,6 +39,13 @@ function r2_extension_from_mime(string $mime): string {
     'image/png' => 'png',
     'image/gif' => 'gif',
     'image/webp' => 'webp',
+    'audio/mpeg', 'audio/mp3' => 'mp3',
+    'audio/mp4', 'audio/m4a', 'audio/x-m4a' => 'm4a',
+    'audio/aac' => 'aac',
+    'audio/ogg' => 'ogg',
+    'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave' => 'wav',
+    'audio/webm' => 'webm',
+    'audio/3gpp' => '3gp',
     default => 'bin',
   };
 }
@@ -146,4 +153,3 @@ function r2_presigned_url(string $key, int $expires = 600): ?string {
   $signature = hash_hmac('sha256', $stringToSign, r2_signing_key((string) $cfg['secret_access_key'], $date, $region));
   return $scheme . '://' . $host . $canonicalUri . '?' . $canonicalQuery . '&X-Amz-Signature=' . $signature;
 }
-
