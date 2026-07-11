@@ -224,14 +224,26 @@ $statusCounts = [];
 foreach ($statusCountsStmt->fetchAll() as $row) {
   $statusCounts[(string) ($row['sales_status'] ?? '')] = (int) ($row['total'] ?? 0);
 }
-$summaryCards = [
-  ['label' => 'Resultados', 'value' => $total, 'tone' => 'total'],
-  ['label' => (string) ($salesStatusOptions['nuevo_lead'] ?? 'Nuevo lead'), 'value' => $statusCounts['nuevo_lead'] ?? 0, 'tone' => 'new'],
-  ['label' => (string) ($salesStatusOptions['en_conversacion'] ?? 'En conversación'), 'value' => $statusCounts['en_conversacion'] ?? 0, 'tone' => 'contacted'],
-  ['label' => (string) ($salesStatusOptions['interesado'] ?? 'Interesado'), 'value' => $statusCounts['interesado'] ?? 0, 'tone' => 'scheduled'],
-  ['label' => (string) ($salesStatusOptions['en_seguimiento'] ?? 'En seguimiento'), 'value' => $statusCounts['en_seguimiento'] ?? 0, 'tone' => 'contacted'],
-  ['label' => (string) ($salesStatusOptions['cliente_ganado'] ?? 'Cliente ganado'), 'value' => $statusCounts['cliente_ganado'] ?? 0, 'tone' => 'won'],
+$summaryToneByStatus = [
+  'nuevo_lead' => 'new',
+  'contactado' => 'contacted',
+  'en_conversacion' => 'scheduled',
+  'interesado' => 'interested',
+  'propuesta_enviada' => 'proposal',
+  'en_seguimiento' => 'followup',
+  'cliente_ganado' => 'won',
+  'cliente_perdido' => 'lost',
+  'no_responde' => 'muted',
 ];
+$summaryCards = [['label' => 'Resultados', 'value' => $total, 'tone' => 'total']];
+foreach ($salesStatusOptions as $statusValue => $statusLabel) {
+  $statusValue = (string) $statusValue;
+  $summaryCards[] = [
+    'label' => (string) $statusLabel,
+    'value' => $statusCounts[$statusValue] ?? 0,
+    'tone' => $summaryToneByStatus[$statusValue] ?? 'default',
+  ];
+}
 $funnelLimit = 300;
 $funnelLeadsByStatus = [];
 foreach ($salesStatusOptions as $statusValue => $statusLabel) {
@@ -427,8 +439,12 @@ function dash_channel_label(array $channel): string {
     .summary-card[data-tone="new"] { border-left:5px solid #00a9e0; }
     .summary-card[data-tone="contacted"] { border-left:5px solid #5f7cff; }
     .summary-card[data-tone="scheduled"] { border-left:5px solid #9b6bff; }
+    .summary-card[data-tone="interested"] { border-left:5px solid #00a382; }
+    .summary-card[data-tone="proposal"] { border-left:5px solid #d69e2e; }
+    .summary-card[data-tone="followup"] { border-left:5px solid #f97316; }
     .summary-card[data-tone="won"] { border-left:5px solid #2f9e62; }
     .summary-card[data-tone="lost"] { border-left:5px solid #cf4d5b; }
+    .summary-card[data-tone="muted"] { border-left:5px solid #64748b; }
     .lead-filters { margin-top:18px; padding:14px; border:1px solid rgba(0,212,255,.16); border-radius:18px; background:#eefaff; }
     .filters-toggle { display:none; align-items:center; justify-content:center; min-height:40px; margin-top:14px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:800; cursor:pointer; }
     .filters-toggle:hover { background:#dff6ff; border-color:#8bdfff; }
