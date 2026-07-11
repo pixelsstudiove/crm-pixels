@@ -302,12 +302,14 @@ if (!function_exists('meta_reply_window_info')) {
       $status = 'warning';
       $label = 'Chat por vencer';
       if ($remaining < 1) {
-        $timeLeft = max(1, (int) ceil($remaining * 60)) . ' minutos';
+        $minutesLeft = max(1, (int) ceil($remaining * 60));
+        $timeText = $minutesLeft . ' minuto' . ($minutesLeft === 1 ? '' : 's');
+        $detail = 'Si este chat se mantiene inactivo por los próximos ' . $timeText . ' se vencerá y no podrás retomar la conversación con el cliente a través del CRM.';
       } else {
         $hoursLeft = max(1, (int) floor($remaining));
-        $timeLeft = $hoursLeft . ' hora' . ($hoursLeft === 1 ? '' : 's');
+        $timeText = $hoursLeft . ' hora' . ($hoursLeft === 1 ? '' : 's');
+        $detail = 'Si este chat se mantiene inactivo por las próximas ' . $timeText . ' se vencerá y no podrás retomar la conversación con el cliente a través del CRM.';
       }
-      $detail = 'Si este chat se mantiene inactivo por los próximos ' . $timeLeft . ' se vencerá y no podrás retomar la conversación con el cliente a través del CRM.';
       $canReply = true;
     } else {
       $status = 'active';
