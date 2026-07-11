@@ -42,9 +42,9 @@ function r2_extension_from_mime(string $mime): string {
     'audio/mpeg', 'audio/mp3' => 'mp3',
     'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'video/mp4' => 'm4a',
     'audio/aac' => 'aac',
-    'audio/ogg' => 'ogg',
+    'audio/ogg', 'application/ogg' => 'ogg',
     'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave' => 'wav',
-    'audio/webm' => 'webm',
+    'audio/webm', 'video/webm' => 'webm',
     'audio/3gpp' => '3gp',
     default => 'bin',
   };

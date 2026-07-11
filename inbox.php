@@ -293,6 +293,13 @@ function inbox_visible_message_text($value, array $attachments): string {
     .file-trigger { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-weight:900; cursor:pointer; }
     .file-trigger:hover { background:#dff6ff; border-color:#8bdfff; }
     .file-name { max-width:220px; color:var(--inbox-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .audio-recorder { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .record-btn { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:#fff6f6; color:#a82b2b; font-weight:900; cursor:pointer; }
+    .record-btn:hover { background:#ffe7e7; border-color:#f4a6a6; }
+    .record-btn.is-recording { background:#a82b2b; border-color:#a82b2b; color:#fff; }
+    .record-status { color:var(--inbox-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
+    .record-preview { width:min(260px, 100%); height:34px; }
+    .record-preview[hidden] { display:none; }
     .enter-toggle { display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
     .enter-toggle input { width:16px; height:16px; accent-color:#007ea8; }
     .emoji-wrap { position:relative; }
@@ -429,6 +436,11 @@ function inbox_visible_message_text($value, array $attachments): string {
                       <input type="file" name="media" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" <?= $canSendMessages ? '' : 'disabled' ?>>
                       <span class="file-name" id="mediaFileName">Sin adjunto</span>
                     </label>
+                    <div class="audio-recorder">
+                      <button class="record-btn" type="button" id="audioRecordButton" <?= $canSendMessages ? '' : 'disabled' ?>>Grabar audio</button>
+                      <span class="record-status" id="audioRecordStatus">Sin audio grabado</span>
+                      <audio class="record-preview" id="audioRecordPreview" controls preload="metadata" hidden></audio>
+                    </div>
                     <label class="enter-toggle">
                       <input type="checkbox" id="sendWithEnter" checked>
                       <span>Enviar con Intro</span>
@@ -524,6 +536,9 @@ function inbox_visible_message_text($value, array $attachments): string {
     const sendWithEnter = document.getElementById('sendWithEnter');
     const emojiToggle = document.getElementById('emojiToggle');
     const emojiPanel = document.getElementById('emojiPanel');
+    const audioRecordButton = document.getElementById('audioRecordButton');
+    const audioRecordStatus = document.getElementById('audioRecordStatus');
+    const audioRecordPreview = document.getElementById('audioRecordPreview');
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -586,6 +601,21 @@ function inbox_visible_message_text($value, array $attachments): string {
 
     function scrollMessagesToBottom() {
       if (messageList) messageList.scrollTop = messageList.scrollHeight;
+    }
+
+    function bestAudioMimeType() {
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+      const preferred = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/ogg'];
+      return preferred.find(type => MediaRecorder.isTypeSupported(type)) || '';
+    }
+
+    function audioExtensionFromMime(type) {
+      const mime = String(type || '').split(';')[0].toLowerCase();
+      if (mime === 'audio/mp4' || mime === 'audio/m4a' || mime === 'audio/x-m4a') return 'm4a';
+      if (mime === 'audio/ogg') return 'ogg';
+      if (mime === 'audio/wav' || mime === 'audio/x-wav') return 'wav';
+      if (mime === 'audio/mpeg' || mime === 'audio/mp3') return 'mp3';
+      return 'webm';
     }
 
     function conversationHref(id) {
@@ -741,6 +771,99 @@ function inbox_visible_message_text($value, array $attachments): string {
       const textarea = replyForm.querySelector('textarea[name="message"]');
       const mediaInput = replyForm.querySelector('input[name="media"]');
       const mediaFileName = document.getElementById('mediaFileName');
+      let mediaRecorder = null;
+      let recordingStream = null;
+      let recordingChunks = [];
+      let recordedAudioBlob = null;
+      let recordedAudioUrl = '';
+      let recordingTimer = null;
+      let recordingStartedAt = 0;
+
+      function clearRecordedAudio() {
+        recordedAudioBlob = null;
+        if (recordedAudioUrl) URL.revokeObjectURL(recordedAudioUrl);
+        recordedAudioUrl = '';
+        if (audioRecordPreview) {
+          audioRecordPreview.removeAttribute('src');
+          audioRecordPreview.hidden = true;
+        }
+        if (audioRecordStatus) audioRecordStatus.textContent = 'Sin audio grabado';
+      }
+
+      function stopRecordingTracks() {
+        if (!recordingStream) return;
+        recordingStream.getTracks().forEach(track => track.stop());
+        recordingStream = null;
+      }
+
+      function stopRecordingTimer() {
+        if (recordingTimer) window.clearInterval(recordingTimer);
+        recordingTimer = null;
+      }
+
+      function updateRecordingStatus() {
+        if (!audioRecordStatus || !recordingStartedAt) return;
+        const elapsed = Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000));
+        audioRecordStatus.textContent = `Grabando ${elapsed}s`;
+      }
+
+      async function startAudioRecording() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+          showNotice('Tu navegador no permite grabar audio desde esta pantalla.', 'error');
+          return;
+        }
+        clearRecordedAudio();
+        if (mediaInput) mediaInput.value = '';
+        if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
+        try {
+          recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          recordingChunks = [];
+          const mimeType = bestAudioMimeType();
+          mediaRecorder = mimeType ? new MediaRecorder(recordingStream, { mimeType }) : new MediaRecorder(recordingStream);
+          mediaRecorder.addEventListener('dataavailable', event => {
+            if (event.data && event.data.size > 0) recordingChunks.push(event.data);
+          });
+          mediaRecorder.addEventListener('stop', () => {
+            stopRecordingTimer();
+            stopRecordingTracks();
+            const type = mediaRecorder && mediaRecorder.mimeType ? mediaRecorder.mimeType : (mimeType || 'audio/webm');
+            recordedAudioBlob = recordingChunks.length ? new Blob(recordingChunks, { type }) : null;
+            recordingChunks = [];
+            if (!recordedAudioBlob || recordedAudioBlob.size <= 0) {
+              clearRecordedAudio();
+              showNotice('No se pudo guardar la grabacion.', 'error');
+              return;
+            }
+            recordedAudioUrl = URL.createObjectURL(recordedAudioBlob);
+            if (audioRecordPreview) {
+              audioRecordPreview.src = recordedAudioUrl;
+              audioRecordPreview.hidden = false;
+            }
+            if (audioRecordStatus) audioRecordStatus.textContent = 'Audio listo para enviar';
+          });
+          mediaRecorder.start();
+          recordingStartedAt = Date.now();
+          updateRecordingStatus();
+          recordingTimer = window.setInterval(updateRecordingStatus, 500);
+          if (audioRecordButton) {
+            audioRecordButton.textContent = 'Detener audio';
+            audioRecordButton.classList.add('is-recording');
+          }
+        } catch (error) {
+          stopRecordingTimer();
+          stopRecordingTracks();
+          showNotice('No se pudo acceder al microfono.', 'error');
+        }
+      }
+
+      function stopAudioRecording() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        if (audioRecordButton) {
+          audioRecordButton.textContent = 'Grabar audio';
+          audioRecordButton.classList.remove('is-recording');
+        }
+        recordingStartedAt = 0;
+      }
       if (sendWithEnter) {
         const stored = window.localStorage.getItem('pixels_send_with_enter');
         sendWithEnter.checked = stored === null ? true : stored === '1';
@@ -778,7 +901,14 @@ function inbox_visible_message_text($value, array $attachments): string {
       }
       if (mediaInput && mediaFileName) {
         mediaInput.addEventListener('change', () => {
+          if (mediaInput.files && mediaInput.files.length) clearRecordedAudio();
           mediaFileName.textContent = mediaInput.files && mediaInput.files.length ? mediaInput.files[0].name : 'Sin adjunto';
+        });
+      }
+      if (audioRecordButton) {
+        audioRecordButton.addEventListener('click', () => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') stopAudioRecording();
+          else startAudioRecording();
         });
       }
 
@@ -789,13 +919,24 @@ function inbox_visible_message_text($value, array $attachments): string {
         const button = replyForm.querySelector('button[type="submit"]');
         const hasText = textarea && textarea.value.trim();
         const hasMedia = mediaInput && mediaInput.files && mediaInput.files.length > 0;
-        if (!hasText && !hasMedia) return;
+        const hasRecordedAudio = recordedAudioBlob && recordedAudioBlob.size > 0;
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          showNotice('Deten la grabacion antes de enviar.', 'error');
+          return;
+        }
+        if (!hasText && !hasMedia && !hasRecordedAudio) return;
         replyForm.classList.add('is-sending');
         if (button) button.disabled = true;
         try {
+          const formData = new FormData(replyForm);
+          if (hasRecordedAudio) {
+            const ext = audioExtensionFromMime(recordedAudioBlob.type);
+            formData.delete('media');
+            formData.append('media', recordedAudioBlob, `nota-de-voz-${Date.now()}.${ext}`);
+          }
           const response = await fetch(replyForm.action, {
             method: 'POST',
-            body: new FormData(replyForm),
+            body: formData,
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
             cache: 'no-store'
           });
@@ -804,6 +945,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           textarea.value = '';
           if (mediaInput) mediaInput.value = '';
           if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
+          clearRecordedAudio();
           const shouldStick = isNearBottom(messageList);
           if (Array.isArray(data.messages)) data.messages.forEach(appendMessage);
           else if (data.message) appendMessage(data.message);

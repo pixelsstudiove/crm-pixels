@@ -353,6 +353,8 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
       continue;
     }
     if ($type === 'audio' && $mime === 'video/mp4') $mime = 'audio/mp4';
+    if ($type === 'audio' && $mime === 'video/webm') $mime = 'audio/webm';
+    if ($type === 'audio' && $mime === 'application/ogg') $mime = 'audio/ogg';
 
     $key = r2_random_key('instagram/inbound/' . $type . '/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);
