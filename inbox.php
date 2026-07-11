@@ -671,6 +671,45 @@ function inbox_visible_message_text($value, array $attachments): string {
       messageList.dataset.lastId = String(inboxState.lastMessageId);
     }
 
+    function hasActiveMediaPlayback() {
+      if (!messageList) return false;
+      return Array.from(messageList.querySelectorAll('audio, video')).some(media => {
+        return !media.paused && !media.ended && media.currentTime > 0;
+      });
+    }
+
+    function syncMessages(messages) {
+      if (!messageList || !Array.isArray(messages)) return;
+      if (!messages.length) {
+        if (!messageList.querySelector('.empty-state')) renderMessages(messages);
+        return;
+      }
+
+      const incomingIds = messages.map(message => Number(message.id || 0)).filter(Boolean);
+      const currentIds = Array.from(messageList.querySelectorAll('[data-message-id]')).map(node => Number(node.dataset.messageId || 0)).filter(Boolean);
+      const hasSameCount = incomingIds.length === currentIds.length;
+      const hasSameOrder = hasSameCount && incomingIds.every((id, index) => id === currentIds[index]);
+      const lastIncomingId = incomingIds.reduce((max, id) => Math.max(max, id), 0);
+
+      if (hasSameOrder) {
+        inboxState.lastMessageId = Math.max(inboxState.lastMessageId, lastIncomingId);
+        messageList.dataset.lastId = String(inboxState.lastMessageId);
+        return;
+      }
+
+      const onlyNewAtEnd = currentIds.length > 0
+        && incomingIds.length >= currentIds.length
+        && currentIds.every((id, index) => id === incomingIds[index]);
+
+      if (onlyNewAtEnd) {
+        messages.slice(currentIds.length).forEach(appendMessage);
+        return;
+      }
+
+      if (hasActiveMediaPlayback()) return;
+      renderMessages(messages);
+    }
+
     async function pollInbox(force = false) {
       if (inboxState.polling && !force) return;
       inboxState.polling = true;
@@ -688,7 +727,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         if (!data.ok) throw new Error(data.error || 'No se pudieron cargar actualizaciones.');
         renderConversations(data.conversations || []);
         const shouldStick = isNearBottom(messageList);
-        renderMessages(data.messages || []);
+        syncMessages(data.messages || []);
         if (shouldStick) scrollMessagesToBottom();
         if (liveStatus) liveStatus.textContent = 'Actualizado automaticamente.';
       } catch (error) {

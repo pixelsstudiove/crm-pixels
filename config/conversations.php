@@ -315,13 +315,15 @@ function conv_attachments_for_messages(PDO $pdo, array $messageIds): array {
   foreach ($stmt->fetchAll() as $row) {
     $messageId = (int) ($row['message_id'] ?? 0);
     if ($messageId <= 0) continue;
+    $storageKey = (string) ($row['storage_key'] ?? '');
+    $mediaUrl = $storageKey !== '' ? r2_presigned_url($storageKey, 3600) : null;
     $grouped[$messageId][] = [
       'id' => (int) ($row['id'] ?? 0),
       'media_type' => (string) ($row['media_type'] ?? 'image'),
       'mime_type' => (string) ($row['mime_type'] ?? ''),
       'file_size' => (int) ($row['file_size'] ?? 0),
       'filename' => (string) ($row['filename'] ?? ''),
-      'url' => 'media.php?id=' . (int) ($row['id'] ?? 0),
+      'url' => $mediaUrl ?: ('media.php?id=' . (int) ($row['id'] ?? 0)),
     ];
   }
   return $grouped;
