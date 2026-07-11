@@ -226,7 +226,10 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
 }
 
 function ig_download_media(string $url, ?string $accessToken): array {
-  $headers = [];
+  $headers = [
+    'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    'User-Agent: PixelsCRM/1.0',
+  ];
   if ($accessToken) $headers[] = 'Authorization: Bearer ' . $accessToken;
   $ch = curl_init();
   curl_setopt_array($ch, [
@@ -243,15 +246,46 @@ function ig_download_media(string $url, ?string $accessToken): array {
   $error = curl_error($ch);
   curl_close($ch);
   if ($error !== '' || $http < 200 || $http >= 300 || !is_string($bytes) || $bytes === '') {
-    return ['ok' => false, 'error' => $error !== '' ? $error : 'No se pudo descargar el adjunto de Meta.'];
+    return [
+      'ok' => false,
+      'http' => $http,
+      'mime' => trim(explode(';', $contentType)[0] ?? ''),
+      'error' => $error !== '' ? $error : 'No se pudo descargar el adjunto de Meta.',
+    ];
   }
-  return ['ok' => true, 'bytes' => $bytes, 'mime' => trim(explode(';', $contentType)[0] ?? '')];
+  return ['ok' => true, 'http' => $http, 'bytes' => $bytes, 'mime' => trim(explode(';', $contentType)[0] ?? '')];
 }
 
 function ig_download_media_with_fallback(string $url, ?string $accessToken): array {
-  $download = ig_download_media($url, $accessToken);
-  if (($download['ok'] ?? false) || !$accessToken) return $download;
-  return ig_download_media($url, null);
+  $attempts = [null];
+  if ($accessToken) $attempts[] = $accessToken;
+  $lastDownload = ['ok' => false, 'error' => 'No se pudo descargar el adjunto de Meta.'];
+
+  foreach ($attempts as $token) {
+    $download = ig_download_media($url, $token);
+    $lastDownload = $download;
+    if (!($download['ok'] ?? false)) continue;
+
+    $bytes = (string) ($download['bytes'] ?? '');
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $detectedMime = $bytes !== '' ? (string) ($finfo->buffer($bytes) ?: '') : '';
+    $reportedMime = trim((string) ($download['mime'] ?? ''));
+    $mime = $detectedMime !== '' ? $detectedMime : $reportedMime;
+    $download['detected_mime'] = $mime;
+
+    if (!in_array(strtolower($mime), ['text/html', 'text/plain', 'application/json'], true)) {
+      return $download;
+    }
+    $lastDownload = [
+      'ok' => false,
+      'http' => $download['http'] ?? null,
+      'mime' => $download['mime'] ?? null,
+      'detected_mime' => $mime,
+      'error' => 'Meta devolvió ' . $mime . ' en lugar de una imagen.',
+    ];
+  }
+
+  return $lastDownload;
 }
 
 function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel): array {
@@ -301,7 +335,7 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
     }
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mime = (string) ($finfo->buffer($bytes) ?: ($download['mime'] ?? ''));
+    $mime = (string) ($download['detected_mime'] ?? ($finfo->buffer($bytes) ?: ($download['mime'] ?? '')));
     if (!in_array($mime, $allowedMimes, true)) {
       $result['errors'][] = 'MIME no permitido: ' . $mime;
       continue;
