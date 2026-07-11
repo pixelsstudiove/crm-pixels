@@ -284,8 +284,19 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-audio { display:block; width:min(320px, 100%); max-width:100%; }
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
+    .composer-input { position:relative; }
     .reply-box textarea { width:100%; min-height:92px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
     .reply-box textarea:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
+    .reply-box.is-recording textarea { display:none; }
+    .recording-surface { position:relative; min-height:126px; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:linear-gradient(180deg,#f8fdff,#eef9ff); }
+    .recording-surface[hidden] { display:none; }
+    .recording-canvas { position:absolute; inset:0; width:100%; height:100%; }
+    .recording-center { position:absolute; inset:0; display:grid; place-items:center; gap:10px; align-content:center; padding:16px; background:linear-gradient(90deg,rgba(248,253,255,.86),rgba(248,253,255,.48),rgba(248,253,255,.86)); }
+    .recording-time { color:#a82b2b; font-weight:950; letter-spacing:.02em; }
+    .recording-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+    .recording-action { min-height:38px; padding:0 14px; border-radius:10px; border:1px solid var(--line); font-weight:950; cursor:pointer; }
+    .recording-action.send { background:#071120; border-color:#071120; color:#eafaff; }
+    .recording-action.cancel { background:#fff; color:#a82b2b; border-color:#f4a6a6; }
     .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.86rem; font-weight:750; }
     .composer-file { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -428,7 +439,19 @@ function inbox_visible_message_text($value, array $attachments): string {
               <form class="reply-box" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
-                <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
+                <div class="composer-input">
+                  <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
+                  <div class="recording-surface" id="audioRecordingSurface" hidden>
+                    <canvas class="recording-canvas" id="audioWaveCanvas" width="900" height="180" aria-hidden="true"></canvas>
+                    <div class="recording-center">
+                      <div class="recording-time" id="audioRecordingTime">Grabando 0s</div>
+                      <div class="recording-actions">
+                        <button class="recording-action send" type="button" id="audioQuickSendButton">Enviar audio</button>
+                        <button class="recording-action cancel" type="button" id="audioCancelButton">Cancelar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div class="composer-tools">
                   <div class="composer-left">
                     <label class="composer-file">
@@ -539,6 +562,11 @@ function inbox_visible_message_text($value, array $attachments): string {
     const audioRecordButton = document.getElementById('audioRecordButton');
     const audioRecordStatus = document.getElementById('audioRecordStatus');
     const audioRecordPreview = document.getElementById('audioRecordPreview');
+    const audioRecordingSurface = document.getElementById('audioRecordingSurface');
+    const audioWaveCanvas = document.getElementById('audioWaveCanvas');
+    const audioRecordingTime = document.getElementById('audioRecordingTime');
+    const audioQuickSendButton = document.getElementById('audioQuickSendButton');
+    const audioCancelButton = document.getElementById('audioCancelButton');
 
     function escapeHtml(value) {
       return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -778,6 +806,11 @@ function inbox_visible_message_text($value, array $attachments): string {
       let recordedAudioUrl = '';
       let recordingTimer = null;
       let recordingStartedAt = 0;
+      let audioContext = null;
+      let audioAnalyser = null;
+      let audioWaveAnimation = 0;
+      let sendAfterRecordingStops = false;
+      let recordingCancelled = false;
 
       function clearRecordedAudio() {
         recordedAudioBlob = null;
@@ -788,6 +821,11 @@ function inbox_visible_message_text($value, array $attachments): string {
           audioRecordPreview.hidden = true;
         }
         if (audioRecordStatus) audioRecordStatus.textContent = 'Sin audio grabado';
+      }
+
+      function setRecordingSurface(active) {
+        replyForm.classList.toggle('is-recording', Boolean(active));
+        if (audioRecordingSurface) audioRecordingSurface.hidden = !active;
       }
 
       function stopRecordingTracks() {
@@ -801,10 +839,77 @@ function inbox_visible_message_text($value, array $attachments): string {
         recordingTimer = null;
       }
 
+      function stopAudioWave() {
+        if (audioWaveAnimation) window.cancelAnimationFrame(audioWaveAnimation);
+        audioWaveAnimation = 0;
+        audioAnalyser = null;
+        if (audioContext) {
+          audioContext.close().catch(() => {});
+          audioContext = null;
+        }
+      }
+
+      function drawIdleWave() {
+        if (!audioWaveCanvas) return;
+        const ctx = audioWaveCanvas.getContext('2d');
+        if (!ctx) return;
+        const { width, height } = audioWaveCanvas;
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = 'rgba(0,126,168,.14)';
+        const bars = 42;
+        const gap = 6;
+        const barWidth = Math.max(4, (width - gap * (bars - 1)) / bars);
+        for (let i = 0; i < bars; i++) {
+          const ratio = Math.sin(i * .55) * .5 + .5;
+          const barHeight = 18 + ratio * 56;
+          const x = i * (barWidth + gap);
+          const y = (height - barHeight) / 2;
+          ctx.fillRect(x, y, barWidth, barHeight);
+        }
+      }
+
+      function startAudioWave(stream) {
+        if (!audioWaveCanvas || !window.AudioContext && !window.webkitAudioContext) return;
+        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContextCtor();
+        audioAnalyser = audioContext.createAnalyser();
+        audioAnalyser.fftSize = 256;
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(audioAnalyser);
+        const data = new Uint8Array(audioAnalyser.frequencyBinCount);
+        const ctx = audioWaveCanvas.getContext('2d');
+        if (!ctx) return;
+
+        const draw = () => {
+          if (!audioAnalyser) return;
+          audioAnalyser.getByteFrequencyData(data);
+          const { width, height } = audioWaveCanvas;
+          ctx.clearRect(0, 0, width, height);
+          const bars = 48;
+          const gap = 5;
+          const barWidth = Math.max(4, (width - gap * (bars - 1)) / bars);
+          for (let i = 0; i < bars; i++) {
+            const value = data[Math.floor(i * data.length / bars)] || 0;
+            const normalized = Math.max(.08, value / 255);
+            const barHeight = normalized * (height * .72);
+            const x = i * (barWidth + gap);
+            const y = (height - barHeight) / 2;
+            const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
+            gradient.addColorStop(0, 'rgba(0,212,255,.95)');
+            gradient.addColorStop(1, 'rgba(7,17,32,.82)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x, y, barWidth, barHeight);
+          }
+          audioWaveAnimation = window.requestAnimationFrame(draw);
+        };
+        draw();
+      }
+
       function updateRecordingStatus() {
         if (!audioRecordStatus || !recordingStartedAt) return;
         const elapsed = Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1000));
         audioRecordStatus.textContent = `Grabando ${elapsed}s`;
+        if (audioRecordingTime) audioRecordingTime.textContent = `Grabando ${elapsed}s`;
       }
 
       async function startAudioRecording() {
@@ -815,6 +920,8 @@ function inbox_visible_message_text($value, array $attachments): string {
         clearRecordedAudio();
         if (mediaInput) mediaInput.value = '';
         if (mediaFileName) mediaFileName.textContent = 'Sin adjunto';
+        sendAfterRecordingStops = false;
+        recordingCancelled = false;
         try {
           recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
           recordingChunks = [];
@@ -826,11 +933,18 @@ function inbox_visible_message_text($value, array $attachments): string {
           mediaRecorder.addEventListener('stop', () => {
             stopRecordingTimer();
             stopRecordingTracks();
+            if (recordingCancelled) {
+              recordingCancelled = false;
+              recordingChunks = [];
+              setRecordingSurface(false);
+              return;
+            }
             const type = mediaRecorder && mediaRecorder.mimeType ? mediaRecorder.mimeType : (mimeType || 'audio/webm');
             recordedAudioBlob = recordingChunks.length ? new Blob(recordingChunks, { type }) : null;
             recordingChunks = [];
             if (!recordedAudioBlob || recordedAudioBlob.size <= 0) {
               clearRecordedAudio();
+              setRecordingSurface(false);
               showNotice('No se pudo guardar la grabacion.', 'error');
               return;
             }
@@ -840,7 +954,17 @@ function inbox_visible_message_text($value, array $attachments): string {
               audioRecordPreview.hidden = false;
             }
             if (audioRecordStatus) audioRecordStatus.textContent = 'Audio listo para enviar';
+            setRecordingSurface(false);
+            drawIdleWave();
+            if (sendAfterRecordingStops) {
+              sendAfterRecordingStops = false;
+              if (typeof replyForm.requestSubmit === 'function') replyForm.requestSubmit();
+              else replyForm.dispatchEvent(new Event('submit', { cancelable: true }));
+            }
           });
+          setRecordingSurface(true);
+          drawIdleWave();
+          startAudioWave(recordingStream);
           mediaRecorder.start();
           recordingStartedAt = Date.now();
           updateRecordingStatus();
@@ -851,13 +975,35 @@ function inbox_visible_message_text($value, array $attachments): string {
           }
         } catch (error) {
           stopRecordingTimer();
+          stopAudioWave();
           stopRecordingTracks();
+          setRecordingSurface(false);
           showNotice('No se pudo acceder al microfono.', 'error');
         }
       }
 
       function stopAudioRecording() {
         if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+        stopAudioWave();
+        if (audioRecordButton) {
+          audioRecordButton.textContent = 'Grabar audio';
+          audioRecordButton.classList.remove('is-recording');
+        }
+        recordingStartedAt = 0;
+      }
+
+      function cancelAudioRecording() {
+        sendAfterRecordingStops = false;
+        recordingCancelled = true;
+        recordingChunks = [];
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          mediaRecorder.stop();
+        }
+        stopRecordingTimer();
+        stopAudioWave();
+        stopRecordingTracks();
+        setRecordingSurface(false);
+        clearRecordedAudio();
         if (audioRecordButton) {
           audioRecordButton.textContent = 'Grabar audio';
           audioRecordButton.classList.remove('is-recording');
@@ -910,6 +1056,17 @@ function inbox_visible_message_text($value, array $attachments): string {
           if (mediaRecorder && mediaRecorder.state === 'recording') stopAudioRecording();
           else startAudioRecording();
         });
+      }
+      if (audioQuickSendButton) {
+        audioQuickSendButton.addEventListener('click', () => {
+          if (mediaRecorder && mediaRecorder.state === 'recording') {
+            sendAfterRecordingStops = true;
+            stopAudioRecording();
+          }
+        });
+      }
+      if (audioCancelButton) {
+        audioCancelButton.addEventListener('click', cancelAudioRecording);
       }
 
       replyForm.addEventListener('submit', async (event) => {
