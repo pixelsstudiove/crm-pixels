@@ -250,19 +250,22 @@ function inbox_visible_message_text($value, array $attachments): string {
   <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <style>
     :root { --container-w:min(98vw, 1440px); --inbox-line:#d6ecf8; --inbox-soft:#eef9ff; --inbox-ink:#071120; --inbox-muted:#5d6d86; }
-    .inbox-card { min-height:calc(100vh - 54px); }
+    .inbox-card { display:flex; }
+    .inbox-card > .panel { width:100%; display:flex; flex-direction:column; min-height:0; }
     .inbox-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
     .inbox-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .inbox-link, .inbox-btn { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-weight:850; text-decoration:none; cursor:pointer; }
     .inbox-link.primary, .inbox-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .inbox-link:hover, .inbox-btn:hover { background:#dff6ff; border-color:#8bdfff; }
-    .inbox-layout { display:grid; grid-template-columns:minmax(280px, 360px) minmax(0, 1fr) minmax(260px, 320px); gap:12px; min-height:640px; }
+    .inbox-layout { flex:1; display:grid; grid-template-columns:minmax(280px, 360px) minmax(0, 1fr) minmax(260px, 320px); gap:12px; min-height:0; }
     .inbox-panel { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; overflow:hidden; box-shadow:0 8px 22px rgba(0, 76, 110, .06); }
+    .inbox-layout > .inbox-panel { min-height:0; }
+    .inbox-layout > .inbox-panel:first-child, .inbox-layout > .inbox-panel:nth-child(2) { display:flex; flex-direction:column; }
     .conversation-filters { display:grid; gap:8px; padding:12px; border-bottom:1px solid var(--inbox-line); background:#fbfdff; }
     .conversation-filters input { width:100%; min-height:40px; border:1px solid var(--line); border-radius:10px; padding:0 10px; font:inherit; color:var(--inbox-ink); background:#fff; }
     .conversation-filters select, .status-form select { appearance:none; width:100%; height:var(--field-h); padding:0 15px; outline:none; border:1px solid var(--line); border-radius:var(--radius-sm); color:var(--brand-ink); background:var(--field-bg); box-shadow:inset 0 1px 0 rgba(51,10,12,.02); font:inherit; transition:border-color .18s, box-shadow .18s; cursor:pointer; }
     .conversation-filters select:focus, .status-form select:focus { border-color:var(--focus); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
-    .conversation-list { max-height:650px; overflow:auto; }
+    .conversation-list { flex:1; min-height:0; overflow:auto; }
     .conversation-item { display:block; padding:13px 14px; border-bottom:1px solid rgba(0,68,99,.10); color:inherit; text-decoration:none; background:#fff; }
     .conversation-item:hover, .conversation-item.is-active { background:#effaff; }
     .conversation-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
@@ -274,7 +277,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .chat-header { padding:16px; border-bottom:1px solid var(--inbox-line); display:flex; justify-content:space-between; gap:12px; align-items:flex-start; background:#fbfdff; }
     .chat-header h2 { margin:0; font-size:1.15rem; color:var(--inbox-ink); }
     .chat-header p { margin:4px 0 0; color:var(--inbox-muted); }
-    .message-list { height:500px; overflow:auto; padding:18px; background:linear-gradient(180deg,#f8fdff,#eef8ff); display:flex; flex-direction:column; gap:10px; }
+    .message-list { flex:1; min-height:220px; overflow:auto; padding:18px; background:linear-gradient(180deg,#f8fdff,#eef8ff); display:flex; flex-direction:column; gap:10px; }
     .message { max-width:min(78%, 620px); border:1px solid var(--inbox-line); border-radius:14px; padding:10px 12px; background:#fff; color:var(--inbox-ink); box-shadow:0 4px 14px rgba(0, 76, 110, .05); }
     .message.outbound { align-self:flex-end; background:#071120; border-color:#071120; color:#eafaff; }
     .message.inbound { align-self:flex-start; }
@@ -286,7 +289,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-audio { display:block; width:min(320px, 100%); max-width:100%; }
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.72; }
     .message-meta.error { color:#b83232; opacity:1; font-weight:900; }
-    .reply-box { padding:14px; border-top:1px solid var(--inbox-line); background:#fff; }
+    .reply-box { padding:10px 12px 8px; border-top:1px solid var(--inbox-line); background:#fff; }
     .composer-main { display:grid; grid-template-columns:minmax(0, 1fr) 44px 112px; gap:10px; align-items:stretch; }
     .composer-input { position:relative; }
     .reply-box textarea { width:100%; height:104px; min-height:104px; resize:vertical; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:inherit; outline:none; }
@@ -303,7 +306,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .recording-action.cancel { background:#fff; color:#a82b2b; border-color:#f4a6a6; }
     .composer-submit { width:100%; height:100%; min-height:104px; border-radius:12px; }
     .composer-quick-actions { display:grid; grid-template-rows:repeat(3, 1fr); gap:5px; min-height:104px; }
-    .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
+    .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:6px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.86rem; font-weight:750; }
     .composer-file { display:inline-flex; align-items:center; justify-content:center; }
     .composer-file input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
@@ -326,7 +329,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .emoji-panel.is-open { display:grid; }
     .emoji-option { width:30px; height:30px; border:1px solid transparent; border-radius:8px; background:#fff; cursor:pointer; font-size:1.05rem; }
     .emoji-option:hover { background:#eefaff; border-color:#8bdfff; }
-    .reply-actions { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.88rem; }
+    .reply-actions { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:3px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.88rem; }
     .reply-box.is-sending textarea, .reply-box.is-sending button { opacity:.7; pointer-events:none; }
     .live-status { color:var(--inbox-muted); font-size:.82rem; }
     .side-panel { padding:16px; display:grid; align-content:start; gap:14px; }
@@ -338,7 +341,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .empty-state { display:grid; place-items:center; min-height:500px; text-align:center; color:var(--inbox-muted); padding:24px; }
     .notice { margin-bottom:14px; }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) 1fr; } .side-panel { grid-column:1 / -1; } }
-    @media (max-width: 760px) { .inbox-layout { grid-template-columns:1fr; } .conversation-list { max-height:300px; } .message-list { height:430px; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:minmax(0, 1fr) 44px; } .composer-submit { grid-column:1 / -1; min-height:46px; } }
+    @media (max-width: 760px) { .inbox-layout { flex:0 0 auto; grid-template-columns:1fr; } .conversation-list { flex:0 0 auto; max-height:300px; } .message-list { min-height:430px; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:minmax(0, 1fr) 44px; } .composer-submit { grid-column:1 / -1; min-height:46px; } }
   </style>
 </head>
 <body class="dashboard-page">
