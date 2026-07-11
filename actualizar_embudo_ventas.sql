@@ -13,3 +13,15 @@ ALTER TABLE `leads`
 
 ALTER TABLE `leads`
   ADD KEY `idx_sales_status` (`sales_status`);
+
+UPDATE `leads`
+SET `sales_status` = 'interesado'
+WHERE `sales_status` = 'diagnostico_agendado';
+
+UPDATE `leads`
+SET `sales_status` = 'en_seguimiento'
+WHERE `sales_status` = 'en_negociacion';
+
+UPDATE `leads`
+SET `sales_status` = 'cliente_perdido'
+WHERE `sales_status` = 'no_califica';

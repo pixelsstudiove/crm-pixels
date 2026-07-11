@@ -188,6 +188,25 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
   foreach ($indexes as $index => $definition) ensure_index($pdo, $leadsTable, $index, $definition, $log);
 }
 
+function normalize_sales_funnel_statuses(PDO $pdo, string $leadsTable, array &$log): void {
+  if (!column_exists($pdo, $leadsTable, 'sales_status')) return;
+  $updates = [
+    'diagnostico_agendado' => 'interesado',
+    'en_negociacion' => 'en_seguimiento',
+    'no_califica' => 'cliente_perdido',
+  ];
+  $stmt = $pdo->prepare("UPDATE `{$leadsTable}` SET `sales_status` = ? WHERE `sales_status` = ?");
+  foreach ($updates as $from => $to) {
+    try {
+      $stmt->execute([$to, $from]);
+      $affected = $stmt->rowCount();
+      if ($affected > 0) $log[] = ['ok', "Estados comerciales migrados de {$from} a {$to}: {$affected}."];
+    } catch (Throwable $e) {
+      $log[] = ['err', "No se pudo migrar el estado {$from}: " . $e->getMessage()];
+    }
+  }
+}
+
 function ensure_instagram_channels_schema(PDO $pdo, string $channelsTable, array &$log): void {
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
@@ -229,6 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
       run_sql_file($pdo, __DIR__ . '/crear_tablas.sql', $log);
       ensure_latest_schema($pdo, $TABLE_LEADS, $TABLE_USERS, $log);
+      normalize_sales_funnel_statuses($pdo, $TABLE_LEADS, $log);
       ensure_instagram_channels_schema($pdo, safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'), $log);
       conv_ensure_schema($pdo);
       $log[] = ['ok', 'Tablas del CRM conversacional verificadas.'];

@@ -226,10 +226,10 @@ foreach ($statusCountsStmt->fetchAll() as $row) {
 $summaryCards = [
   ['label' => 'Resultados', 'value' => $total, 'tone' => 'total'],
   ['label' => (string) ($salesStatusOptions['nuevo_lead'] ?? 'Nuevo lead'), 'value' => $statusCounts['nuevo_lead'] ?? 0, 'tone' => 'new'],
-  ['label' => (string) ($salesStatusOptions['contactado'] ?? 'Contactado'), 'value' => $statusCounts['contactado'] ?? 0, 'tone' => 'contacted'],
-  ['label' => (string) ($salesStatusOptions['diagnostico_agendado'] ?? 'Diagnóstico agendado'), 'value' => $statusCounts['diagnostico_agendado'] ?? 0, 'tone' => 'scheduled'],
+  ['label' => (string) ($salesStatusOptions['en_conversacion'] ?? 'En conversación'), 'value' => $statusCounts['en_conversacion'] ?? 0, 'tone' => 'contacted'],
+  ['label' => (string) ($salesStatusOptions['interesado'] ?? 'Interesado'), 'value' => $statusCounts['interesado'] ?? 0, 'tone' => 'scheduled'],
+  ['label' => (string) ($salesStatusOptions['en_seguimiento'] ?? 'En seguimiento'), 'value' => $statusCounts['en_seguimiento'] ?? 0, 'tone' => 'contacted'],
   ['label' => (string) ($salesStatusOptions['cliente_ganado'] ?? 'Cliente ganado'), 'value' => $statusCounts['cliente_ganado'] ?? 0, 'tone' => 'won'],
-  ['label' => (string) ($salesStatusOptions['cliente_perdido'] ?? 'Cliente perdido'), 'value' => $statusCounts['cliente_perdido'] ?? 0, 'tone' => 'lost'],
 ];
 $funnelLimit = 300;
 $funnelLeadsByStatus = [];
@@ -437,36 +437,36 @@ function dash_channel_label(array $channel): string {
     .sales-status-select.is-saving { opacity:.65; cursor:progress; }
     .sales-status-select[data-status="nuevo_lead"] { --status-color:#00a9e0; --status-bg:#e8faff; }
     .sales-status-select[data-status="contactado"] { --status-color:#5f7cff; --status-bg:#eef2ff; }
-    .sales-status-select[data-status="diagnostico_agendado"] { --status-color:#9b6bff; --status-bg:#f4efff; }
+    .sales-status-select[data-status="en_conversacion"] { --status-color:#7c5cff; --status-bg:#f2efff; }
+    .sales-status-select[data-status="interesado"] { --status-color:#00a382; --status-bg:#e8fff8; }
     .sales-status-select[data-status="propuesta_enviada"] { --status-color:#d69e2e; --status-bg:#fff8df; }
-    .sales-status-select[data-status="en_negociacion"] { --status-color:#f97316; --status-bg:#fff2e8; }
+    .sales-status-select[data-status="en_seguimiento"] { --status-color:#f97316; --status-bg:#fff2e8; }
     .sales-status-select[data-status="cliente_ganado"] { --status-color:#2f9e62; --status-bg:#eef9f0; }
     .sales-status-select[data-status="cliente_perdido"] { --status-color:#cf4d5b; --status-bg:#fff1f2; }
     .sales-status-select[data-status="no_responde"] { --status-color:#64748b; --status-bg:#f1f5f9; }
-    .sales-status-select[data-status="no_califica"] { --status-color:#8a5a44; --status-bg:#f8f1ed; }
     .sales-status-badge { --status-color:#8bdfff; --status-bg:#fff; display:inline-flex; align-items:center; min-height:34px; padding:0 11px; border:1px solid var(--status-color); border-left-width:5px; border-radius:10px; background:var(--status-bg); color:var(--brand-ink); font-size:.9rem; font-weight:850; white-space:nowrap; }
     .sales-status-badge[data-status="nuevo_lead"] { --status-color:#00a9e0; --status-bg:#e8faff; }
     .sales-status-badge[data-status="contactado"] { --status-color:#5f7cff; --status-bg:#eef2ff; }
-    .sales-status-badge[data-status="diagnostico_agendado"] { --status-color:#9b6bff; --status-bg:#f4efff; }
+    .sales-status-badge[data-status="en_conversacion"] { --status-color:#7c5cff; --status-bg:#f2efff; }
+    .sales-status-badge[data-status="interesado"] { --status-color:#00a382; --status-bg:#e8fff8; }
     .sales-status-badge[data-status="propuesta_enviada"] { --status-color:#d69e2e; --status-bg:#fff8df; }
-    .sales-status-badge[data-status="en_negociacion"] { --status-color:#f97316; --status-bg:#fff2e8; }
+    .sales-status-badge[data-status="en_seguimiento"] { --status-color:#f97316; --status-bg:#fff2e8; }
     .sales-status-badge[data-status="cliente_ganado"] { --status-color:#2f9e62; --status-bg:#eef9f0; }
     .sales-status-badge[data-status="cliente_perdido"] { --status-color:#cf4d5b; --status-bg:#fff1f2; }
     .sales-status-badge[data-status="no_responde"] { --status-color:#64748b; --status-bg:#f1f5f9; }
-    .sales-status-badge[data-status="no_califica"] { --status-color:#8a5a44; --status-bg:#f8f1ed; }
     .readonly-text { min-width:220px; max-width:300px; color:var(--brand-ink); line-height:1.35; white-space:pre-wrap; overflow-wrap:anywhere; }
     .funnel-wrap { margin-top:18px; overflow-x:auto; padding-bottom:6px; }
     .funnel-board { display:flex; gap:12px; align-items:flex-start; min-width:max-content; }
     .funnel-column { --status-color:#00a9e0; --status-bg:#eefaff; width:300px; max-height:72vh; display:flex; flex-direction:column; border:1px solid rgba(0,212,255,.16); border-top:5px solid var(--status-color); border-radius:16px; background:var(--status-bg); overflow:hidden; }
     .funnel-column[data-status="nuevo_lead"] { --status-color:#00a9e0; --status-bg:#eefaff; }
     .funnel-column[data-status="contactado"] { --status-color:#5f7cff; --status-bg:#eef2ff; }
-    .funnel-column[data-status="diagnostico_agendado"] { --status-color:#9b6bff; --status-bg:#f4efff; }
+    .funnel-column[data-status="en_conversacion"] { --status-color:#7c5cff; --status-bg:#f2efff; }
+    .funnel-column[data-status="interesado"] { --status-color:#00a382; --status-bg:#e8fff8; }
     .funnel-column[data-status="propuesta_enviada"] { --status-color:#d69e2e; --status-bg:#fff8df; }
-    .funnel-column[data-status="en_negociacion"] { --status-color:#f97316; --status-bg:#fff2e8; }
+    .funnel-column[data-status="en_seguimiento"] { --status-color:#f97316; --status-bg:#fff2e8; }
     .funnel-column[data-status="cliente_ganado"] { --status-color:#2f9e62; --status-bg:#eef9f0; }
     .funnel-column[data-status="cliente_perdido"] { --status-color:#cf4d5b; --status-bg:#fff1f2; }
     .funnel-column[data-status="no_responde"] { --status-color:#64748b; --status-bg:#f1f5f9; }
-    .funnel-column[data-status="no_califica"] { --status-color:#8a5a44; --status-bg:#f8f1ed; }
     .funnel-column-header { position:sticky; top:0; z-index:1; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; background:#071120; color:#eafaff; }
     .funnel-column-header h2 { margin:0; font-size:.92rem; line-height:1.2; }
     .funnel-count { display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px; padding:0 8px; border-radius:999px; background:rgba(0,212,255,.18); color:#eafaff; font-weight:900; }

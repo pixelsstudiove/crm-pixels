@@ -109,13 +109,13 @@ $app = [
     'statuses' => [
       'nuevo_lead' => 'Nuevo lead',
       'contactado' => 'Contactado',
-      'diagnostico_agendado' => 'Diagnóstico agendado',
+      'en_conversacion' => 'En conversación',
+      'interesado' => 'Interesado',
       'propuesta_enviada' => 'Propuesta enviada',
-      'en_negociacion' => 'En negociación',
+      'en_seguimiento' => 'En seguimiento',
       'cliente_ganado' => 'Cliente ganado',
       'cliente_perdido' => 'Cliente perdido',
       'no_responde' => 'No responde',
-      'no_califica' => 'No califica',
     ],
   ],
 

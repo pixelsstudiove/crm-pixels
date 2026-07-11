@@ -24,7 +24,17 @@ $statusOptions = [
 ];
 $salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
 if ($salesStatusOptions === []) {
-  $salesStatusOptions = ['nuevo_lead' => 'Nuevo lead', 'contactado' => 'Contactado', 'diagnostico_agendado' => 'Diagnóstico agendado'];
+  $salesStatusOptions = [
+    'nuevo_lead' => 'Nuevo lead',
+    'contactado' => 'Contactado',
+    'en_conversacion' => 'En conversación',
+    'interesado' => 'Interesado',
+    'propuesta_enviada' => 'Propuesta enviada',
+    'en_seguimiento' => 'En seguimiento',
+    'cliente_ganado' => 'Cliente ganado',
+    'cliente_perdido' => 'Cliente perdido',
+    'no_responde' => 'No responde',
+  ];
 }
 
 $errors = [];

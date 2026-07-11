@@ -24,7 +24,17 @@ $salesStatus = isset($_POST['sales_status']) ? trim((string) $_POST['sales_statu
 $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
 
 if ($allowedStatuses === []) {
-  $allowedStatuses = ['nuevo_lead', 'contactado', 'diagnostico_agendado'];
+  $allowedStatuses = [
+    'nuevo_lead',
+    'contactado',
+    'en_conversacion',
+    'interesado',
+    'propuesta_enviada',
+    'en_seguimiento',
+    'cliente_ganado',
+    'cliente_perdido',
+    'no_responde',
+  ];
 }
 
 if ($id <= 0 || !in_array($salesStatus, $allowedStatuses, true)) {
