@@ -224,6 +224,22 @@ function inbox_channel_label(array $channel): string {
   if ($pageName !== '') return $pageName;
   return trim((string) ($channel['page_id'] ?? 'Canal de Instagram'));
 }
+
+function inbox_has_image_attachment(array $attachments): bool {
+  foreach ($attachments as $attachment) {
+    if (($attachment['media_type'] ?? '') === 'image' && !empty($attachment['url'])) return true;
+  }
+  return false;
+}
+
+function inbox_visible_message_text($value, array $attachments): string {
+  $text = trim((string) $value);
+  $hasImage = inbox_has_image_attachment($attachments);
+  $imageOnlyLabels = ['Adjunto recibido: image', 'Imagen enviada', 'Imagen'];
+  if ($hasImage && in_array($text, $imageOnlyLabels, true)) return '';
+  if ($text !== '') return $text;
+  return $hasImage ? '' : 'Mensaje sin texto';
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -271,6 +287,11 @@ function inbox_channel_label(array $channel): string {
     .reply-box textarea:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.86rem; font-weight:750; }
+    .composer-file { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .composer-file input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+    .file-trigger { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-weight:900; cursor:pointer; }
+    .file-trigger:hover { background:#dff6ff; border-color:#8bdfff; }
+    .file-name { max-width:220px; color:var(--inbox-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .enter-toggle { display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
     .enter-toggle input { width:16px; height:16px; accent-color:#007ea8; }
     .emoji-wrap { position:relative; }
@@ -371,6 +392,7 @@ function inbox_channel_label(array $channel): string {
                   <?php $direction = (string) ($message['direction'] ?? 'inbound'); ?>
                   <article class="message <?= $direction === 'outbound' ? 'outbound' : 'inbound' ?>" data-message-id="<?= (int) $message['id'] ?>">
                     <?php $messageAttachments = $attachmentsByMessage[(int) $message['id']] ?? []; ?>
+                    <?php $visibleText = inbox_visible_message_text($message['message_text'] ?? '', $messageAttachments); ?>
                     <?php if ($messageAttachments): ?>
                       <div class="message-attachments">
                         <?php foreach ($messageAttachments as $attachment): ?>
@@ -382,7 +404,7 @@ function inbox_channel_label(array $channel): string {
                         <?php endforeach; ?>
                       </div>
                     <?php endif; ?>
-                    <div class="message-text"><?= h($message['message_text'] ?: ($messageAttachments ? 'Imagen' : 'Mensaje sin texto')) ?></div>
+                    <?php if ($visibleText !== ''): ?><div class="message-text"><?= h($visibleText) ?></div><?php endif; ?>
                     <div class="message-meta">
                       <?= $direction === 'outbound' ? 'Enviado' : 'Recibido' ?> · <?= h(inbox_time($message['sent_at'] ?? '')) ?>
                       <?php if ($direction === 'outbound' && !empty($message['sent_by_username'])): ?> · <?= h($message['sent_by_username']) ?><?php endif; ?>
@@ -399,7 +421,11 @@ function inbox_channel_label(array $channel): string {
                 <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages ? '' : 'disabled' ?>></textarea>
                 <div class="composer-tools">
                   <div class="composer-left">
-                    <input type="file" name="image" accept="image/jpeg,image/png,image/gif,image/webp" <?= $canSendMessages ? '' : 'disabled' ?>>
+                    <label class="composer-file">
+                      <span class="file-trigger">Adjuntar imagen</span>
+                      <input type="file" name="image" id="imageInput" accept="image/jpeg,image/png,image/gif,image/webp" <?= $canSendMessages ? '' : 'disabled' ?>>
+                      <span class="file-name" id="imageFileName">Sin imagen</span>
+                    </label>
                     <label class="enter-toggle">
                       <input type="checkbox" id="sendWithEnter" checked>
                       <span>Enviar con Intro</span>
@@ -522,6 +548,18 @@ function inbox_channel_label(array $channel): string {
       return items ? `<div class="message-attachments">${items}</div>` : '';
     }
 
+    function hasImageAttachment(attachments) {
+      return Array.isArray(attachments) && attachments.some(attachment => attachment && attachment.media_type === 'image' && attachment.url);
+    }
+
+    function visibleMessageText(message) {
+      const text = String(message?.text ?? '').trim();
+      const imageOnlyLabels = ['Adjunto recibido: image', 'Imagen enviada', 'Imagen'];
+      if (hasImageAttachment(message?.attachments) && imageOnlyLabels.includes(text)) return '';
+      if (text) return text;
+      return hasImageAttachment(message?.attachments) ? '' : 'Mensaje sin texto';
+    }
+
     function insertAtCursor(textarea, value) {
       if (!textarea || !value) return;
       const start = textarea.selectionStart ?? textarea.value.length;
@@ -586,9 +624,10 @@ function inbox_channel_label(array $channel): string {
       const article = document.createElement('article');
       article.className = `message ${direction}`;
       article.dataset.messageId = String(message.id);
+      const visibleText = visibleMessageText(message);
       article.innerHTML = `
         ${attachmentMarkup(message.attachments)}
-        <div class="message-text">${escapeHtml(message.text || (Array.isArray(message.attachments) && message.attachments.length ? 'Imagen' : 'Mensaje sin texto'))}</div>
+        ${visibleText ? `<div class="message-text">${escapeHtml(visibleText)}</div>` : ''}
         <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
       `;
       messageList.appendChild(article);
@@ -600,10 +639,11 @@ function inbox_channel_label(array $channel): string {
       const direction = message.direction === 'outbound' ? 'outbound' : 'inbound';
       const metaLabel = direction === 'outbound' ? 'Enviado' : 'Recibido';
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
+      const visibleText = visibleMessageText(message);
       return `
         <article class="message ${direction}" data-message-id="${Number(message.id)}">
           ${attachmentMarkup(message.attachments)}
-          <div class="message-text">${escapeHtml(message.text || (Array.isArray(message.attachments) && message.attachments.length ? 'Imagen' : 'Mensaje sin texto'))}</div>
+          ${visibleText ? `<div class="message-text">${escapeHtml(visibleText)}</div>` : ''}
           <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
         </article>
       `;
@@ -651,6 +691,8 @@ function inbox_channel_label(array $channel): string {
 
     if (replyForm) {
       const textarea = replyForm.querySelector('textarea[name="message"]');
+      const imageInput = replyForm.querySelector('input[name="image"]');
+      const imageFileName = document.getElementById('imageFileName');
       if (sendWithEnter) {
         const stored = window.localStorage.getItem('pixels_send_with_enter');
         sendWithEnter.checked = stored === null ? true : stored === '1';
@@ -686,6 +728,11 @@ function inbox_channel_label(array $channel): string {
           emojiToggle.setAttribute('aria-expanded', 'false');
         });
       }
+      if (imageInput && imageFileName) {
+        imageInput.addEventListener('change', () => {
+          imageFileName.textContent = imageInput.files && imageInput.files.length ? imageInput.files[0].name : 'Sin imagen';
+        });
+      }
 
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -708,6 +755,7 @@ function inbox_channel_label(array $channel): string {
           if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
           textarea.value = '';
           if (imageInput) imageInput.value = '';
+          if (imageFileName) imageFileName.textContent = 'Sin imagen';
           const shouldStick = isNearBottom(messageList);
           if (Array.isArray(data.messages)) data.messages.forEach(appendMessage);
           else if (data.message) appendMessage(data.message);
