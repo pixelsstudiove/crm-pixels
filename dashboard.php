@@ -405,6 +405,17 @@ function dash_channel_label(array $channel): string {
     .wa-btn:hover, .user-btn:hover, .logout-btn:hover, .search-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .wa-btn:active, .user-btn:active, .logout-btn:active, .search-btn:active { transform:translateY(1px); }
     .role-pill { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:0 10px; border-radius:999px; border:1px solid #8bdfff; background:#eefaff; color:#006e95; font-size:.78rem; font-weight:900; white-space:nowrap; }
+    .menu-dropdown { position:relative; }
+    .menu-dropdown summary { list-style:none; display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:850; cursor:pointer; user-select:none; transition:background .2s ease, border-color .2s ease, transform .06s ease; }
+    .menu-dropdown summary::-webkit-details-marker { display:none; }
+    .menu-dropdown summary::after { content:"⌄"; color:#007ea8; font-size:.95rem; line-height:1; transform:translateY(-1px); }
+    .menu-dropdown[open] summary, .menu-dropdown summary:hover { background:#dff6ff; border-color:#8bdfff; }
+    .menu-dropdown summary:active { transform:translateY(1px); }
+    .menu-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:20; min-width:220px; padding:8px; border:1px solid var(--line); border-radius:14px; background:#fff; box-shadow:0 16px 36px rgba(0, 76, 110, .18); }
+    .menu-item { width:100%; min-height:40px; display:flex; align-items:center; justify-content:flex-start; gap:8px; padding:0 10px; border:0; border-radius:10px; background:transparent; color:var(--brand-ink); font:inherit; font-weight:800; text-align:left; text-decoration:none; cursor:pointer; }
+    .menu-item:hover { background:#eefaff; color:#007ea8; }
+    .menu-meta { display:block; padding:6px 10px 9px; color:var(--brand-muted); font-size:.78rem; font-weight:850; border-bottom:1px solid rgba(0,68,99,.10); margin-bottom:6px; }
+    .menu-form { margin:0; }
     .search-form { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
     .search-input { height:40px; min-width:360px; padding:0 12px; color:var(--brand-ink); border-radius:10px; border:1px solid var(--line); background:#fff; outline:none; }
     .search-input::placeholder { color:#7b8ca5; }
@@ -509,7 +520,7 @@ function dash_channel_label(array $channel): string {
       .filters-form { grid-template-columns:1fr; }
       .funnel-column { width:280px; max-height:68vh; }
     }
-    @media (max-width: 700px) { .search-input { min-width:220px; width:100%; } .search-form { width:100%; } .topbar-right { width:100%; } }
+    @media (max-width: 700px) { .search-input { min-width:220px; width:100%; } .search-form { width:100%; } .topbar-right { width:100%; } .menu-dropdown { flex:1; } .menu-dropdown summary { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
   </style>
 </head>
 <body class="dashboard-page">
@@ -527,15 +538,27 @@ function dash_channel_label(array $channel): string {
               <?php if ($filterChannelId > 0): ?><input type="hidden" name="channel_id" value="<?= (int) $filterChannelId ?>"><?php endif; ?>
               <button class="search-btn" type="submit">Buscar</button>
             </form>
-            <span class="role-pill"><?= h($currentRoleLabel) ?></span>
-            <?php if (can('view_conversations')): ?><a class="user-btn" href="inbox.php" title="Inbox conversacional">Inbox</a><?php endif; ?>
-            <?php if ($canManageIntegrations): ?><a class="user-btn" href="channels.php" title="Canales conectados">Canales</a><?php endif; ?>
-            <?php if ($canManageUsers): ?><a class="user-btn" href="users.php" title="Administrar usuarios">Usuarios</a><?php endif; ?>
-            <button type="button" class="user-btn" data-modal-open="profileModal" title="Perfil de usuario">👤 <?= h($_SESSION['username']) ?></button>
-            <form action="logout.php" method="post" style="margin:0">
-              <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-              <button class="logout-btn" type="submit" title="Cerrar sesión">⎋</button>
-            </form>
+            <details class="menu-dropdown">
+              <summary><?= h((string) ($_SESSION['username'] ?? 'Usuario')) ?></summary>
+              <div class="menu-panel">
+                <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
+                <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
+                <?php if ($canManageUsers): ?><a class="menu-item" href="users.php">Gestión de usuarios</a><?php endif; ?>
+                <form class="menu-form" action="logout.php" method="post">
+                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                  <button class="menu-item" type="submit">Cerrar sesión</button>
+                </form>
+              </div>
+            </details>
+            <?php if (can('view_conversations') || $canManageIntegrations): ?>
+              <details class="menu-dropdown">
+                <summary>CRM</summary>
+                <div class="menu-panel">
+                  <?php if (can('view_conversations')): ?><a class="menu-item" href="inbox.php">Inbox</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Gestionar canales</a><?php endif; ?>
+                </div>
+              </details>
+            <?php endif; ?>
           </div>
         </div>
 

@@ -1,7 +1,16 @@
 (function(){
+  function closeMenus(except){
+    document.querySelectorAll('.menu-dropdown[open]').forEach(menu=>{
+      if(menu !== except) menu.removeAttribute('open');
+    });
+  }
+
   function openModal(id){
     const el = document.getElementById(id);
-    if(el) el.classList.add('is-open');
+    if(el){
+      closeMenus();
+      el.classList.add('is-open');
+    }
   }
 
   function closeModal(el){
@@ -19,6 +28,12 @@
       const modal = closeBtn.closest('[data-modal]');
       if(modal) closeModal(modal);
     }
+    const clickedMenu = e.target.closest('.menu-dropdown');
+    if(clickedMenu && e.target.closest('summary')){
+      closeMenus(clickedMenu);
+      return;
+    }
+    if(!clickedMenu) closeMenus();
   });
 
   document.querySelectorAll('[data-modal]').forEach(modal=>{
@@ -27,6 +42,7 @@
 
   document.addEventListener('keydown', (e)=>{
     if(e.key === 'Escape'){
+      closeMenus();
       document.querySelectorAll('[data-modal].is-open').forEach(m => closeModal(m));
     }
   });
