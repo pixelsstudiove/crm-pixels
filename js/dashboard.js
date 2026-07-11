@@ -36,6 +36,12 @@
     if(!clickedMenu) closeMenus();
   });
 
+  document.querySelectorAll('.menu-dropdown').forEach(menu=>{
+    menu.addEventListener('toggle', ()=>{
+      if(menu.open) closeMenus(menu);
+    });
+  });
+
   document.querySelectorAll('[data-modal]').forEach(modal=>{
     modal.addEventListener('click', (e)=>{ if(e.target === modal) closeModal(modal); });
   });
