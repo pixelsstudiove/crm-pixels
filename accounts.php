@@ -27,12 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
     $errors[] = 'CSRF inválido. Recarga la página.';
   } else {
-    $action = (string) ($_POST['action'] ?? '');
+    $action = isset($_POST['create_account_submit']) ? 'create_account' : (isset($_POST['update_account_submit']) ? 'update_account' : '');
     if ($action === 'create_account' || $action === 'update_account') {
-      $accountId = max(0, (int) ($_POST['id'] ?? 0));
-      $name = trim((string) ($_POST['name'] ?? ''));
-      $slug = account_slug_from_name((string) ($_POST['slug'] ?? $name));
-      $status = (string) ($_POST['status'] ?? 'active');
+      $accountId = $action === 'update_account' ? max(0, (int) ($_POST['update_id'] ?? 0)) : 0;
+      $name = trim((string) ($_POST[$action === 'create_account' ? 'create_name' : 'update_name'] ?? ''));
+      $rawSlug = (string) ($_POST[$action === 'create_account' ? 'create_slug' : 'update_slug'] ?? $name);
+      $slug = account_slug_from_name($rawSlug);
+      $status = (string) ($_POST[$action === 'create_account' ? 'create_status' : 'update_status'] ?? 'active');
       if (mb_strlen($name) < 3 || mb_strlen($name) > 160) $errors[] = 'El nombre debe tener entre 3 y 160 caracteres.';
       if (!preg_match('/^[a-z0-9-]{3,80}$/', $slug)) $errors[] = 'El slug debe tener entre 3 y 80 caracteres, solo minúsculas, números y guiones.';
       if (!array_key_exists($status, $statusOptions)) $errors[] = 'Selecciona un estado válido.';
@@ -44,6 +45,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $existsStmt = $pdo->prepare("SELECT id FROM {$accountsTable} WHERE id=? LIMIT 1");
             $existsStmt->execute([$accountId]);
             if (!$existsStmt->fetchColumn()) $errors[] = 'La cuenta que intentas actualizar no existe.';
+          }
+
+          if (!$errors) {
+            $nameStmt = $action === 'create_account'
+              ? $pdo->prepare("SELECT id FROM {$accountsTable} WHERE LOWER(name)=LOWER(?) LIMIT 1")
+              : $pdo->prepare("SELECT id FROM {$accountsTable} WHERE LOWER(name)=LOWER(?) AND id<>? LIMIT 1");
+            $action === 'create_account' ? $nameStmt->execute([$name]) : $nameStmt->execute([$name, $accountId]);
+            if ($nameStmt->fetchColumn()) $errors[] = 'Ya existe una cuenta con ese nombre.';
           }
 
           if (!$errors) {
@@ -140,24 +149,23 @@ SQL);
             <h2>Nueva cuenta</h2>
             <form class="accounts-form" method="post" action="/accounts.php" autocomplete="off">
               <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-              <input type="hidden" name="action" value="create_account">
               <label class="field">
                 <span class="field-label">Nombre</span>
-                <input type="text" name="name" maxlength="160" required>
+                <input type="text" name="create_name" maxlength="160" required autocomplete="off">
               </label>
               <label class="field">
                 <span class="field-label">Slug</span>
-                <input type="text" name="slug" maxlength="80" placeholder="cliente-demo">
+                <input type="text" name="create_slug" maxlength="80" placeholder="cliente-demo" autocomplete="off">
               </label>
               <label class="field">
                 <span class="field-label">Estado</span>
-                <select name="status">
+                <select name="create_status">
                   <?php foreach ($statusOptions as $value => $label): ?>
                     <option value="<?= h($value) ?>"><?= h($label) ?></option>
                   <?php endforeach; ?>
                 </select>
               </label>
-              <button class="btn" type="submit">Crear cuenta</button>
+              <button class="btn" type="submit" name="create_account_submit" value="1">Crear cuenta</button>
             </form>
           </section>
 
@@ -186,16 +194,15 @@ SQL);
                       <td>
                         <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
                           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                          <input type="hidden" name="action" value="update_account">
-                          <input type="hidden" name="id" value="<?= (int) $account['id'] ?>">
-                          <input type="text" name="name" value="<?= h((string) $account['name']) ?>" maxlength="160" aria-label="Nombre">
-                          <input type="text" name="slug" value="<?= h((string) $account['slug']) ?>" maxlength="80" aria-label="Slug">
-                          <select name="status" aria-label="Estado">
+                          <input type="hidden" name="update_id" value="<?= (int) $account['id'] ?>">
+                          <input type="text" name="update_name" value="<?= h((string) $account['name']) ?>" maxlength="160" aria-label="Nombre" autocomplete="off">
+                          <input type="text" name="update_slug" value="<?= h((string) $account['slug']) ?>" maxlength="80" aria-label="Slug" autocomplete="off">
+                          <select name="update_status" aria-label="Estado">
                             <?php foreach ($statusOptions as $value => $label): ?>
                               <option value="<?= h($value) ?>" <?= (string) ($account['status'] ?? '') === $value ? 'selected' : '' ?>><?= h($label) ?></option>
                             <?php endforeach; ?>
                           </select>
-                          <button class="accounts-link" type="submit">Guardar</button>
+                          <button class="accounts-link" type="submit" name="update_account_submit" value="1">Guardar</button>
                         </form>
                       </td>
                     </tr>
