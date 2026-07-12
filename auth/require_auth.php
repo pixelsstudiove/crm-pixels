@@ -71,6 +71,12 @@ try {
   $_SESSION['username'] = (string) ($row['username'] ?? $_SESSION['username'] ?? '');
   $_SESSION['role'] = normalize_role($row['role'] ?? null);
   $_SESSION['account_id'] = (int) ($row['account_id'] ?? accounts_default_id($pdo));
+  if (current_user_role() !== 'super_admin' && !accounts_is_active($pdo, (int) $_SESSION['account_id'])) {
+    session_unset();
+    session_destroy();
+    header('Location: login.php?error=account_suspended');
+    exit;
+  }
 } catch (Throwable $e) {
   $_SESSION['role'] = normalize_role($_SESSION['role'] ?? null);
   $_SESSION['account_id'] = (int) ($_SESSION['account_id'] ?? accounts_default_id($pdo));

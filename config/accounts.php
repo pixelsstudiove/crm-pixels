@@ -47,6 +47,21 @@ function accounts_default_id(PDO $pdo): int {
   return (int) ($find->fetchColumn() ?: 1);
 }
 
+function accounts_find(PDO $pdo, int $accountId): ?array {
+  if ($accountId <= 0) return null;
+  accounts_ensure_schema($pdo);
+  $table = accounts_table();
+  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE id=? LIMIT 1");
+  $stmt->execute([$accountId]);
+  $row = $stmt->fetch();
+  return $row ?: null;
+}
+
+function accounts_is_active(PDO $pdo, int $accountId): bool {
+  $account = accounts_find($pdo, $accountId);
+  return !$account || (string) ($account['status'] ?? 'active') === 'active';
+}
+
 function accounts_add_account_column(PDO $pdo, string $dbName, string $table, int $defaultAccountId, string $after = 'id'): void {
   if (!account_column_exists($pdo, $dbName, $table, 'account_id')) {
     $pdo->exec("ALTER TABLE {$table} ADD COLUMN account_id INT UNSIGNED NULL AFTER {$after}");

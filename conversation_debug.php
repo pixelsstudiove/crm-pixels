@@ -12,23 +12,39 @@ $conversationsTable = conv_conversations_table();
 $contactsTable = conv_contacts_table();
 $messagesTable = conv_messages_table();
 $logsTable = conv_webhook_logs_table();
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $conversation = null;
 $messages = [];
 $logs = [];
 
 if ($conversationId > 0) {
-  $stmt = $pdo->prepare("SELECT c.*, ct.display_name, ct.username, ct.external_contact_id FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id=c.contact_id WHERE c.id=? LIMIT 1");
-  $stmt->execute([$conversationId]);
+  if (is_super_admin()) {
+    $stmt = $pdo->prepare("SELECT c.*, ct.display_name, ct.username, ct.external_contact_id FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id=c.contact_id WHERE c.id=? LIMIT 1");
+    $stmt->execute([$conversationId]);
+  } else {
+    $stmt = $pdo->prepare("SELECT c.*, ct.display_name, ct.username, ct.external_contact_id FROM {$conversationsTable} c JOIN {$contactsTable} ct ON ct.id=c.contact_id WHERE c.id=? AND c.account_id=? LIMIT 1");
+    $stmt->execute([$conversationId, $currentAccountId]);
+  }
   $conversation = $stmt->fetch() ?: null;
 
-  $msgStmt = $pdo->prepare("SELECT * FROM {$messagesTable} WHERE conversation_id=? ORDER BY sent_at ASC, id ASC");
-  $msgStmt->execute([$conversationId]);
-  $messages = $msgStmt->fetchAll();
+  if ($conversation) {
+    if (is_super_admin()) {
+      $msgStmt = $pdo->prepare("SELECT * FROM {$messagesTable} WHERE conversation_id=? ORDER BY sent_at ASC, id ASC");
+      $msgStmt->execute([$conversationId]);
 
-  $logStmt = $pdo->prepare("SELECT * FROM {$logsTable} WHERE conversation_id=? ORDER BY id DESC LIMIT 80");
-  $logStmt->execute([$conversationId]);
-  $logs = $logStmt->fetchAll();
+      $logStmt = $pdo->prepare("SELECT * FROM {$logsTable} WHERE conversation_id=? ORDER BY id DESC LIMIT 80");
+      $logStmt->execute([$conversationId]);
+    } else {
+      $msgStmt = $pdo->prepare("SELECT * FROM {$messagesTable} WHERE conversation_id=? AND account_id=? ORDER BY sent_at ASC, id ASC");
+      $msgStmt->execute([$conversationId, $currentAccountId]);
+
+      $logStmt = $pdo->prepare("SELECT * FROM {$logsTable} WHERE conversation_id=? AND account_id=? ORDER BY id DESC LIMIT 80");
+      $logStmt->execute([$conversationId, $currentAccountId]);
+    }
+    $messages = $msgStmt->fetchAll();
+    $logs = $logStmt->fetchAll();
+  }
 }
 ?>
 <!DOCTYPE html>

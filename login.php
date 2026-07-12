@@ -124,6 +124,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if (!$row || !password_verify($password, $row['password_hash'])) {
         login_register_failure($username);
         $error = 'Credenciales inválidas.';
+      } elseif (normalize_role($row['role'] ?? null) !== 'super_admin' && !accounts_is_active($pdo, (int) ($row['account_id'] ?? $defaultAccountId))) {
+        login_register_failure($username);
+        $error = 'Esta cuenta se encuentra suspendida. Contacta al administrador.';
       } else {
         login_clear_failures($username);
         session_regenerate_id(true);
