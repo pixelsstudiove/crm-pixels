@@ -314,6 +314,9 @@ $attachmentsByMessage = conv_attachments_for_messages($pdo, array_map(static fn(
 $lastMessageId = 0;
 foreach ($messages as $message) $lastMessageId = max($lastMessageId, (int) ($message['id'] ?? 0));
 $replyWindow = $selected ? meta_reply_window_info($selected['last_inbound_at'] ?? '') : null;
+$replyChannel = $selected ? conv_instagram_channel_for_conversation($pdo, $selected) : null;
+$canReplyFromCrm = $canSendMessages && ($replyWindow['can_reply'] ?? true) && (bool) $replyChannel;
+$channelUnavailableMessage = 'No hay un canal de Instagram activo disponible para esta conversación. Revisa Canales o reconecta Instagram antes de responder.';
 
 function inbox_contact_name(array $conversation): string {
   $name = trim((string) ($conversation['display_name'] ?? ''));
@@ -629,6 +632,12 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <span><?= h((string) ($replyWindow['detail'] ?? '')) ?></span>
                 </div>
               <?php endif; ?>
+              <?php if ($canSendMessages && ($replyWindow['can_reply'] ?? true) && !$replyChannel): ?>
+                <div class="reply-window-alert expired">
+                  <strong>Canal no disponible</strong>
+                  <span><?= h($channelUnavailableMessage) ?></span>
+                </div>
+              <?php endif; ?>
 
               <div class="message-list" id="messageList" data-last-id="<?= (int) $lastMessageId ?>">
                 <?php if ($messages): foreach ($messages as $message): ?>
@@ -660,13 +669,13 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php endif; ?>
               </div>
 
-              <form class="reply-box <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="<?= h(account_url('send_instagram_message.php')) ?>" enctype="multipart/form-data">
+              <form class="reply-box <?= $canReplyFromCrm ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="<?= h(account_url('send_instagram_message.php')) ?>" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
                 <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                 <div class="composer-main">
                   <div class="composer-input">
-                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>></textarea>
+                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canReplyFromCrm ? '' : 'disabled' ?>></textarea>
                     <div class="recording-surface" id="audioRecordingSurface" hidden>
                       <canvas class="recording-canvas" id="audioWaveCanvas" width="900" height="180" aria-hidden="true"></canvas>
                       <div class="recording-center">
@@ -680,20 +689,20 @@ function inbox_visible_message_text($value, array $attachments): string {
                   </div>
                   <div class="composer-quick-actions" aria-label="Acciones rápidas del mensaje">
                     <div class="emoji-wrap">
-                      <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>☺</button>
+                      <button class="emoji-btn" type="button" id="emojiToggle" aria-label="Insertar emoji" aria-expanded="false" <?= $canReplyFromCrm ? '' : 'disabled' ?>>☺</button>
                       <div class="emoji-panel" id="emojiPanel" aria-label="Emojis rápidos">
                         <?php foreach (['😀','😁','😂','😊','😍','😎','🙌','👍','🙏','🔥','✨','✅','👀','💬','📌','📍','💰','🚀'] as $emoji): ?>
                           <button class="emoji-option" type="button" data-emoji="<?= h($emoji) ?>"><?= h($emoji) ?></button>
                         <?php endforeach; ?>
                       </div>
                     </div>
-                    <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>🎙</button>
+                    <button class="icon-tool record-btn" type="button" id="audioRecordButton" title="Grabar audio" aria-label="Grabar audio" <?= $canReplyFromCrm ? '' : 'disabled' ?>>🎙</button>
                     <label class="composer-file" title="Adjuntar imagen o audio" aria-label="Adjuntar imagen o audio">
                       <span class="icon-tool">📎</span>
-                      <input type="file" name="media[]" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" multiple <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>
+                      <input type="file" name="media[]" id="mediaInput" accept="image/jpeg,image/png,image/gif,image/webp,audio/mpeg,audio/mp3,audio/mp4,audio/m4a,audio/x-m4a,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,audio/3gpp" multiple <?= $canReplyFromCrm ? '' : 'disabled' ?>>
                     </label>
                   </div>
-                  <button class="inbox-btn primary composer-submit" type="submit" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>>Enviar</button>
+                  <button class="inbox-btn primary composer-submit" type="submit" <?= $canReplyFromCrm ? '' : 'disabled' ?>>Enviar</button>
                 </div>
                 <div class="composer-tools">
                   <div class="composer-left">
@@ -804,7 +813,8 @@ function inbox_visible_message_text($value, array $attachments): string {
       status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       lastMessageId: <?= (int) $lastMessageId ?>,
       csrf: <?= json_encode((string) ($_SESSION['csrf'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
-      canReply: <?= ($replyWindow['can_reply'] ?? true) ? 'true' : 'false' ?>,
+      canReply: <?= $canReplyFromCrm ? 'true' : 'false' ?>,
+      channelAvailable: <?= $replyChannel ? 'true' : 'false' ?>,
       polling: false
     };
 
@@ -828,7 +838,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     const sideReplyWindowAlert = document.getElementById('sideReplyWindowAlert');
 
     function setComposerEnabled(canReply) {
-      inboxState.canReply = Boolean(canReply);
+      inboxState.canReply = Boolean(canReply) && Boolean(inboxState.channelAvailable);
       if (!replyForm) return;
       replyForm.classList.toggle('is-disabled', !inboxState.canReply);
       replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, #emojiToggle, button[type="submit"]').forEach(el => {

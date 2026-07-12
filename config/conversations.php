@@ -506,15 +506,48 @@ function conv_graph_post_json(string $path, array $payload, string $accessToken)
   return ['ok' => true, 'http' => $http, 'data' => $json];
 }
 
+function conv_instagram_channel_for_conversation(PDO $pdo, array $conversation): ?array {
+  $channelsTable = ig_channels_table();
+  $channelId = (int) ($conversation['channel_id'] ?? 0);
+  $accountId = (int) (($conversation['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
+
+  if ($channelId > 0) {
+    $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 AND COALESCE(page_access_token, '')<>'' LIMIT 1");
+    $stmt->execute([$channelId]);
+    $channel = $stmt->fetch();
+    if ($channel) return $channel;
+  }
+
+  $stmt = $pdo->prepare(<<<SQL
+SELECT *
+FROM {$channelsTable}
+WHERE account_id=?
+  AND is_active=1
+  AND COALESCE(page_access_token, '')<>''
+ORDER BY updated_at DESC, id DESC
+LIMIT 2
+SQL);
+  $stmt->execute([$accountId]);
+  $channels = $stmt->fetchAll() ?: [];
+  if (count($channels) === 1) {
+    $channel = $channels[0];
+    if ($channelId !== (int) ($channel['id'] ?? 0)) {
+      $conversationsTable = conv_conversations_table();
+      $update = $pdo->prepare("UPDATE {$conversationsTable} SET channel_id=?, updated_at=NOW() WHERE id=?");
+      $update->execute([(int) $channel['id'], (int) ($conversation['id'] ?? 0)]);
+    }
+    return $channel;
+  }
+
+  return null;
+}
+
 function conv_send_instagram_message(PDO $pdo, array $conversation, string $message): array {
   $message = trim($message);
   if ($message === '') return ['ok' => false, 'error' => 'El mensaje esta vacio.'];
 
-  $channelsTable = ig_channels_table();
-  $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 LIMIT 1");
-  $stmt->execute([(int) ($conversation['channel_id'] ?? 0)]);
-  $channel = $stmt->fetch();
-  if (!$channel) return ['ok' => false, 'error' => 'Canal de Instagram no disponible.'];
+  $channel = conv_instagram_channel_for_conversation($pdo, $conversation);
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de Instagram no disponible o existen varios canales activos para esta cuenta.'];
 
   $token = (string) ($channel['page_access_token'] ?? '');
   $recipientId = (string) ($conversation['contact_external_id'] ?? '');
@@ -550,11 +583,8 @@ function conv_send_instagram_attachment(PDO $pdo, array $conversation, string $m
   if (!in_array($mediaType, ['image', 'audio'], true)) return ['ok' => false, 'error' => 'Tipo de adjunto no permitido.'];
   if ($mediaUrl === '') return ['ok' => false, 'error' => 'El adjunto no esta disponible.'];
 
-  $channelsTable = ig_channels_table();
-  $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 LIMIT 1");
-  $stmt->execute([(int) ($conversation['channel_id'] ?? 0)]);
-  $channel = $stmt->fetch();
-  if (!$channel) return ['ok' => false, 'error' => 'Canal de Instagram no disponible.'];
+  $channel = conv_instagram_channel_for_conversation($pdo, $conversation);
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de Instagram no disponible o existen varios canales activos para esta cuenta.'];
 
   $token = (string) ($channel['page_access_token'] ?? '');
   $recipientId = (string) ($conversation['contact_external_id'] ?? '');
