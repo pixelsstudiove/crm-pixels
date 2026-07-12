@@ -131,6 +131,7 @@ SQL;
   foreach ($rows as $row) {
     $conversations[] = [
       'id' => conv_display_id($row),
+      'account_id' => (int) ($row['account_id'] ?? 0),
       'account_slug' => (string) ($row['account_slug'] ?? ''),
       'name' => updates_contact_name($row),
       'time' => updates_time($row['last_message_at'] ?? $row['created_at'] ?? ''),
@@ -211,6 +212,7 @@ SQL;
   echo json_encode([
     'ok' => true,
     'conversation_id' => $selectedRouteId,
+    'selected_account_id' => $selected ? (int) ($selected['account_id'] ?? 0) : 0,
     'conversations' => $conversations,
     'messages' => $messages,
     'reply_window' => $selected ? meta_reply_window_info($selected['last_inbound_at'] ?? '') : null,

@@ -1069,13 +1069,14 @@ function inbox_visible_message_text($value, array $attachments): string {
       return 'webm';
     }
 
-    function conversationHref(id, slug = '') {
+    function conversationHref(id, slug = '', accountId = 0) {
       const params = new URLSearchParams();
       params.set('id', String(id));
       if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
       if (inboxState.status) params.set('status', inboxState.status);
       if (inboxState.q) params.set('q', inboxState.q);
       const cleanSlug = String(slug || '').trim();
+      if (!cleanSlug && accountId) params.set('account_id', String(accountId));
       return `${cleanSlug ? `/${encodeURIComponent(cleanSlug)}/` : ''}inbox.php?${params.toString()}`;
     }
 
@@ -1086,10 +1087,12 @@ function inbox_visible_message_text($value, array $attachments): string {
         return;
       }
       conversationList.innerHTML = items.map(item => {
-        const active = Number(item.id) === Number(inboxState.conversationId);
+        const itemAccountId = Number(item.account_id || 0);
+        const active = Number(item.id) === Number(inboxState.conversationId)
+          && (!inboxState.selectedAccountId || !itemAccountId || itemAccountId === Number(inboxState.selectedAccountId));
         const unread = active ? 0 : Number(item.unread_count || 0);
         return `
-          <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id, item.account_slug || ''))}">
+          <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id, item.account_slug || '', itemAccountId))}">
             <div class="conversation-row">
               <span class="conversation-name">${escapeHtml(item.name)}</span>
               <span class="conversation-time">${escapeHtml(item.time)}</span>
@@ -1275,6 +1278,8 @@ function inbox_visible_message_text($value, array $attachments): string {
         });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'No se pudieron cargar actualizaciones.');
+        if (Object.prototype.hasOwnProperty.call(data, 'conversation_id')) inboxState.conversationId = Number(data.conversation_id || 0);
+        if (Object.prototype.hasOwnProperty.call(data, 'selected_account_id')) inboxState.selectedAccountId = Number(data.selected_account_id || 0);
         renderConversations(data.conversations || []);
         updateReplyWindow(data.reply_window || null);
         const shouldStick = isNearBottom(messageList);
