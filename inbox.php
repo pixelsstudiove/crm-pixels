@@ -139,6 +139,19 @@ $filterStatus = trim((string) ($_GET['status'] ?? ''));
 if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
 $q = trim((string) ($_GET['q'] ?? ''));
 $selectedId = max(0, (int) ($_GET['id'] ?? 0));
+$accountOptions = [];
+$filterAccountId = 0;
+if (is_super_admin()) {
+  try {
+    $accountStmt = $pdo->query("SELECT id, name FROM " . accounts_table() . " ORDER BY name ASC");
+    $accountOptions = $accountStmt ? $accountStmt->fetchAll() : [];
+  } catch (Throwable $e) {
+    $accountOptions = [];
+  }
+  $accountIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $accountOptions);
+  $filterAccountId = max(0, (int) ($_GET['account_id'] ?? 0));
+  if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
+}
 
 $channelOptions = [];
 try {
@@ -149,7 +162,10 @@ JOIN {$channelsTable} ch ON ch.id = c.channel_id
 %s
 ORDER BY COALESCE(ch.instagram_username, ch.page_name, ch.page_id) ASC
 SQL;
-  if (is_super_admin()) {
+  if (is_super_admin() && $filterAccountId > 0) {
+    $channelStmt = $pdo->prepare(sprintf($channelSql, 'WHERE c.account_id = ?'));
+    $channelStmt->execute([$filterAccountId]);
+  } elseif (is_super_admin()) {
     $channelStmt = $pdo->query(sprintf($channelSql, ''));
   } else {
     $channelStmt = $pdo->prepare(sprintf($channelSql, 'WHERE c.account_id = ?'));
@@ -168,6 +184,9 @@ $params = [];
 if (!is_super_admin()) {
   $where[] = 'c.account_id = :account_id';
   $params[':account_id'] = $currentAccountId;
+} elseif ($filterAccountId > 0) {
+  $where[] = 'c.account_id = :account_id';
+  $params[':account_id'] = $filterAccountId;
 }
 if ($filterChannelId > 0) {
   $where[] = 'c.channel_id = :channel_id';
@@ -240,9 +259,13 @@ WHERE c.id = ?
   %s
 LIMIT 1
 SQL;
-  $accountDetailSql = is_super_admin() ? '' : 'AND c.account_id = ?';
+  $accountDetailSql = '';
+  if (!is_super_admin()) $accountDetailSql = 'AND c.account_id = ?';
+  elseif ($filterAccountId > 0) $accountDetailSql = 'AND c.account_id = ?';
   $detailStmt = $pdo->prepare(sprintf($detailSql, $accountDetailSql));
-  $detailParams = is_super_admin() ? [$selectedId] : [$selectedId, $currentAccountId];
+  $detailParams = [$selectedId];
+  if (!is_super_admin()) $detailParams[] = $currentAccountId;
+  elseif ($filterAccountId > 0) $detailParams[] = $filterAccountId;
   $detailStmt->execute($detailParams);
   $selected = $detailStmt->fetch() ?: null;
   if ($selected && empty($selected['lead_id'])) {
@@ -507,6 +530,14 @@ function inbox_visible_message_text($value, array $attachments): string {
         <div class="inbox-layout">
           <aside class="inbox-panel" aria-label="Conversaciones">
             <form class="conversation-filters" method="get" action="inbox.php">
+              <?php if (is_super_admin()): ?>
+                <select name="account_id" onchange="this.form.submit()" aria-label="Filtrar por cuenta">
+                  <option value="">Todas las cuentas</option>
+                  <?php foreach ($accountOptions as $account): ?>
+                    <option value="<?= (int) $account['id'] ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              <?php endif; ?>
               <select name="channel_id" onchange="this.form.submit()" aria-label="Filtrar por canal">
                 <option value="">Todos los canales</option>
                 <?php foreach ($channelOptions as $channel): ?>
@@ -525,7 +556,7 @@ function inbox_visible_message_text($value, array $attachments): string {
             <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedId ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
-                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="inbox.php?id=<?= (int) $conversation['id'] ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?><?= $filterStatus !== '' ? '&status=' . h(rawurlencode($filterStatus)) : '' ?><?= $q !== '' ? '&q=' . h(rawurlencode($q)) : '' ?>">
+                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="inbox.php?id=<?= (int) $conversation['id'] ?><?= $filterAccountId > 0 ? '&account_id=' . (int) $filterAccountId : '' ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?><?= $filterStatus !== '' ? '&status=' . h(rawurlencode($filterStatus)) : '' ?><?= $q !== '' ? '&q=' . h(rawurlencode($q)) : '' ?>">
                   <div class="conversation-row">
                     <span class="conversation-name"><?= h(inbox_contact_name($conversation)) ?></span>
                     <span class="conversation-time"><?= h(inbox_time($conversation['last_message_at'] ?? $conversation['created_at'] ?? '')) ?></span>
@@ -555,7 +586,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
                   <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
                 </div>
-                <a class="inbox-link" href="dashboard.php?q=<?= h(rawurlencode($funnelSearch)) ?>">Ver en embudo</a>
+                <a class="inbox-link" href="dashboard.php?q=<?= h(rawurlencode($funnelSearch)) ?><?= $filterAccountId > 0 ? '&account_id=' . (int) $filterAccountId : '' ?>">Ver en embudo</a>
               </header>
               <?php $showChatWindowAlert = in_array((string) ($replyWindow['status'] ?? ''), ['expired', 'unknown'], true); ?>
               <?php if ($replyWindow): ?>
@@ -729,6 +760,7 @@ function inbox_visible_message_text($value, array $attachments): string {
   <script>
     const inboxState = {
       conversationId: <?= (int) $selectedId ?>,
+      accountId: <?= (int) $filterAccountId ?>,
       channelId: <?= (int) $filterChannelId ?>,
       q: <?= json_encode($q, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
@@ -992,6 +1024,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     function conversationHref(id) {
       const params = new URLSearchParams();
       params.set('id', String(id));
+      if (inboxState.accountId) params.set('account_id', String(inboxState.accountId));
       if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
       if (inboxState.status) params.set('status', inboxState.status);
       if (inboxState.q) params.set('q', inboxState.q);
@@ -1183,6 +1216,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       try {
         const params = new URLSearchParams();
         if (inboxState.conversationId) params.set('id', String(inboxState.conversationId));
+        if (inboxState.accountId) params.set('account_id', String(inboxState.accountId));
         if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
         if (inboxState.q) params.set('q', inboxState.q);
         if (inboxState.status) params.set('status', inboxState.status);

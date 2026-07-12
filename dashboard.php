@@ -176,6 +176,19 @@ $canManageIntegrations = can('manage_integrations');
 
 $q = trim((string) ($_GET['q'] ?? ''));
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
+$accountOptions = [];
+$filterAccountId = 0;
+if (is_super_admin()) {
+  try {
+    $accountStmt = $pdo->query("SELECT id, name FROM " . accounts_table() . " ORDER BY name ASC");
+    $accountOptions = $accountStmt ? $accountStmt->fetchAll() : [];
+  } catch (Throwable $e) {
+    $accountOptions = [];
+  }
+  $accountIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $accountOptions);
+  $filterAccountId = max(0, (int) ($_GET['account_id'] ?? 0));
+  if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
+}
 
 $channelOptions = [];
 try {
@@ -186,7 +199,10 @@ JOIN {$channelsTable} ch ON ch.id = c.channel_id
 %s
 ORDER BY COALESCE(ch.instagram_username, ch.page_name, ch.page_id) ASC
 SQL;
-  if (is_super_admin()) {
+  if (is_super_admin() && $filterAccountId > 0) {
+    $channelStmt = $pdo->prepare(sprintf($channelSql, 'WHERE c.account_id = ?'));
+    $channelStmt->execute([$filterAccountId]);
+  } elseif (is_super_admin()) {
     $channelStmt = $pdo->query(sprintf($channelSql, ''));
   } else {
     $channelStmt = $pdo->prepare(sprintf($channelSql, 'WHERE c.account_id = ?'));
@@ -210,6 +226,9 @@ $whereParams = [];
 if (!is_super_admin()) {
   $whereConditions[] = 'c.account_id = :account_id';
   $whereParams[':account_id'] = $currentAccountId;
+} elseif ($filterAccountId > 0) {
+  $whereConditions[] = 'c.account_id = :account_id';
+  $whereParams[':account_id'] = $filterAccountId;
 }
 if ($filterChannelId > 0) {
   $whereConditions[] = 'c.channel_id = :channel_id';
@@ -232,6 +251,7 @@ if ($filterSalesStatus !== '') {
 }
 $funnelWhereSql = $funnelWhereConditions ? 'WHERE ' . implode(' AND ', $funnelWhereConditions) : '';
 $activeFilters = array_filter([
+  'account_id' => $filterAccountId > 0 ? $filterAccountId : null,
   'channel_id' => $filterChannelId > 0 ? $filterChannelId : null,
   'q' => $q,
   'sales_status' => $filterSalesStatus,
@@ -267,6 +287,7 @@ $summaryToneByStatus = [
   'no_responde' => 'muted',
 ];
 $summaryBaseParams = [];
+if ($filterAccountId > 0) $summaryBaseParams['account_id'] = $filterAccountId;
 if ($filterChannelId > 0) $summaryBaseParams['channel_id'] = $filterChannelId;
 if ($q !== '') $summaryBaseParams['q'] = $q;
 function dashboard_query_url(array $params): string {
@@ -506,7 +527,7 @@ function dash_channel_label(array $channel): string {
     .filters-toggle { display:none; align-items:center; justify-content:center; min-height:40px; margin-top:14px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:800; cursor:pointer; }
     .filters-toggle:hover { background:#dff6ff; border-color:#8bdfff; }
     .filters-toggle:active { transform:translateY(1px); }
-    .filters-form { display:grid; grid-template-columns:minmax(260px, 420px) minmax(220px, 320px) auto; gap:10px; align-items:end; justify-content:start; }
+    .filters-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)) auto; gap:10px; align-items:end; justify-content:start; }
     .filter-field { display:grid; gap:6px; min-width:0; }
     .filter-field span { color:var(--brand-muted); font-size:.78rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
     .filter-field input, .filter-field select { width:100%; height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; font-weight:700; }
@@ -676,6 +697,17 @@ function dash_channel_label(array $channel): string {
         <div class="lead-filters" id="leadFilters" aria-label="Filtros de conversaciones">
           <form class="filters-form" method="get" action="dashboard.php">
             <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
+            <?php if (is_super_admin()): ?>
+            <label class="filter-field">
+              <span>Cuenta</span>
+              <select name="account_id">
+                <option value="">Todas</option>
+                <?php foreach ($accountOptions as $account): ?>
+                  <option value="<?= (int) $account['id'] ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+            <?php endif; ?>
             <label class="filter-field">
               <span>Buscar</span>
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Cliente, Instagram o mensaje">

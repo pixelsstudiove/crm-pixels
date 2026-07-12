@@ -47,12 +47,27 @@ try {
   $q = trim((string) ($_GET['q'] ?? ''));
   $selectedId = max(0, (int) ($_GET['id'] ?? 0));
   $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
+  $filterAccountId = 0;
+  if (is_super_admin()) {
+    $accountIds = [];
+    try {
+      $accountStmt = $pdo->query("SELECT id FROM " . accounts_table());
+      $accountIds = $accountStmt ? array_map('intval', $accountStmt->fetchAll(PDO::FETCH_COLUMN)) : [];
+    } catch (Throwable $e) {
+      $accountIds = [];
+    }
+    $filterAccountId = max(0, (int) ($_GET['account_id'] ?? 0));
+    if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
+  }
 
   $where = [];
   $params = [];
   if (!is_super_admin()) {
     $where[] = 'c.account_id = :account_id';
     $params[':account_id'] = $currentAccountId;
+  } elseif ($filterAccountId > 0) {
+    $where[] = 'c.account_id = :account_id';
+    $params[':account_id'] = $filterAccountId;
   }
   if ($filterChannelId > 0) {
     $where[] = 'c.channel_id = :channel_id';
@@ -137,9 +152,13 @@ WHERE c.id = ?
   %s
 LIMIT 1
 SQL;
-    $accountDetailSql = is_super_admin() ? '' : 'AND c.account_id = ?';
+    $accountDetailSql = '';
+    if (!is_super_admin()) $accountDetailSql = 'AND c.account_id = ?';
+    elseif ($filterAccountId > 0) $accountDetailSql = 'AND c.account_id = ?';
     $detailStmt = $pdo->prepare(sprintf($detailSql, $accountDetailSql));
-    $detailParams = is_super_admin() ? [$selectedId] : [$selectedId, $currentAccountId];
+    $detailParams = [$selectedId];
+    if (!is_super_admin()) $detailParams[] = $currentAccountId;
+    elseif ($filterAccountId > 0) $detailParams[] = $filterAccountId;
     $detailStmt->execute($detailParams);
     $selected = $detailStmt->fetch() ?: null;
     if ($selected && empty($selected['lead_id'])) {

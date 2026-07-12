@@ -11,6 +11,19 @@ $logsTable = conv_webhook_logs_table();
 $messagesTable = conv_messages_table();
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 $notice = '';
+$accountOptions = [];
+$filterAccountId = 0;
+if (is_super_admin()) {
+  try {
+    $accountStmt = $pdo->query("SELECT id, name FROM " . accounts_table() . " ORDER BY name ASC");
+    $accountOptions = $accountStmt ? $accountStmt->fetchAll() : [];
+  } catch (Throwable $e) {
+    $accountOptions = [];
+  }
+  $accountIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $accountOptions);
+  $filterAccountId = max(0, (int) ($_GET['account_id'] ?? ($_POST['account_id'] ?? 0)));
+  if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = (string) ($_POST['csrf'] ?? '');
@@ -33,7 +46,9 @@ WHERE l.source='instagram'
 ORDER BY l.id ASC
 LIMIT 500
 SQL;
-    $repairAccountSql = is_super_admin() ? '' : 'AND l.account_id = ' . (int) $currentAccountId;
+    $repairAccountSql = '';
+    if (!is_super_admin()) $repairAccountSql = 'AND l.account_id = ' . (int) $currentAccountId;
+    elseif ($filterAccountId > 0) $repairAccountSql = 'AND l.account_id = ' . (int) $filterAccountId;
     $rows = $pdo->query(sprintf($repairSql, $repairAccountSql))->fetchAll();
     $repaired = 0;
     foreach ($rows as $row) {
@@ -75,6 +90,9 @@ if ($status !== '') {
 if (!is_super_admin()) {
   $whereParts[] = 'account_id = :account_id';
   $params[':account_id'] = $currentAccountId;
+} elseif ($filterAccountId > 0) {
+  $whereParts[] = 'account_id = :account_id';
+  $params[':account_id'] = $filterAccountId;
 }
 $where = $whereParts ? 'WHERE ' . implode(' AND ', $whereParts) : '';
 $stmt = $pdo->prepare("SELECT * FROM {$logsTable} {$where} ORDER BY id DESC LIMIT 150");
@@ -103,6 +121,7 @@ function log_badge_class(string $status): string {
     .logs-link, .logs-btn { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; cursor:pointer; }
     .logs-link:hover, .logs-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .logs-filter { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+    .logs-filter select { min-height:40px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:#071120; background:#fff; font:inherit; font-weight:800; }
     .logs-table-wrap { overflow:auto; border:1px solid rgba(0,212,255,.14); border-radius:16px; background:#fff; }
     .logs-table { width:100%; border-collapse:collapse; font-size:.88rem; min-width:1120px; }
     .logs-table th { background:#071120; color:#eafaff; text-align:left; padding:11px; white-space:nowrap; }
@@ -134,6 +153,14 @@ function log_badge_class(string $status): string {
         </header>
 
         <form class="logs-filter" method="get" action="webhook_logs.php">
+          <?php if (is_super_admin()): ?>
+            <select name="account_id" onchange="this.form.submit()" aria-label="Filtrar por cuenta">
+              <option value="">Todas las cuentas</option>
+              <?php foreach ($accountOptions as $account): ?>
+                <option value="<?= (int) $account['id'] ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          <?php endif; ?>
           <button class="logs-btn" name="status" value="" type="submit">Todos</button>
           <button class="logs-btn" name="status" value="processed" type="submit">Procesados</button>
           <button class="logs-btn" name="status" value="duplicate" type="submit">Duplicados</button>
@@ -145,6 +172,7 @@ function log_badge_class(string $status): string {
         <form method="post" action="webhook_logs.php" style="margin-bottom:14px">
           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
           <input type="hidden" name="action" value="repair_missing_messages">
+          <?php if ($filterAccountId > 0): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
           <button class="logs-btn" type="submit">Reparar historial desde logs</button>
         </form>
 
