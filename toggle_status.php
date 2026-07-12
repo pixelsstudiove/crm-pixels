@@ -33,8 +33,13 @@ try {
 } catch (Throwable $e) { /* ignore */ }
 
 try {
-  $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET status=? WHERE id=?");
-  $upd->execute([$status, $id]);
+  if (is_super_admin()) {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET status=? WHERE id=?");
+    $upd->execute([$status, $id]);
+  } else {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET status=? WHERE id=? AND account_id=?");
+    $upd->execute([$status, $id, (int) (current_account_id() ?: accounts_default_id($pdo))]);
+  }
   echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
   http_response_code(500);

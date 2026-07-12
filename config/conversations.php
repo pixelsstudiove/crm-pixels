@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/instagram_channels.php';
 require_once __DIR__ . '/r2.php';
+require_once __DIR__ . '/accounts.php';
 
 function conv_contacts_table(): string {
   return safe_identifier((string) app_config('database.conversation_contacts_table', 'conversation_contacts'), 'conversation_contacts');
@@ -26,6 +27,9 @@ function conv_webhook_logs_table(): string {
 }
 
 function conv_ensure_schema(PDO $pdo): void {
+  global $DB_NAME;
+  $dbName = (string) ($DB_NAME ?? '');
+  $defaultAccountId = accounts_default_id($pdo);
   $contactsTable = conv_contacts_table();
   $conversationsTable = conv_conversations_table();
   $messagesTable = conv_messages_table();
@@ -35,6 +39,7 @@ function conv_ensure_schema(PDO $pdo): void {
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$contactsTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   external_source VARCHAR(40) NOT NULL,
   external_contact_id VARCHAR(160) NOT NULL,
   display_name VARCHAR(180) NULL,
@@ -43,7 +48,8 @@ CREATE TABLE IF NOT EXISTS {$contactsTable} (
   last_seen_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
+  UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id),
+  KEY idx_account_id (account_id),
   KEY idx_username (username),
   KEY idx_last_seen_at (last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -52,6 +58,7 @@ SQL);
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$conversationsTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   channel_id INT UNSIGNED NULL,
   contact_id INT UNSIGNED NOT NULL,
   lead_id INT UNSIGNED NULL,
@@ -64,7 +71,8 @@ CREATE TABLE IF NOT EXISTS {$conversationsTable} (
   unread_count INT UNSIGNED NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_external_thread (external_source, external_thread_id),
+  UNIQUE KEY uniq_external_thread (account_id, external_source, external_thread_id),
+  KEY idx_account_id (account_id),
   KEY idx_channel_id (channel_id),
   KEY idx_contact_id (contact_id),
   KEY idx_lead_id (lead_id),
@@ -77,6 +85,7 @@ SQL);
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$messagesTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   conversation_id INT UNSIGNED NOT NULL,
   external_message_id TEXT NULL,
   external_message_hash CHAR(64) NULL,
@@ -90,6 +99,7 @@ CREATE TABLE IF NOT EXISTS {$messagesTable} (
   delivery_status VARCHAR(40) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_conversation_message_hash (conversation_id, external_message_hash),
+  KEY idx_account_id (account_id),
   KEY idx_conversation_id (conversation_id),
   KEY idx_direction (direction),
   KEY idx_sent_at (sent_at)
@@ -99,6 +109,7 @@ SQL);
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$attachmentsTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   conversation_id INT UNSIGNED NOT NULL,
   message_id INT UNSIGNED NULL,
   direction VARCHAR(20) NOT NULL,
@@ -112,6 +123,7 @@ CREATE TABLE IF NOT EXISTS {$attachmentsTable} (
   external_attachment_id VARCHAR(180) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_storage_key (storage_key),
+  KEY idx_account_id (account_id),
   KEY idx_conversation_id (conversation_id),
   KEY idx_message_id (message_id),
   KEY idx_media_type (media_type)
@@ -121,6 +133,7 @@ SQL);
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$logsTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   source VARCHAR(40) NOT NULL DEFAULT 'instagram',
   event_type VARCHAR(60) NULL,
   status VARCHAR(40) NOT NULL,
@@ -136,12 +149,21 @@ CREATE TABLE IF NOT EXISTS {$logsTable} (
   payload_json MEDIUMTEXT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   KEY idx_source_created_at (source, created_at),
+  KEY idx_account_id (account_id),
   KEY idx_status (status),
   KEY idx_recipient_id (recipient_id),
   KEY idx_sender_id (sender_id),
   KEY idx_channel_id (channel_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
+
+  if ($dbName !== '') {
+    foreach ([$contactsTable, $conversationsTable, $messagesTable, $attachmentsTable, $logsTable] as $table) {
+      try { accounts_add_account_column($pdo, $dbName, $table, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
+    }
+    accounts_rebuild_unique_index($pdo, $dbName, $contactsTable, 'uniq_external_contact', 'account_id, external_source, external_contact_id');
+    accounts_rebuild_unique_index($pdo, $dbName, $conversationsTable, 'uniq_external_thread', 'account_id, external_source, external_thread_id');
+  }
 
   try { $pdo->exec("ALTER TABLE {$messagesTable} ADD COLUMN external_message_hash CHAR(64) NULL AFTER external_message_id"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("UPDATE {$messagesTable} SET external_message_hash=SHA2(external_message_id, 256) WHERE external_message_hash IS NULL AND external_message_id IS NOT NULL AND external_message_id <> ''"); } catch (Throwable $e) { /* no-op */ }
@@ -168,6 +190,7 @@ function conv_instagram_profile_url(?string $username): ?string {
 
 function conv_upsert_contact(PDO $pdo, array $data): int {
   $table = conv_contacts_table();
+  $accountId = (int) (($data['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $externalSource = conv_clean($data['external_source'] ?? 'instagram', 40) ?? 'instagram';
   $externalContactId = conv_clean($data['external_contact_id'] ?? null, 160);
   if ($externalContactId === null) return 0;
@@ -178,8 +201,8 @@ function conv_upsert_contact(PDO $pdo, array $data): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  external_source, external_contact_id, display_name, username, profile_url, last_seen_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, NOW())
+  account_id, external_source, external_contact_id, display_name, username, profile_url, last_seen_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
 ON DUPLICATE KEY UPDATE
   display_name = COALESCE(VALUES(display_name), display_name),
   username = COALESCE(VALUES(username), username),
@@ -187,15 +210,16 @@ ON DUPLICATE KEY UPDATE
   last_seen_at = COALESCE(VALUES(last_seen_at), last_seen_at),
   updated_at = NOW()
 SQL);
-  $stmt->execute([$externalSource, $externalContactId, $displayName, $username, $profileUrl, $lastSeenAt]);
+  $stmt->execute([$accountId, $externalSource, $externalContactId, $displayName, $username, $profileUrl, $lastSeenAt]);
 
-  $find = $pdo->prepare("SELECT id FROM {$table} WHERE external_source=? AND external_contact_id=? LIMIT 1");
-  $find->execute([$externalSource, $externalContactId]);
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
+  $find->execute([$accountId, $externalSource, $externalContactId]);
   return (int) ($find->fetchColumn() ?: 0);
 }
 
 function conv_upsert_conversation(PDO $pdo, array $data): int {
   $table = conv_conversations_table();
+  $accountId = (int) (($data['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $externalSource = conv_clean($data['external_source'] ?? 'instagram', 40) ?? 'instagram';
   $externalThreadId = conv_clean($data['external_thread_id'] ?? null, 180);
   $contactId = (int) ($data['contact_id'] ?? 0);
@@ -209,9 +233,9 @@ function conv_upsert_conversation(PDO $pdo, array $data): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  channel_id, contact_id, lead_id, external_source, external_thread_id, status,
+  account_id, channel_id, contact_id, lead_id, external_source, external_thread_id, status,
   last_message_preview, last_message_at, unread_count, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
 ON DUPLICATE KEY UPDATE
   channel_id = COALESCE(VALUES(channel_id), channel_id),
   contact_id = VALUES(contact_id),
@@ -221,17 +245,30 @@ ON DUPLICATE KEY UPDATE
   unread_count = unread_count + VALUES(unread_count),
   updated_at = NOW()
 SQL);
-  $stmt->execute([$channelId, $contactId, $leadId, $externalSource, $externalThreadId, $status, $preview, $lastMessageAt, $unreadIncrement]);
+  $stmt->execute([$accountId, $channelId, $contactId, $leadId, $externalSource, $externalThreadId, $status, $preview, $lastMessageAt, $unreadIncrement]);
 
-  $find = $pdo->prepare("SELECT id FROM {$table} WHERE external_source=? AND external_thread_id=? LIMIT 1");
-  $find->execute([$externalSource, $externalThreadId]);
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_thread_id=? LIMIT 1");
+  $find->execute([$accountId, $externalSource, $externalThreadId]);
   return (int) ($find->fetchColumn() ?: 0);
+}
+
+function conv_account_id_for_conversation(PDO $pdo, int $conversationId): int {
+  if ($conversationId <= 0) return accounts_default_id($pdo);
+  $table = conv_conversations_table();
+  try {
+    $stmt = $pdo->prepare("SELECT account_id FROM {$table} WHERE id=? LIMIT 1");
+    $stmt->execute([$conversationId]);
+    return (int) ($stmt->fetchColumn() ?: accounts_default_id($pdo));
+  } catch (Throwable $e) {
+    return accounts_default_id($pdo);
+  }
 }
 
 function conv_add_message(PDO $pdo, array $data): int {
   $table = conv_messages_table();
   $conversationId = (int) ($data['conversation_id'] ?? 0);
   if ($conversationId <= 0) return 0;
+  $accountId = (int) ($data['account_id'] ?? conv_account_id_for_conversation($pdo, $conversationId));
   $externalMessageId = conv_clean($data['external_message_id'] ?? null, 2000);
   $externalMessageHash = $externalMessageId !== null ? hash('sha256', $externalMessageId) : null;
   $direction = conv_clean($data['direction'] ?? 'inbound', 20) ?? 'inbound';
@@ -245,9 +282,9 @@ function conv_add_message(PDO $pdo, array $data): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  conversation_id, external_message_id, external_message_hash, direction, sender_external_id, message_type,
+  account_id, conversation_id, external_message_id, external_message_hash, direction, sender_external_id, message_type,
   message_text, payload_json, sent_by, sent_at, delivery_status
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   direction = VALUES(direction),
   sender_external_id = VALUES(sender_external_id),
@@ -258,7 +295,7 @@ ON DUPLICATE KEY UPDATE
   sent_at = VALUES(sent_at),
   delivery_status = VALUES(delivery_status)
 SQL);
-  $stmt->execute([$conversationId, $externalMessageId, $externalMessageHash, $direction, $senderExternalId, $messageType, $messageText, $payloadJson, $sentBy, $sentAt, $deliveryStatus]);
+  $stmt->execute([$accountId, $conversationId, $externalMessageId, $externalMessageHash, $direction, $senderExternalId, $messageType, $messageText, $payloadJson, $sentBy, $sentAt, $deliveryStatus]);
   $insertedId = (int) $pdo->lastInsertId();
   if ($insertedId > 0) return $insertedId;
   if ($externalMessageHash === null) return 0;
@@ -273,6 +310,7 @@ function conv_add_attachment(PDO $pdo, array $data): int {
   $conversationId = (int) ($data['conversation_id'] ?? 0);
   $storageKey = conv_clean($data['storage_key'] ?? null, 500);
   if ($conversationId <= 0 || $storageKey === null) return 0;
+  $accountId = (int) ($data['account_id'] ?? conv_account_id_for_conversation($pdo, $conversationId));
   $messageId = isset($data['message_id']) ? (int) $data['message_id'] : null;
   $direction = conv_clean($data['direction'] ?? 'inbound', 20) ?? 'inbound';
   $mediaType = conv_clean($data['media_type'] ?? 'image', 40) ?? 'image';
@@ -285,9 +323,9 @@ function conv_add_attachment(PDO $pdo, array $data): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  conversation_id, message_id, direction, media_type, mime_type, file_size,
+  account_id, conversation_id, message_id, direction, media_type, mime_type, file_size,
   storage_disk, storage_key, original_url, filename, external_attachment_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
   message_id = COALESCE(VALUES(message_id), message_id),
   mime_type = COALESCE(VALUES(mime_type), mime_type),
@@ -296,7 +334,7 @@ ON DUPLICATE KEY UPDATE
   filename = COALESCE(VALUES(filename), filename),
   external_attachment_id = COALESCE(VALUES(external_attachment_id), external_attachment_id)
 SQL);
-  $stmt->execute([$conversationId, $messageId, $direction, $mediaType, $mimeType, $fileSize, $storageDisk, $storageKey, $originalUrl, $filename, $externalAttachmentId]);
+  $stmt->execute([$accountId, $conversationId, $messageId, $direction, $mediaType, $mimeType, $fileSize, $storageDisk, $storageKey, $originalUrl, $filename, $externalAttachmentId]);
   $insertedId = (int) $pdo->lastInsertId();
   if ($insertedId > 0) return $insertedId;
   $find = $pdo->prepare("SELECT id FROM {$table} WHERE storage_key=? LIMIT 1");
@@ -340,13 +378,15 @@ function conv_log_webhook_event(PDO $pdo, array $data): void {
   try {
     conv_ensure_schema($pdo);
     $table = conv_webhook_logs_table();
+    $accountId = (int) (($data['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
     $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  source, event_type, status, recipient_id, sender_id, channel_id, channel_username,
+  account_id, source, event_type, status, recipient_id, sender_id, channel_id, channel_username,
   external_message_id, lead_id, conversation_id, message_preview, error_message, payload_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 SQL);
     $stmt->execute([
+      $accountId,
       conv_clean($data['source'] ?? 'instagram', 40) ?? 'instagram',
       conv_clean($data['event_type'] ?? null, 60),
       conv_clean($data['status'] ?? 'received', 40) ?? 'received',
@@ -494,6 +534,7 @@ function conv_ensure_lead_for_conversation(PDO $pdo, string $leadsTable, int $co
   $stmt = $pdo->prepare(<<<SQL
 SELECT
   c.id,
+  c.account_id,
   c.lead_id,
   c.channel_id,
   c.external_source,
@@ -518,6 +559,7 @@ SQL);
   $conversation = $stmt->fetch();
   if (!$conversation) return 0;
 
+  $accountId = (int) (($conversation['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $currentLeadId = (int) ($conversation['lead_id'] ?? 0);
   if ($currentLeadId > 0) return $currentLeadId;
 
@@ -536,8 +578,8 @@ SQL);
     ?? 'unknown';
   $contactKey = $recipientId . ':' . $senderId;
 
-  $existing = $pdo->prepare("SELECT id FROM {$leadsTable} WHERE external_source=? AND external_contact_id=? LIMIT 1");
-  $existing->execute(['instagram', $contactKey]);
+  $existing = $pdo->prepare("SELECT id FROM {$leadsTable} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
+  $existing->execute([$accountId, 'instagram', $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
 
   $displayName = conv_clean($conversation['display_name'] ?? null, 180);
@@ -550,16 +592,17 @@ SQL);
   if ($leadId <= 0) {
     $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$leadsTable} (
-  fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
+  account_id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
   source_platform, utm_source, utm_medium, sales_status, status, whatsapp_sent, whatsapp_status,
   external_source, external_contact_id, external_thread_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
-  ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
+  ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
   'Instagram DM', 'instagram', 'dm', ?, 'pending', 0, 'disabled',
   'instagram', ?, ?, ?, ?, ?
 )
 SQL);
     $insert->execute([
+      $accountId,
       $fullname,
       $brandInstagram,
       (string) app_config('instagram.default_business_type', 'Instagram DM'),
@@ -591,8 +634,8 @@ SQL);
   }
 
   if ($leadId > 0) {
-    $link = $pdo->prepare("UPDATE {$conversationsTable} SET lead_id=?, updated_at=NOW() WHERE id=? AND (lead_id IS NULL OR lead_id=0)");
-    $link->execute([$leadId, $conversationId]);
+    $link = $pdo->prepare("UPDATE {$conversationsTable} SET lead_id=?, account_id=?, updated_at=NOW() WHERE id=? AND (lead_id IS NULL OR lead_id=0)");
+    $link->execute([$leadId, $accountId, $conversationId]);
   }
 
   return $leadId;
@@ -602,7 +645,7 @@ function conv_backfill_from_leads(PDO $pdo, string $leadsTable): int {
   conv_ensure_schema($pdo);
   $channelsTable = ig_channels_table();
   $stmt = $pdo->query(<<<SQL
-SELECT id, fullname, brand_instagram, external_source, external_contact_id, external_thread_id,
+SELECT id, account_id, fullname, brand_instagram, external_source, external_contact_id, external_thread_id,
        last_external_message_id, last_message_at, last_inbound_message, message, created_at
 FROM {$leadsTable}
 WHERE external_source='instagram'
@@ -613,6 +656,7 @@ SQL);
   $count = 0;
 
   foreach ($leads as $lead) {
+    $accountId = (int) (($lead['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
     $threadId = conv_clean($lead['external_thread_id'] ?? $lead['external_contact_id'] ?? null, 180);
     if ($threadId === null) continue;
     $parts = explode(':', $threadId);
@@ -637,6 +681,7 @@ SQL);
     $messageAt = conv_clean($lead['last_message_at'] ?? $lead['created_at'] ?? gmdate('Y-m-d H:i:s'), 30) ?? gmdate('Y-m-d H:i:s');
 
     $contactId = conv_upsert_contact($pdo, [
+      'account_id' => $accountId,
       'external_source' => 'instagram',
       'external_contact_id' => $senderId,
       'display_name' => $displayName,
@@ -646,6 +691,7 @@ SQL);
     if ($contactId <= 0) continue;
 
     $conversationId = conv_upsert_conversation($pdo, [
+      'account_id' => $accountId,
       'channel_id' => $channel['id'] ?? null,
       'contact_id' => $contactId,
       'lead_id' => (int) $lead['id'],
@@ -658,6 +704,7 @@ SQL);
     if ($conversationId <= 0) continue;
 
     conv_add_message($pdo, [
+      'account_id' => $accountId,
       'conversation_id' => $conversationId,
       'external_message_id' => conv_clean($lead['last_external_message_id'] ?? null, 2000),
       'direction' => 'inbound',

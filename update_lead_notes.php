@@ -29,6 +29,7 @@ if ($id <= 0 || mb_strlen($notes) > 2000) {
 }
 
 try {
+  $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
   $chk = $pdo->prepare('SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?');
   $chk->execute([$DB_NAME, $TABLE_LEADS, 'notes']);
   if (!$chk->fetch()) {
@@ -39,10 +40,17 @@ try {
     $pdo->exec("ALTER TABLE {$TABLE_LEADS} ADD COLUMN updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP");
   }
 
-  $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET notes=?, updated_at=NOW() WHERE id=?");
-  $upd->execute([$notes !== '' ? $notes : null, $id]);
-  $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=?");
-  $stamp->execute([$id]);
+  if (is_super_admin()) {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET notes=?, updated_at=NOW() WHERE id=?");
+    $upd->execute([$notes !== '' ? $notes : null, $id]);
+    $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=?");
+    $stamp->execute([$id]);
+  } else {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET notes=?, updated_at=NOW() WHERE id=? AND account_id=?");
+    $upd->execute([$notes !== '' ? $notes : null, $id, $currentAccountId]);
+    $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=? AND account_id=?");
+    $stamp->execute([$id, $currentAccountId]);
+  }
   $updatedAt = (string) ($stamp->fetchColumn() ?: '');
 
   echo json_encode(['ok' => true, 'updated_at' => $updatedAt], JSON_UNESCAPED_UNICODE);

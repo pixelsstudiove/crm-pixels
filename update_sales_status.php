@@ -52,6 +52,7 @@ if (mb_strlen($changeReason) < 4) {
 }
 
 try {
+  $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
   $chk = $pdo->prepare('SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?');
   $chk->execute([$DB_NAME, $TABLE_LEADS, 'sales_status']);
   if (!$chk->fetch()) {
@@ -68,9 +69,19 @@ try {
     try { $pdo->exec("ALTER TABLE {$TABLE_LEADS} ADD KEY idx_sales_status (sales_status)"); } catch (Throwable $e) { /* índice existente */ }
   }
 
-  $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? LIMIT 1");
-  $current->execute([$id]);
+  if (is_super_admin()) {
+    $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? LIMIT 1");
+    $current->execute([$id]);
+  } else {
+    $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? AND account_id=? LIMIT 1");
+    $current->execute([$id, $currentAccountId]);
+  }
   $previousStatus = (string) ($current->fetchColumn() ?: '');
+  if ($previousStatus === '') {
+    http_response_code(404);
+    echo json_encode(['ok' => false, 'error' => 'Lead no encontrado para esta cuenta.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   if ($previousStatus === $salesStatus) {
     echo json_encode([
       'ok' => true,
@@ -82,11 +93,18 @@ try {
     exit;
   }
 
-  $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
-  $upd->execute([$salesStatus, $id]);
+  if (is_super_admin()) {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
+    $upd->execute([$salesStatus, $id]);
+    $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=?");
+    $stamp->execute([$id]);
+  } else {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=? AND account_id=?");
+    $upd->execute([$salesStatus, $id, $currentAccountId]);
+    $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=? AND account_id=?");
+    $stamp->execute([$id, $currentAccountId]);
+  }
   lead_status_history_record($pdo, $id, $previousStatus !== '' ? $previousStatus : null, $salesStatus, $changeReason);
-  $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=?");
-  $stamp->execute([$id]);
   $updatedAt = (string) ($stamp->fetchColumn() ?: '');
 
   echo json_encode([

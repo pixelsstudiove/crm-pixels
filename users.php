@@ -5,6 +5,18 @@ require_once __DIR__ . '/auth/require_auth.php';
 require_permission('manage_users');
 
 $roleProfiles = role_profiles();
+if (!is_super_admin()) {
+  $roleProfiles = array_intersect_key($roleProfiles, ['vendedor' => true]);
+}
+$defaultAccountId = accounts_default_id($pdo);
+$currentAccountId = (int) (current_account_id() ?: $defaultAccountId);
+$accounts = [];
+try {
+  $accountsStmt = $pdo->query("SELECT id, name, slug, status FROM " . accounts_table() . " ORDER BY name ASC");
+  $accounts = $accountsStmt ? $accountsStmt->fetchAll() : [];
+} catch (Throwable $e) {
+  $accounts = [];
+}
 $errors = [];
 $notice = '';
 
@@ -19,8 +31,13 @@ function super_admin_count(PDO $pdo, string $table): int {
 }
 
 function find_user(PDO $pdo, string $table, int $id): ?array {
-  $stmt = $pdo->prepare("SELECT id, username, role FROM {$table} WHERE id=? LIMIT 1");
-  $stmt->execute([$id]);
+  if (is_super_admin()) {
+    $stmt = $pdo->prepare("SELECT id, account_id, username, role FROM {$table} WHERE id=? LIMIT 1");
+    $stmt->execute([$id]);
+  } else {
+    $stmt = $pdo->prepare("SELECT id, account_id, username, role FROM {$table} WHERE id=? AND account_id=? LIMIT 1");
+    $stmt->execute([$id, (int) (current_account_id() ?: accounts_default_id($pdo))]);
+  }
   $row = $stmt->fetch();
   return $row ?: null;
 }
@@ -37,16 +54,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $role = trim((string) ($_POST['role'] ?? ''));
       $password = (string) ($_POST['password'] ?? '');
       $confirm = (string) ($_POST['confirm'] ?? '');
+      $targetAccountId = is_super_admin() ? max(0, (int) ($_POST['account_id'] ?? $currentAccountId)) : $currentAccountId;
 
       if (!valid_username($username)) $errors[] = 'El usuario debe tener entre 3 y 60 caracteres. Usa letras, números, punto, guion o guion bajo.';
       if (!array_key_exists($role, $roleProfiles)) $errors[] = 'Selecciona un rol válido.';
+      if ($targetAccountId <= 0) $errors[] = 'Selecciona una cuenta válida.';
       if (strlen($password) < 8) $errors[] = 'La contraseña debe tener al menos 8 caracteres.';
       if ($password !== $confirm) $errors[] = 'La confirmación de contraseña no coincide.';
 
       if (!$errors) {
         try {
-          $stmt = $pdo->prepare("INSERT INTO {$TABLE_USERS} (username, password_hash, role) VALUES (?, ?, ?)");
-          $stmt->execute([$username, password_hash($password, PASSWORD_DEFAULT), $role]);
+          $stmt = $pdo->prepare("INSERT INTO {$TABLE_USERS} (account_id, username, password_hash, role) VALUES (?, ?, ?, ?)");
+          $stmt->execute([$targetAccountId, $username, password_hash($password, PASSWORD_DEFAULT), $role]);
           $notice = 'Usuario creado correctamente.';
         } catch (Throwable $e) {
           $errors[] = 'No se pudo crear el usuario. Verifica que el nombre no esté repetido.';
@@ -57,10 +76,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $role = trim((string) ($_POST['role'] ?? ''));
       $password = (string) ($_POST['password'] ?? '');
       $confirm = (string) ($_POST['confirm'] ?? '');
+      $targetAccountId = is_super_admin() ? max(0, (int) ($_POST['account_id'] ?? 0)) : $currentAccountId;
       $target = $id > 0 ? find_user($pdo, $TABLE_USERS, $id) : null;
 
       if (!$target) $errors[] = 'Usuario no encontrado.';
       if (!array_key_exists($role, $roleProfiles)) $errors[] = 'Selecciona un rol válido.';
+      if ($targetAccountId <= 0) $errors[] = 'Selecciona una cuenta válida.';
       if ($password !== '' && strlen($password) < 8) $errors[] = 'La nueva contraseña debe tener al menos 8 caracteres.';
       if ($password !== $confirm) $errors[] = 'La confirmación de contraseña no coincide.';
 
@@ -70,15 +91,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($target && normalize_role($target['role'] ?? '') === 'super_admin' && $role !== 'super_admin' && super_admin_count($pdo, $TABLE_USERS) <= 1) {
         $errors[] = 'Debe existir al menos un super administrador activo.';
       }
+      if (!is_super_admin() && normalize_role($target['role'] ?? '') !== 'vendedor') {
+        $errors[] = 'Solo puedes actualizar vendedores de tu cuenta.';
+      }
 
       if (!$errors) {
         try {
           if ($password !== '') {
-            $stmt = $pdo->prepare("UPDATE {$TABLE_USERS} SET role=?, password_hash=? WHERE id=?");
-            $stmt->execute([$role, password_hash($password, PASSWORD_DEFAULT), $id]);
+            $stmt = $pdo->prepare("UPDATE {$TABLE_USERS} SET account_id=?, role=?, password_hash=? WHERE id=?");
+            $stmt->execute([$targetAccountId, $role, password_hash($password, PASSWORD_DEFAULT), $id]);
           } else {
-            $stmt = $pdo->prepare("UPDATE {$TABLE_USERS} SET role=? WHERE id=?");
-            $stmt->execute([$role, $id]);
+            $stmt = $pdo->prepare("UPDATE {$TABLE_USERS} SET account_id=?, role=? WHERE id=?");
+            $stmt->execute([$targetAccountId, $role, $id]);
           }
           $notice = 'Usuario actualizado correctamente.';
         } catch (Throwable $e) {
@@ -91,7 +115,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $users = [];
 try {
-  $stmt = $pdo->query("SELECT id, username, role, created_at FROM {$TABLE_USERS} ORDER BY id ASC");
+  $accountsTable = accounts_table();
+  if (is_super_admin()) {
+    $stmt = $pdo->query("SELECT u.id, u.account_id, u.username, u.role, u.created_at, a.name AS account_name FROM {$TABLE_USERS} u LEFT JOIN {$accountsTable} a ON a.id = u.account_id ORDER BY u.id ASC");
+  } else {
+    $stmt = $pdo->prepare("SELECT u.id, u.account_id, u.username, u.role, u.created_at, a.name AS account_name FROM {$TABLE_USERS} u LEFT JOIN {$accountsTable} a ON a.id = u.account_id WHERE u.account_id=? ORDER BY u.id ASC");
+    $stmt->execute([$currentAccountId]);
+  }
   $users = $stmt ? $stmt->fetchAll() : [];
 } catch (Throwable $e) {
   $errors[] = 'No se pudo cargar la lista de usuarios.';
@@ -122,7 +152,7 @@ try {
     .users-table th { background:#071120; color:#eafaff; text-align:left; padding:12px; white-space:nowrap; }
     .users-table td { padding:12px; border-bottom:1px solid rgba(0,68,99,.10); vertical-align:top; background:#fbfdff; }
     .role-description { color:var(--brand-muted); font-size:.82rem; line-height:1.35; max-width:280px; }
-    .inline-fields { display:grid; grid-template-columns:minmax(170px, 220px) minmax(170px, 1fr) minmax(170px, 1fr) auto; gap:8px; align-items:start; min-width:720px; }
+    .inline-fields { display:grid; grid-template-columns:repeat(4, minmax(150px, 1fr)) auto; gap:8px; align-items:start; min-width:860px; }
     .notice { display:block; margin-bottom:14px; }
     @media (max-width: 920px) { .users-grid { grid-template-columns:1fr; } .inline-fields { min-width:680px; } }
   </style>
@@ -139,6 +169,7 @@ try {
           </div>
           <div class="users-actions">
             <a class="users-link" href="dashboard.php">Volver al dashboard</a>
+            <?php if (can('manage_accounts')): ?><a class="users-link" href="accounts.php">Gestionar cuentas</a><?php endif; ?>
           </div>
         </header>
 
@@ -155,6 +186,16 @@ try {
                 <span class="field-label">Usuario</span>
                 <input type="text" name="username" minlength="3" maxlength="60" required>
               </label>
+              <?php if (is_super_admin()): ?>
+              <label class="field">
+                <span class="field-label">Cuenta</span>
+                <select name="account_id" required>
+                  <?php foreach ($accounts as $account): ?>
+                    <option value="<?= (int) $account['id'] ?>" <?= (int) $account['id'] === $currentAccountId ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+              <?php endif; ?>
               <label class="field">
                 <span class="field-label">Rol</span>
                 <select name="role" required>
@@ -194,6 +235,7 @@ try {
                       <td>
                         <strong><?= h($user['username'] ?? '') ?></strong><br>
                         <small>ID #<?= (int) $user['id'] ?> · <?= h((string) ($user['created_at'] ?? '')) ?></small>
+                        <?php if (is_super_admin()): ?><br><small>Cuenta: <?= h((string) ($user['account_name'] ?? 'Cuenta por defecto')) ?></small><?php endif; ?>
                       </td>
                       <td>
                         <strong><?= h(role_label($userRole)) ?></strong>
@@ -204,6 +246,15 @@ try {
                           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                           <input type="hidden" name="action" value="update_user">
                           <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
+                          <?php if (is_super_admin()): ?>
+                          <select name="account_id" aria-label="Cuenta">
+                            <?php foreach ($accounts as $account): ?>
+                              <option value="<?= (int) $account['id'] ?>" <?= (int) ($user['account_id'] ?? 0) === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
+                            <?php endforeach; ?>
+                          </select>
+                          <?php else: ?>
+                          <input type="hidden" name="account_id" value="<?= $currentAccountId ?>">
+                          <?php endif; ?>
                           <select name="role" aria-label="Rol">
                             <?php foreach ($roleProfiles as $roleKey => $profile): ?>
                               <option value="<?= h($roleKey) ?>" <?= $userRole === (string) $roleKey ? 'selected' : '' ?>><?= h($profile['label'] ?? $roleKey) ?></option>

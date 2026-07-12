@@ -7,6 +7,7 @@ require_permission('manage_integrations');
 
 $channelsTable = ig_channels_table();
 ig_channels_ensure_schema($pdo, $channelsTable);
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
@@ -19,12 +20,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'disconnect' && $id > 0) {
-      $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=?");
-      $stmt->execute([$id]);
+      if (is_super_admin()) {
+        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=?");
+        $stmt->execute([$id]);
+      } else {
+        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=? AND account_id=?");
+        $stmt->execute([$id, $currentAccountId]);
+      }
       $notice = 'Canal desconectado.';
     } elseif ($action === 'connect' && $id > 0) {
-      $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
-      $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
+      if (is_super_admin()) {
+        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
+        $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
+      } else {
+        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=? AND account_id=?");
+        $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id, $currentAccountId]);
+      }
       $notice = 'Canal conectado. Los proximos mensajes entraran al inbox.';
     }
   }
@@ -51,7 +62,12 @@ if ($canConnect) {
 
 $channels = [];
 try {
-  $stmt = $pdo->query("SELECT * FROM {$channelsTable} ORDER BY is_active DESC, updated_at DESC, created_at DESC");
+  if (is_super_admin()) {
+    $stmt = $pdo->query("SELECT * FROM {$channelsTable} ORDER BY is_active DESC, updated_at DESC, created_at DESC");
+  } else {
+    $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE account_id=? ORDER BY is_active DESC, updated_at DESC, created_at DESC");
+    $stmt->execute([$currentAccountId]);
+  }
   $channels = $stmt ? $stmt->fetchAll() : [];
 } catch (Throwable $e) {
   $errors[] = 'No se pudieron cargar los canales.';

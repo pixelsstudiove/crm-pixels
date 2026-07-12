@@ -12,6 +12,7 @@ $contactsTable = conv_contacts_table();
 $conversationsTable = conv_conversations_table();
 $messagesTable = conv_messages_table();
 $channelsTable = ig_channels_table();
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $canSendMessages = can('send_messages');
 $canManageConversations = can('manage_conversations') || can('send_messages');
@@ -69,8 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'update_status' && $canManageConversations && $conversationId > 0) {
       $status = (string) ($_POST['status'] ?? '');
       if (array_key_exists($status, $statusOptions)) {
-        $stmt = $pdo->prepare("UPDATE {$conversationsTable} SET status=?, updated_at=NOW() WHERE id=?");
-        $stmt->execute([$status, $conversationId]);
+        if (is_super_admin()) {
+          $stmt = $pdo->prepare("UPDATE {$conversationsTable} SET status=?, updated_at=NOW() WHERE id=?");
+          $stmt->execute([$status, $conversationId]);
+        } else {
+          $stmt = $pdo->prepare("UPDATE {$conversationsTable} SET status=?, updated_at=NOW() WHERE id=? AND account_id=?");
+          $stmt->execute([$status, $conversationId, $currentAccountId]);
+        }
         if (inbox_wants_json()) {
           header('Content-Type: application/json; charset=utf-8');
           echo json_encode(['ok' => true, 'status' => $status, 'label' => (string) $statusOptions[$status], 'notice' => 'Estado actualizado.'], JSON_UNESCAPED_UNICODE);
@@ -92,21 +98,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (inbox_wants_json()) inbox_json_error('Indica el motivo del cambio.');
         $errors[] = 'Indica el motivo del cambio.';
       } else {
-        $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? LIMIT 1");
-        $current->execute([$leadId]);
-        $previousStatus = (string) ($current->fetchColumn() ?: '');
-        $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
-        $stmt->execute([$salesStatus, $leadId]);
-        if ($previousStatus !== $salesStatus) {
-          lead_status_history_record($pdo, $leadId, $previousStatus !== '' ? $previousStatus : null, $salesStatus, $changeReason);
+        if (is_super_admin()) {
+          $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? LIMIT 1");
+          $current->execute([$leadId]);
+        } else {
+          $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? AND account_id=? LIMIT 1");
+          $current->execute([$leadId, $currentAccountId]);
         }
-        if (inbox_wants_json()) {
-          header('Content-Type: application/json; charset=utf-8');
-          echo json_encode(['ok' => true, 'sales_status' => $salesStatus, 'label' => (string) $salesStatusOptions[$salesStatus], 'notice' => 'Status comercial actualizado.'], JSON_UNESCAPED_UNICODE);
+        $previousStatus = (string) ($current->fetchColumn() ?: '');
+        if ($previousStatus === '') {
+          if (inbox_wants_json()) inbox_json_error('Lead no encontrado para esta cuenta.', 404);
+          $errors[] = 'Lead no encontrado para esta cuenta.';
+        } else {
+          if (is_super_admin()) {
+            $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
+            $stmt->execute([$salesStatus, $leadId]);
+          } else {
+            $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=? AND account_id=?");
+            $stmt->execute([$salesStatus, $leadId, $currentAccountId]);
+          }
+          if ($previousStatus !== $salesStatus) {
+            lead_status_history_record($pdo, $leadId, $previousStatus !== '' ? $previousStatus : null, $salesStatus, $changeReason);
+          }
+          if (inbox_wants_json()) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => true, 'sales_status' => $salesStatus, 'label' => (string) $salesStatusOptions[$salesStatus], 'notice' => 'Status comercial actualizado.'], JSON_UNESCAPED_UNICODE);
+            exit;
+          }
+          header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
           exit;
         }
-        header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
-        exit;
       }
     } elseif (inbox_wants_json()) {
       inbox_json_error('No tienes permiso o la accion no es valida.', 403);
@@ -121,12 +142,19 @@ $selectedId = max(0, (int) ($_GET['id'] ?? 0));
 
 $channelOptions = [];
 try {
-  $channelStmt = $pdo->query(<<<SQL
+  $channelSql = <<<SQL
 SELECT DISTINCT ch.id, ch.page_name, ch.page_id, ch.instagram_username
 FROM {$conversationsTable} c
 JOIN {$channelsTable} ch ON ch.id = c.channel_id
+%s
 ORDER BY COALESCE(ch.instagram_username, ch.page_name, ch.page_id) ASC
-SQL);
+SQL;
+  if (is_super_admin()) {
+    $channelStmt = $pdo->query(sprintf($channelSql, ''));
+  } else {
+    $channelStmt = $pdo->prepare(sprintf($channelSql, 'WHERE c.account_id = ?'));
+    $channelStmt->execute([$currentAccountId]);
+  }
   $channelOptions = $channelStmt ? $channelStmt->fetchAll() : [];
 } catch (Throwable $e) {
   $channelOptions = [];
@@ -137,6 +165,10 @@ if ($filterChannelId > 0 && !in_array($filterChannelId, $channelIds, true)) $fil
 
 $where = [];
 $params = [];
+if (!is_super_admin()) {
+  $where[] = 'c.account_id = :account_id';
+  $params[':account_id'] = $currentAccountId;
+}
 if ($filterChannelId > 0) {
   $where[] = 'c.channel_id = :channel_id';
   $params[':channel_id'] = $filterChannelId;
@@ -205,14 +237,17 @@ JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
 LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id
 WHERE c.id = ?
+  %s
 LIMIT 1
 SQL;
-  $detailStmt = $pdo->prepare($detailSql);
-  $detailStmt->execute([$selectedId]);
+  $accountDetailSql = is_super_admin() ? '' : 'AND c.account_id = ?';
+  $detailStmt = $pdo->prepare(sprintf($detailSql, $accountDetailSql));
+  $detailParams = is_super_admin() ? [$selectedId] : [$selectedId, $currentAccountId];
+  $detailStmt->execute($detailParams);
   $selected = $detailStmt->fetch() ?: null;
   if ($selected && empty($selected['lead_id'])) {
     conv_ensure_lead_for_conversation($pdo, $TABLE_LEADS, (int) $selected['id']);
-    $detailStmt->execute([$selectedId]);
+    $detailStmt->execute($detailParams);
     $selected = $detailStmt->fetch() ?: null;
   }
   if ($selected) conv_mark_read($pdo, (int) $selected['id']);
@@ -453,6 +488,7 @@ function inbox_visible_message_text($value, array $attachments): string {
               <div class="menu-panel" role="menu">
                 <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
                 <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
+                <?php if (can('manage_accounts')): ?><a class="menu-item" href="accounts.php">Gestión de cuentas</a><?php endif; ?>
                 <?php if ($canManageUsers): ?><a class="menu-item" href="users.php">Gestión de usuarios</a><?php endif; ?>
                 <form class="menu-form" action="logout.php" method="post">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">

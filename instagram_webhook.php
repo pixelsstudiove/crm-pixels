@@ -49,10 +49,12 @@ function ig_validate_signature(string $rawBody): bool {
 }
 
 function ig_ensure_leads_schema(PDO $pdo, string $dbName, string $table): void {
+  $defaultAccountId = accounts_default_id($pdo);
   $defaultSalesStatus = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) app_config('sales_funnel.default_status', 'nuevo_lead')) ?: 'nuevo_lead';
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$table} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   fullname VARCHAR(120) NOT NULL,
   phone VARCHAR(64) NULL,
   email VARCHAR(150) NULL,
@@ -93,7 +95,8 @@ CREATE TABLE IF NOT EXISTS {$table} (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_phone (phone),
-  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
+  UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id),
+  KEY idx_account_id (account_id),
   KEY idx_source_platform (source_platform),
   KEY idx_sales_status (sales_status),
   KEY idx_created_at (created_at),
@@ -101,7 +104,11 @@ CREATE TABLE IF NOT EXISTS {$table} (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
 
+  try { accounts_add_account_column($pdo, $dbName, $table, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
+  accounts_rebuild_unique_index($pdo, $dbName, $table, 'uniq_external_contact', 'account_id, external_source, external_contact_id');
+
   $columns = [
+    'account_id' => "ALTER TABLE {$table} ADD COLUMN account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId} AFTER id",
     'phone' => "ALTER TABLE {$table} ADD COLUMN phone VARCHAR(64) NULL AFTER fullname",
     'email' => "ALTER TABLE {$table} ADD COLUMN email VARCHAR(150) NULL AFTER phone",
     'brand_instagram' => "ALTER TABLE {$table} ADD COLUMN brand_instagram VARCHAR(120) NULL AFTER email",
@@ -158,7 +165,8 @@ SQL);
   }
 
   $indexes = [
-    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (external_source, external_contact_id)",
+    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
+    'idx_account_id' => "ALTER TABLE {$table} ADD KEY idx_account_id (account_id)",
     'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
   ];
   foreach ($indexes as $index => $sql) {
@@ -385,7 +393,9 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
 function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): array {
   try {
     conv_ensure_schema($pdo);
+    $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
     $contactId = conv_upsert_contact($pdo, [
+      'account_id' => $accountId,
       'external_source' => 'instagram',
       'external_contact_id' => $senderId,
       'display_name' => $profileName ?: $profileUsername,
@@ -395,6 +405,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
     if ($contactId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar el contacto.'];
 
     $conversationId = conv_upsert_conversation($pdo, [
+      'account_id' => $accountId,
       'channel_id' => $channel['id'] ?? null,
       'contact_id' => $contactId,
       'lead_id' => $leadId > 0 ? $leadId : null,
@@ -430,6 +441,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
     if ($inserted > 0) {
       $attachmentResult = ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel);
       conv_upsert_conversation($pdo, [
+        'account_id' => $accountId,
         'channel_id' => $channel['id'] ?? null,
         'contact_id' => $contactId,
         'lead_id' => $leadId > 0 ? $leadId : null,
@@ -489,6 +501,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
     ]);
     return 0;
   }
+  $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
 
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
@@ -500,8 +513,8 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
 
   $contactKey = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
 
-  $existing = $pdo->prepare("SELECT id FROM {$table} WHERE external_source=? AND external_contact_id=? LIMIT 1");
-  $existing->execute(['instagram', $contactKey]);
+  $existing = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
+  $existing->execute([$accountId, 'instagram', $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
 
   if ($leadId > 0) {
@@ -537,6 +550,7 @@ SQL);
     $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
     conv_log_webhook_event($pdo, [
       'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
+      'account_id' => $accountId,
       'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
       'recipient_id' => $recipientId,
       'sender_id' => $senderId,
@@ -558,18 +572,19 @@ SQL);
 
   $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
+  account_id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
   source_platform, utm_source, utm_medium, utm_campaign, utm_content, ad_name, ad_id,
   sales_status, status, whatsapp_sent, whatsapp_status, external_source, external_contact_id, external_thread_id,
   last_external_message_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
-  ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
+  ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
   'Instagram DM', 'instagram', 'dm', ?, ?, ?, ?,
   ?, 'pending', 0, 'disabled', 'instagram', ?, ?,
   ?, ?, ?, ?
 )
 SQL);
   $insert->execute([
+    $accountId,
     $fullname,
     $brandInstagram,
     (string) app_config('instagram.default_business_type', 'Instagram DM'),
@@ -605,6 +620,7 @@ SQL);
   $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
   conv_log_webhook_event($pdo, [
     'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
+    'account_id' => $accountId,
     'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
     'recipient_id' => $recipientId,
     'sender_id' => $senderId,

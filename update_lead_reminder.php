@@ -62,11 +62,20 @@ try {
     try { $pdo->exec("ALTER TABLE {$TABLE_LEADS} ADD KEY idx_reminder_at (reminder_at)"); } catch (Throwable $e) { /* índice existente */ }
   }
 
-  $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET reminder_at=?, reminder_note=?, updated_at=NOW() WHERE id=?");
-  $upd->execute([$reminderAt, $reminderNote !== '' ? $reminderNote : null, $id]);
+  $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
+  if (is_super_admin()) {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET reminder_at=?, reminder_note=?, updated_at=NOW() WHERE id=?");
+    $upd->execute([$reminderAt, $reminderNote !== '' ? $reminderNote : null, $id]);
 
-  $stamp = $pdo->prepare("SELECT reminder_at, reminder_note, updated_at FROM {$TABLE_LEADS} WHERE id=?");
-  $stamp->execute([$id]);
+    $stamp = $pdo->prepare("SELECT reminder_at, reminder_note, updated_at FROM {$TABLE_LEADS} WHERE id=?");
+    $stamp->execute([$id]);
+  } else {
+    $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET reminder_at=?, reminder_note=?, updated_at=NOW() WHERE id=? AND account_id=?");
+    $upd->execute([$reminderAt, $reminderNote !== '' ? $reminderNote : null, $id, $currentAccountId]);
+
+    $stamp = $pdo->prepare("SELECT reminder_at, reminder_note, updated_at FROM {$TABLE_LEADS} WHERE id=? AND account_id=?");
+    $stamp->execute([$id, $currentAccountId]);
+  }
   $row = $stamp->fetch() ?: [];
 
   echo json_encode([

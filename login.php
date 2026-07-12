@@ -2,14 +2,19 @@
 // login.php
 declare(strict_types=1);
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/accounts.php';
+
+$defaultAccountId = accounts_ensure_runtime_schema($pdo, $DB_NAME);
 
 $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$TABLE_USERS} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   username VARCHAR(60) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(30) NOT NULL DEFAULT 'super_admin',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_account_id (account_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
 
@@ -22,6 +27,19 @@ try {
   } else {
     try { $pdo->exec("ALTER TABLE {$TABLE_USERS} MODIFY role VARCHAR(30) NOT NULL DEFAULT 'super_admin'"); } catch (Throwable $e) { /* no-op */ }
   }
+  if (!account_column_exists($pdo, $DB_NAME, $TABLE_USERS, 'account_id')) {
+    $pdo->exec("ALTER TABLE {$TABLE_USERS} ADD COLUMN account_id INT UNSIGNED NULL AFTER id");
+  }
+  $assignAccount = $pdo->prepare("UPDATE {$TABLE_USERS} SET account_id=? WHERE account_id IS NULL OR account_id=0");
+  $assignAccount->execute([$defaultAccountId]);
+  try { $pdo->exec("ALTER TABLE {$TABLE_USERS} MODIFY account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId}"); } catch (Throwable $e) { /* no-op */ }
+  if (!account_index_exists($pdo, $DB_NAME, $TABLE_USERS, 'idx_account_id')) {
+    try { $pdo->exec("ALTER TABLE {$TABLE_USERS} ADD KEY idx_account_id (account_id)"); } catch (Throwable $e) { /* no-op */ }
+  }
+  $superCount = (int) ($pdo->query("SELECT COUNT(*) FROM {$TABLE_USERS} WHERE role='super_admin'")->fetchColumn() ?: 0);
+  if ($superCount <= 0) {
+    try { $pdo->exec("UPDATE {$TABLE_USERS} SET role='super_admin' WHERE role='admin'"); } catch (Throwable $e) { /* no-op */ }
+  }
   $legacyMap = (array) app_config('roles.legacy_map', []);
   foreach ($legacyMap as $legacyRole => $newRole) {
     $migrate = $pdo->prepare("UPDATE {$TABLE_USERS} SET role=? WHERE role=?");
@@ -33,8 +51,8 @@ try {
     $user = (string) app_config('security.default_admin_user', 'admin');
     $pass = (string) app_config('security.default_admin_pass', 'CambiaEstaClave#2026');
     $hash = password_hash($pass, PASSWORD_DEFAULT);
-    $ins = $pdo->prepare("INSERT INTO {$TABLE_USERS} (username, password_hash, role) VALUES (?, ?, ?)");
-    $ins->execute([$user, $hash, 'super_admin']);
+    $ins = $pdo->prepare("INSERT INTO {$TABLE_USERS} (account_id, username, password_hash, role) VALUES (?, ?, ?, ?)");
+    $ins->execute([$defaultAccountId, $user, $hash, 'super_admin']);
     $seed_notice = "Usuario creado: <strong>" . h($user) . "</strong> / <strong>" . h($pass) . "</strong>";
   }
 } catch (Throwable $e) { /* log opcional */ }
@@ -99,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $minutes = max(1, (int) ceil(($lockedUntil - time()) / 60));
       $error = 'Demasiados intentos fallidos. Intenta nuevamente en ' . $minutes . ' minuto' . ($minutes === 1 ? '' : 's') . '.';
     } else {
-      $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM {$TABLE_USERS} WHERE username = ? LIMIT 1");
+      $stmt = $pdo->prepare("SELECT id, account_id, username, password_hash, role FROM {$TABLE_USERS} WHERE username = ? LIMIT 1");
       $stmt->execute([$username]);
       $row = $stmt->fetch();
 
@@ -110,6 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         login_clear_failures($username);
         session_regenerate_id(true);
         $_SESSION['user_id'] = (int) $row['id'];
+        $_SESSION['account_id'] = (int) ($row['account_id'] ?? $defaultAccountId);
         $_SESSION['username'] = (string) $row['username'];
         $_SESSION['role'] = normalize_role($row['role'] ?? null);
 

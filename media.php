@@ -16,8 +16,13 @@ if ($id <= 0) {
 }
 
 $table = conv_attachments_table();
-$stmt = $pdo->prepare("SELECT * FROM {$table} WHERE id=? LIMIT 1");
-$stmt->execute([$id]);
+if (is_super_admin()) {
+  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE id=? LIMIT 1");
+  $stmt->execute([$id]);
+} else {
+  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE id=? AND account_id=? LIMIT 1");
+  $stmt->execute([$id, (int) (current_account_id() ?: accounts_default_id($pdo))]);
+}
 $attachment = $stmt->fetch();
 if (!$attachment) {
   http_response_code(404);

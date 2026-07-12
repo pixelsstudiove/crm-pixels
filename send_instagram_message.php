@@ -10,6 +10,7 @@ conv_ensure_schema($pdo);
 $conversationsTable = conv_conversations_table();
 $contactsTable = conv_contacts_table();
 $messagesTable = conv_messages_table();
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 function send_wants_json(): bool {
   $accept = (string) ($_SERVER['HTTP_ACCEPT'] ?? '');
@@ -92,7 +93,7 @@ $hasMedia = count($mediaUploads) > 0;
 if ($message === '' && !$hasMedia) send_redirect($conversationId, 'Escribe un mensaje o adjunta una imagen/audio antes de enviar.');
 if (mb_strlen($message) > 1000) send_redirect($conversationId, 'El mensaje supera el limite permitido.');
 
-$stmt = $pdo->prepare(<<<SQL
+$conversationSql = <<<SQL
 SELECT
   c.*,
   ct.external_contact_id AS contact_external_id,
@@ -106,9 +107,12 @@ SELECT
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 WHERE c.id = ?
+  %s
 LIMIT 1
-SQL);
-$stmt->execute([$conversationId]);
+SQL;
+$accountSql = is_super_admin() ? '' : 'AND c.account_id = ?';
+$stmt = $pdo->prepare(sprintf($conversationSql, $accountSql));
+$stmt->execute(is_super_admin() ? [$conversationId] : [$conversationId, $currentAccountId]);
 $conversation = $stmt->fetch();
 if (!$conversation) send_redirect($conversationId, 'No se encontro la conversacion.');
 
@@ -250,6 +254,7 @@ if ($hasMedia) {
 }
 
 conv_upsert_conversation($pdo, [
+  'account_id' => (int) (($conversation['account_id'] ?? $currentAccountId) ?: accounts_default_id($pdo)),
   'channel_id' => $conversation['channel_id'] ?? null,
   'contact_id' => (int) $conversation['contact_id'],
   'lead_id' => $conversation['lead_id'] ?? null,

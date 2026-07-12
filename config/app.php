@@ -39,6 +39,7 @@ $app = [
   ],
 
   'database' => [
+    'accounts_table' => 'accounts',
     'leads_table' => 'leads',
     'users_table' => 'users',
     'instagram_channels_table' => 'instagram_channels',
@@ -56,6 +57,11 @@ $app = [
 
   'system' => [
     'timezone' => (string) env_value('APP_TIMEZONE', 'America/Caracas'),
+  ],
+
+  'accounts' => [
+    'default_name' => (string) env_value('DEFAULT_ACCOUNT_NAME', 'Pixels Studio'),
+    'default_slug' => (string) env_value('DEFAULT_ACCOUNT_SLUG', 'pixels-studio'),
   ],
 
   'phone' => [
@@ -126,30 +132,27 @@ $app = [
   ],
 
   'roles' => [
-    'default' => 'asesor',
+    'default' => 'vendedor',
     'legacy_map' => [
-      'admin' => 'super_admin',
+      'admin_comercial' => 'admin',
+      'asesor' => 'vendedor',
+      'lectura' => 'vendedor',
     ],
     'profiles' => [
       'super_admin' => [
         'label' => 'Super administrador',
-        'description' => 'Control total del CRM, usuarios, leads y configuracion.',
+        'description' => 'Control global del SaaS: crea cuentas, gestiona usuarios, canales, leads y configuracion.',
+        'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'manage_integrations', 'view_reports', 'view_conversations', 'send_messages', 'manage_conversations', 'manage_accounts'],
+      ],
+      'admin' => [
+        'label' => 'Administrador',
+        'description' => 'Dueño o administrador de una cuenta. Gestiona usuarios, canales, inbox, leads y equipo comercial de su cuenta.',
         'permissions' => ['view_dashboard', 'edit_leads', 'manage_users', 'manage_integrations', 'view_reports', 'view_conversations', 'send_messages', 'manage_conversations'],
       ],
-      'admin_comercial' => [
-        'label' => 'Administrador comercial',
-        'description' => 'Gestiona leads, conversaciones, embudo, recordatorios y metricas comerciales.',
-        'permissions' => ['view_dashboard', 'edit_leads', 'view_reports', 'view_conversations', 'send_messages', 'manage_conversations'],
-      ],
-      'asesor' => [
-        'label' => 'Asesor comercial',
-        'description' => 'Da seguimiento a leads y conversaciones, cambia status, agrega notas y recordatorios.',
+      'vendedor' => [
+        'label' => 'Vendedor',
+        'description' => 'Gestiona conversaciones, genera leads, cambia status, agrega notas y habla con clientes.',
         'permissions' => ['view_dashboard', 'edit_leads', 'view_conversations', 'send_messages'],
-      ],
-      'lectura' => [
-        'label' => 'Solo lectura',
-        'description' => 'Consulta el dashboard e inbox sin modificar leads ni conversaciones.',
-        'permissions' => ['view_dashboard', 'view_conversations'],
       ],
     ],
   ],

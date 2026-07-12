@@ -90,19 +90,31 @@ function make_legacy_column_nullable(PDO $pdo, string $table, string $column, ar
   }
 }
 function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, array &$log): void {
+  global $DB_NAME;
+  $defaultAccountId = accounts_default_id($pdo);
   if (!table_exists($pdo, $usersTable)) $log[] = ['err', "La tabla {$usersTable} no existe. Revisa crear_tablas.sql."];
   if (!table_exists($pdo, $leadsTable)) { $log[] = ['err', "La tabla {$leadsTable} no existe. Revisa crear_tablas.sql."]; return; }
   if (table_exists($pdo, $usersTable)) {
+    try {
+      accounts_add_account_column($pdo, (string) ($DB_NAME ?? ''), $usersTable, $defaultAccountId);
+      $log[] = ['ok', "Columna {$usersTable}.account_id verificada."];
+    } catch (Throwable $e) {
+      $log[] = ['err', "No se pudo verificar {$usersTable}.account_id: " . $e->getMessage()];
+    }
     ensure_column($pdo, $usersTable, 'role', "`role` VARCHAR(30) NOT NULL DEFAULT 'super_admin'", $log);
     try {
       $pdo->exec("ALTER TABLE `{$usersTable}` MODIFY `role` VARCHAR(30) NOT NULL DEFAULT 'super_admin'");
-      $pdo->exec("UPDATE `{$usersTable}` SET `role`='super_admin' WHERE `role`='admin'");
+      $superCount = (int) ($pdo->query("SELECT COUNT(*) FROM `{$usersTable}` WHERE `role`='super_admin'")->fetchColumn() ?: 0);
+      if ($superCount <= 0) {
+        $pdo->exec("UPDATE `{$usersTable}` SET `role`='super_admin' WHERE `role`='admin'");
+      }
       $log[] = ['ok', 'Roles de usuarios actualizados.'];
     } catch (Throwable $e) {
       $log[] = ['err', 'No se pudieron actualizar los roles de usuarios: ' . $e->getMessage()];
     }
   }
   $columns = [
+    'account_id' => "`account_id` INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId}",
     'phone' => '`phone` VARCHAR(64) NULL',
     'email' => '`email` VARCHAR(150) NULL',
     'brand_instagram' => '`brand_instagram` VARCHAR(120) NULL',
@@ -142,6 +154,13 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'updated_at' => '`updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP',
   ];
   foreach ($columns as $column => $definition) ensure_column($pdo, $leadsTable, $column, $definition, $log);
+  try {
+    accounts_add_account_column($pdo, (string) ($DB_NAME ?? ''), $leadsTable, $defaultAccountId);
+    accounts_rebuild_unique_index($pdo, (string) ($DB_NAME ?? ''), $leadsTable, 'uniq_external_contact', 'account_id, external_source, external_contact_id');
+    $log[] = ['ok', "Cuenta por defecto aplicada a {$leadsTable}."];
+  } catch (Throwable $e) {
+    $log[] = ['err', "No se pudo aplicar cuenta por defecto en {$leadsTable}: " . $e->getMessage()];
+  }
 
   foreach ([
     'phone' => '`phone` VARCHAR(64) NULL',
@@ -180,7 +199,8 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'idx_ad_name' => 'KEY `idx_ad_name` (`ad_name`)',
     'idx_sales_status' => 'KEY `idx_sales_status` (`sales_status`)',
     'idx_reminder_at' => 'KEY `idx_reminder_at` (`reminder_at`)',
-    'uniq_external_contact' => 'UNIQUE KEY `uniq_external_contact` (`external_source`, `external_contact_id`)',
+    'idx_account_id' => 'KEY `idx_account_id` (`account_id`)',
+    'uniq_external_contact' => 'UNIQUE KEY `uniq_external_contact` (`account_id`, `external_source`, `external_contact_id`)',
     'idx_last_message_at' => 'KEY `idx_last_message_at` (`last_message_at`)',
     'idx_status' => 'KEY `idx_status` (`status`)',
     'idx_created_at' => 'KEY `idx_created_at` (`created_at`)',
@@ -208,9 +228,12 @@ function normalize_sales_funnel_statuses(PDO $pdo, string $leadsTable, array &$l
 }
 
 function ensure_instagram_channels_schema(PDO $pdo, string $channelsTable, array &$log): void {
+  global $DB_NAME;
+  $defaultAccountId = accounts_default_id($pdo);
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   `page_id` VARCHAR(120) NOT NULL,
   `page_name` VARCHAR(180) NULL,
   `instagram_user_id` VARCHAR(120) NOT NULL,
@@ -223,9 +246,11 @@ CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_page_id` (`page_id`),
   UNIQUE KEY `uniq_instagram_user_id` (`instagram_user_id`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
+  try { accounts_add_account_column($pdo, (string) ($DB_NAME ?? ''), $channelsTable, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
   $log[] = ['ok', "Tabla {$channelsTable} verificada."];
 }
 
@@ -247,6 +272,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ran = true;
     try {
       run_sql_file($pdo, __DIR__ . '/crear_tablas.sql', $log);
+      accounts_ensure_runtime_schema($pdo, $DB_NAME);
+      $log[] = ['ok', 'Cuenta por defecto y columnas multi-cuenta verificadas.'];
       ensure_latest_schema($pdo, $TABLE_LEADS, $TABLE_USERS, $log);
       normalize_sales_funnel_statuses($pdo, $TABLE_LEADS, $log);
       ensure_instagram_channels_schema($pdo, safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'), $log);

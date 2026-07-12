@@ -2,16 +2,35 @@
 -- Estructura completa para el formulario reducido de diagnóstico comercial de Pixels Studio.
 -- Ejecutar desde phpMyAdmin o mediante instalar_base_datos.php.
 
+CREATE TABLE IF NOT EXISTS `accounts` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `name` VARCHAR(160) NOT NULL,
+  `slug` VARCHAR(80) NOT NULL,
+  `status` VARCHAR(30) NOT NULL DEFAULT 'active',
+  `plan` VARCHAR(60) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_slug` (`slug`),
+  KEY `idx_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `accounts` (`id`, `name`, `slug`, `status`)
+VALUES (1, 'Pixels Studio', 'pixels-studio', 'active')
+ON DUPLICATE KEY UPDATE `name`=VALUES(`name`), `status`=VALUES(`status`);
+
 CREATE TABLE IF NOT EXISTS `users` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `username` VARCHAR(60) NOT NULL UNIQUE,
   `password_hash` VARCHAR(255) NOT NULL,
   `role` VARCHAR(30) NOT NULL DEFAULT 'super_admin',
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_account_id` (`account_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `leads` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `fullname` VARCHAR(120) NOT NULL,
   `phone` VARCHAR(64) NULL,
   `email` VARCHAR(150) NULL,
@@ -52,7 +71,8 @@ CREATE TABLE IF NOT EXISTS `leads` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_phone` (`phone`),
-  UNIQUE KEY `uniq_external_contact` (`external_source`, `external_contact_id`),
+  UNIQUE KEY `uniq_external_contact` (`account_id`, `external_source`, `external_contact_id`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_brand_instagram` (`brand_instagram`),
   KEY `idx_business_type` (`business_type`),
   KEY `idx_main_objective` (`main_objective`),
@@ -69,6 +89,7 @@ CREATE TABLE IF NOT EXISTS `leads` (
 
 CREATE TABLE IF NOT EXISTS `instagram_channels` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `page_id` VARCHAR(120) NOT NULL,
   `page_name` VARCHAR(180) NULL,
   `instagram_user_id` VARCHAR(120) NOT NULL,
@@ -81,11 +102,13 @@ CREATE TABLE IF NOT EXISTS `instagram_channels` (
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_page_id` (`page_id`),
   UNIQUE KEY `uniq_instagram_user_id` (`instagram_user_id`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `conversation_contacts` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `external_source` VARCHAR(40) NOT NULL,
   `external_contact_id` VARCHAR(160) NOT NULL,
   `display_name` VARCHAR(180) NULL,
@@ -94,13 +117,15 @@ CREATE TABLE IF NOT EXISTS `conversation_contacts` (
   `last_seen_at` DATETIME NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY `uniq_external_contact` (`external_source`, `external_contact_id`),
+  UNIQUE KEY `uniq_external_contact` (`account_id`, `external_source`, `external_contact_id`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_username` (`username`),
   KEY `idx_last_seen_at` (`last_seen_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `conversations` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `channel_id` INT UNSIGNED NULL,
   `contact_id` INT UNSIGNED NOT NULL,
   `lead_id` INT UNSIGNED NULL,
@@ -113,7 +138,8 @@ CREATE TABLE IF NOT EXISTS `conversations` (
   `unread_count` INT UNSIGNED NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY `uniq_external_thread` (`external_source`, `external_thread_id`),
+  UNIQUE KEY `uniq_external_thread` (`account_id`, `external_source`, `external_thread_id`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_channel_id` (`channel_id`),
   KEY `idx_contact_id` (`contact_id`),
   KEY `idx_lead_id` (`lead_id`),
@@ -124,6 +150,7 @@ CREATE TABLE IF NOT EXISTS `conversations` (
 
 CREATE TABLE IF NOT EXISTS `conversation_messages` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `conversation_id` INT UNSIGNED NOT NULL,
   `external_message_id` TEXT NULL,
   `external_message_hash` CHAR(64) NULL,
@@ -137,6 +164,7 @@ CREATE TABLE IF NOT EXISTS `conversation_messages` (
   `delivery_status` VARCHAR(40) NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_conversation_message_hash` (`conversation_id`, `external_message_hash`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_conversation_id` (`conversation_id`),
   KEY `idx_direction` (`direction`),
   KEY `idx_sent_at` (`sent_at`)
@@ -144,6 +172,7 @@ CREATE TABLE IF NOT EXISTS `conversation_messages` (
 
 CREATE TABLE IF NOT EXISTS `conversation_attachments` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `conversation_id` INT UNSIGNED NOT NULL,
   `message_id` INT UNSIGNED NULL,
   `direction` VARCHAR(20) NOT NULL,
@@ -157,6 +186,7 @@ CREATE TABLE IF NOT EXISTS `conversation_attachments` (
   `external_attachment_id` VARCHAR(180) NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_storage_key` (`storage_key`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_conversation_id` (`conversation_id`),
   KEY `idx_message_id` (`message_id`),
   KEY `idx_media_type` (`media_type`)
@@ -164,6 +194,7 @@ CREATE TABLE IF NOT EXISTS `conversation_attachments` (
 
 CREATE TABLE IF NOT EXISTS `webhook_event_logs` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
   `source` VARCHAR(40) NOT NULL DEFAULT 'instagram',
   `event_type` VARCHAR(60) NULL,
   `status` VARCHAR(40) NOT NULL,
@@ -179,6 +210,7 @@ CREATE TABLE IF NOT EXISTS `webhook_event_logs` (
   `payload_json` MEDIUMTEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   KEY `idx_source_created_at` (`source`, `created_at`),
+  KEY `idx_account_id` (`account_id`),
   KEY `idx_status` (`status`),
   KEY `idx_recipient_id` (`recipient_id`),
   KEY `idx_sender_id` (`sender_id`),

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/accounts.php';
 
 function column_exists(PDO $pdo, string $dbName, string $table, string $column): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?");
@@ -17,11 +18,13 @@ function index_exists(PDO $pdo, string $dbName, string $table, string $index): b
 }
 
 function ensure_leads_schema(PDO $pdo, string $dbName, string $table): void {
+  $defaultAccountId = accounts_default_id($pdo);
   $defaultSalesStatus = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) app_config('sales_funnel.default_status', 'nuevo_lead')) ?: 'nuevo_lead';
 
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$table} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   fullname VARCHAR(120) NOT NULL,
   phone VARCHAR(64) NULL,
   email VARCHAR(150) NULL,
@@ -62,7 +65,8 @@ CREATE TABLE IF NOT EXISTS {$table} (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_phone (phone),
-  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
+  UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id),
+  KEY idx_account_id (account_id),
   KEY idx_brand_instagram (brand_instagram),
   KEY idx_business_type (business_type),
   KEY idx_main_objective (main_objective),
@@ -76,7 +80,11 @@ CREATE TABLE IF NOT EXISTS {$table} (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
 
+  try { accounts_add_account_column($pdo, $dbName, $table, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
+  accounts_rebuild_unique_index($pdo, $dbName, $table, 'uniq_external_contact', 'account_id, external_source, external_contact_id');
+
   $columns = [
+    'account_id' => "ALTER TABLE {$table} ADD COLUMN account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId} AFTER id",
     'phone' => "ALTER TABLE {$table} ADD COLUMN phone VARCHAR(64) NULL AFTER fullname",
     'email' => "ALTER TABLE {$table} ADD COLUMN email VARCHAR(150) NULL AFTER phone",
     'brand_instagram' => "ALTER TABLE {$table} ADD COLUMN brand_instagram VARCHAR(120) NULL AFTER email",
@@ -153,7 +161,8 @@ SQL);
     'idx_ad_name' => "ALTER TABLE {$table} ADD KEY idx_ad_name (ad_name)",
     'idx_sales_status' => "ALTER TABLE {$table} ADD KEY idx_sales_status (sales_status)",
     'idx_reminder_at' => "ALTER TABLE {$table} ADD KEY idx_reminder_at (reminder_at)",
-    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (external_source, external_contact_id)",
+    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
+    'idx_account_id' => "ALTER TABLE {$table} ADD KEY idx_account_id (account_id)",
     'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
     'idx_status' => "ALTER TABLE {$table} ADD KEY idx_status (status)",
     'idx_created_at' => "ALTER TABLE {$table} ADD KEY idx_created_at (created_at)",
@@ -359,22 +368,24 @@ try {
   }
 
   $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
+  $accountId = accounts_default_id($pdo);
   $ip = $_SERVER['REMOTE_ADDR'] ?? null;
   $ua = isset($_SERVER['HTTP_USER_AGENT']) ? mb_substr((string) $_SERVER['HTTP_USER_AGENT'], 0, 255) : null;
 
   $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$TABLE_LEADS} (
-  fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
+  account_id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
   source_platform, utm_source, utm_medium, utm_campaign, utm_content, utm_term, ad_name, ad_id, gclid, fbclid, landing_url, referrer,
   sales_status, status, ip, user_agent, whatsapp_sent, whatsapp_status
 ) VALUES (
-  :fullname, :phone, :email, :brand_instagram, :business_type, :business_type_other, :services_needed, :main_objective, :message,
+  :account_id, :fullname, :phone, :email, :brand_instagram, :business_type, :business_type_other, :services_needed, :main_objective, :message,
   :source_platform, :utm_source, :utm_medium, :utm_campaign, :utm_content, :utm_term, :ad_name, :ad_id, :gclid, :fbclid, :landing_url, :referrer,
   :sales_status, 'pending', :ip, :user_agent, 0, 'disabled'
 )
 SQL);
 
   $insert->execute([
+    ':account_id' => $accountId,
     ':fullname' => $fullname,
     ':phone' => $phone,
     ':email' => $email,

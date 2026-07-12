@@ -13,6 +13,7 @@ $contactsTable = conv_contacts_table();
 $conversationsTable = conv_conversations_table();
 $messagesTable = conv_messages_table();
 $channelsTable = ig_channels_table();
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $statusOptions = [
   'abierta' => 'Abierta',
@@ -49,6 +50,10 @@ try {
 
   $where = [];
   $params = [];
+  if (!is_super_admin()) {
+    $where[] = 'c.account_id = :account_id';
+    $params[':account_id'] = $currentAccountId;
+  }
   if ($filterChannelId > 0) {
     $where[] = 'c.channel_id = :channel_id';
     $params[':channel_id'] = $filterChannelId;
@@ -129,14 +134,17 @@ JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
 LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id
 WHERE c.id = ?
+  %s
 LIMIT 1
 SQL;
-    $detailStmt = $pdo->prepare($detailSql);
-    $detailStmt->execute([$selectedId]);
+    $accountDetailSql = is_super_admin() ? '' : 'AND c.account_id = ?';
+    $detailStmt = $pdo->prepare(sprintf($detailSql, $accountDetailSql));
+    $detailParams = is_super_admin() ? [$selectedId] : [$selectedId, $currentAccountId];
+    $detailStmt->execute($detailParams);
     $selected = $detailStmt->fetch() ?: null;
     if ($selected && empty($selected['lead_id'])) {
       conv_ensure_lead_for_conversation($pdo, $TABLE_LEADS, (int) $selected['id']);
-      $detailStmt->execute([$selectedId]);
+      $detailStmt->execute($detailParams);
       $selected = $detailStmt->fetch() ?: null;
     }
     if ($selected) {

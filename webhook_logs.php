@@ -9,6 +9,7 @@ conv_ensure_schema($pdo);
 
 $logsTable = conv_webhook_logs_table();
 $messagesTable = conv_messages_table();
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 $notice = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -27,11 +28,13 @@ WHERE l.source='instagram'
   AND l.conversation_id IS NOT NULL
   AND l.message_preview IS NOT NULL
   AND l.status IN ('processed', 'duplicate', 'lead_only')
+  %s
   AND m.id IS NULL
 ORDER BY l.id ASC
 LIMIT 500
 SQL;
-    $rows = $pdo->query($repairSql)->fetchAll();
+    $repairAccountSql = is_super_admin() ? '' : 'AND l.account_id = ' . (int) $currentAccountId;
+    $rows = $pdo->query(sprintf($repairSql, $repairAccountSql))->fetchAll();
     $repaired = 0;
     foreach ($rows as $row) {
       $externalMessageId = (string) ($row['external_message_id'] ?? '');
@@ -63,9 +66,19 @@ $status = trim((string) ($_GET['status'] ?? ''));
 $allowedStatuses = ['processed', 'duplicate', 'lead_only', 'ignored'];
 if ($status !== '' && !in_array($status, $allowedStatuses, true)) $status = '';
 
-$where = $status !== '' ? 'WHERE status = :status' : '';
+$whereParts = [];
+$params = [];
+if ($status !== '') {
+  $whereParts[] = 'status = :status';
+  $params[':status'] = $status;
+}
+if (!is_super_admin()) {
+  $whereParts[] = 'account_id = :account_id';
+  $params[':account_id'] = $currentAccountId;
+}
+$where = $whereParts ? 'WHERE ' . implode(' AND ', $whereParts) : '';
 $stmt = $pdo->prepare("SELECT * FROM {$logsTable} {$where} ORDER BY id DESC LIMIT 150");
-if ($status !== '') $stmt->bindValue(':status', $status);
+foreach ($params as $key => $value) $stmt->bindValue($key, $value);
 $stmt->execute();
 $logs = $stmt->fetchAll();
 

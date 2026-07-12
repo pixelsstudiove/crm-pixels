@@ -15,10 +15,12 @@ function index_exists_dash(PDO $pdo, string $dbName, string $table, string $inde
   return (int) $stmt->fetchColumn() > 0;
 }
 function ensure_dashboard_schema(PDO $pdo, string $dbName, string $table): void {
+  $defaultAccountId = accounts_default_id($pdo);
   $defaultSalesStatus = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) app_config('sales_funnel.default_status', 'nuevo_lead')) ?: 'nuevo_lead';
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$table} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   fullname VARCHAR(120) NOT NULL,
   phone VARCHAR(64) NULL,
   email VARCHAR(150) NULL,
@@ -59,7 +61,8 @@ CREATE TABLE IF NOT EXISTS {$table} (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_phone (phone),
-  UNIQUE KEY uniq_external_contact (external_source, external_contact_id),
+  UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id),
+  KEY idx_account_id (account_id),
   KEY idx_brand_instagram (brand_instagram),
   KEY idx_business_type (business_type),
   KEY idx_main_objective (main_objective),
@@ -73,7 +76,10 @@ CREATE TABLE IF NOT EXISTS {$table} (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
 
+  try { accounts_add_account_column($pdo, $dbName, $table, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
+
   $columns = [
+    'account_id' => "ALTER TABLE {$table} ADD COLUMN account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId} AFTER id",
     'phone' => "ALTER TABLE {$table} ADD COLUMN phone VARCHAR(64) NULL AFTER fullname",
     'email' => "ALTER TABLE {$table} ADD COLUMN email VARCHAR(150) NULL AFTER phone",
     'brand_instagram' => "ALTER TABLE {$table} ADD COLUMN brand_instagram VARCHAR(120) NULL AFTER email",
@@ -134,6 +140,7 @@ SQL);
   }
 
   $indexes = [
+    'idx_account_id' => "ALTER TABLE {$table} ADD KEY idx_account_id (account_id)",
     'idx_brand_instagram' => "ALTER TABLE {$table} ADD KEY idx_brand_instagram (brand_instagram)",
     'idx_business_type' => "ALTER TABLE {$table} ADD KEY idx_business_type (business_type)",
     'idx_main_objective' => "ALTER TABLE {$table} ADD KEY idx_main_objective (main_objective)",
@@ -143,11 +150,12 @@ SQL);
     'idx_ad_name' => "ALTER TABLE {$table} ADD KEY idx_ad_name (ad_name)",
     'idx_sales_status' => "ALTER TABLE {$table} ADD KEY idx_sales_status (sales_status)",
     'idx_reminder_at' => "ALTER TABLE {$table} ADD KEY idx_reminder_at (reminder_at)",
-    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (external_source, external_contact_id)",
+    'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
     'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
     'idx_status' => "ALTER TABLE {$table} ADD KEY idx_status (status)",
     'idx_created_at' => "ALTER TABLE {$table} ADD KEY idx_created_at (created_at)",
   ];
+  accounts_rebuild_unique_index($pdo, $dbName, $table, 'uniq_external_contact', 'account_id, external_source, external_contact_id');
   foreach ($indexes as $index => $sql) if (!index_exists_dash($pdo, $dbName, $table, $index)) { try { $pdo->exec($sql); } catch (Throwable $e) {} }
 }
 
@@ -167,15 +175,23 @@ $canManageUsers = can('manage_users');
 $canManageIntegrations = can('manage_integrations');
 
 $q = trim((string) ($_GET['q'] ?? ''));
+$currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $channelOptions = [];
 try {
-  $channelStmt = $pdo->query(<<<SQL
+  $channelSql = <<<SQL
 SELECT DISTINCT ch.id, ch.page_name, ch.page_id, ch.instagram_username
 FROM {$conversationsTable} c
 JOIN {$channelsTable} ch ON ch.id = c.channel_id
+%s
 ORDER BY COALESCE(ch.instagram_username, ch.page_name, ch.page_id) ASC
-SQL);
+SQL;
+  if (is_super_admin()) {
+    $channelStmt = $pdo->query(sprintf($channelSql, ''));
+  } else {
+    $channelStmt = $pdo->prepare(sprintf($channelSql, 'WHERE c.account_id = ?'));
+    $channelStmt->execute([$currentAccountId]);
+  }
   $channelOptions = $channelStmt ? $channelStmt->fetchAll() : [];
 } catch (Throwable $e) {
   $channelOptions = [];
@@ -191,6 +207,10 @@ $filterSalesStatus = trim((string) ($_GET['sales_status'] ?? ''));
 if ($filterSalesStatus !== '' && !array_key_exists($filterSalesStatus, $salesStatusOptions)) $filterSalesStatus = '';
 $whereConditions = [];
 $whereParams = [];
+if (!is_super_admin()) {
+  $whereConditions[] = 'c.account_id = :account_id';
+  $whereParams[':account_id'] = $currentAccountId;
+}
 if ($filterChannelId > 0) {
   $whereConditions[] = 'c.channel_id = :channel_id';
   $whereParams[':channel_id'] = $filterChannelId;
@@ -627,6 +647,7 @@ function dash_channel_label(array $channel): string {
               <div class="menu-panel" role="menu">
                 <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
                 <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
+                <?php if (can('manage_accounts')): ?><a class="menu-item" href="accounts.php">Gestión de cuentas</a><?php endif; ?>
                 <?php if ($canManageUsers): ?><a class="menu-item" href="users.php">Gestión de usuarios</a><?php endif; ?>
                 <form class="menu-form" action="logout.php" method="post">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">

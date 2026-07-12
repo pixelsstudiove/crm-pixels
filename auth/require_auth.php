@@ -2,6 +2,7 @@
 // auth/require_auth.php
 declare(strict_types=1);
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/accounts.php';
 
 if (!function_exists('is_logged_in')) {
   function is_logged_in(): bool {
@@ -12,12 +13,27 @@ if (!function_exists('is_logged_in')) {
 if (!function_exists('ensure_auth_user_roles')) {
   function ensure_auth_user_roles(PDO $pdo, string $dbName, string $table): void {
     try {
+      $defaultAccountId = accounts_ensure_runtime_schema($pdo, $dbName);
       $chk = $pdo->prepare('SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?');
       $chk->execute([$dbName, $table, 'role']);
       if (!$chk->fetch()) {
         $pdo->exec("ALTER TABLE {$table} ADD COLUMN role VARCHAR(30) NOT NULL DEFAULT 'super_admin' AFTER password_hash");
       } else {
         try { $pdo->exec("ALTER TABLE {$table} MODIFY role VARCHAR(30) NOT NULL DEFAULT 'super_admin'"); } catch (Throwable $e) { /* no-op */ }
+      }
+      if (!account_column_exists($pdo, $dbName, $table, 'account_id')) {
+        $pdo->exec("ALTER TABLE {$table} ADD COLUMN account_id INT UNSIGNED NULL AFTER id");
+      }
+      $stmt = $pdo->prepare("UPDATE {$table} SET account_id=? WHERE account_id IS NULL OR account_id=0");
+      $stmt->execute([$defaultAccountId]);
+      try { $pdo->exec("ALTER TABLE {$table} MODIFY account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId}"); } catch (Throwable $e) { /* no-op */ }
+      if (!account_index_exists($pdo, $dbName, $table, 'idx_account_id')) {
+        try { $pdo->exec("ALTER TABLE {$table} ADD KEY idx_account_id (account_id)"); } catch (Throwable $e) { /* no-op */ }
+      }
+
+      $superCount = (int) ($pdo->query("SELECT COUNT(*) FROM {$table} WHERE role='super_admin'")->fetchColumn() ?: 0);
+      if ($superCount <= 0) {
+        try { $pdo->exec("UPDATE {$table} SET role='super_admin' WHERE role='admin'"); } catch (Throwable $e) { /* no-op */ }
       }
 
       $legacyMap = (array) app_config('roles.legacy_map', []);
@@ -43,7 +59,7 @@ if (!is_logged_in()) {
 ensure_auth_user_roles($pdo, $DB_NAME, $TABLE_USERS);
 
 try {
-  $stmt = $pdo->prepare("SELECT username, role FROM {$TABLE_USERS} WHERE id=? LIMIT 1");
+  $stmt = $pdo->prepare("SELECT username, role, account_id FROM {$TABLE_USERS} WHERE id=? LIMIT 1");
   $stmt->execute([(int) $_SESSION['user_id']]);
   $row = $stmt->fetch();
   if (!$row) {
@@ -54,6 +70,8 @@ try {
   }
   $_SESSION['username'] = (string) ($row['username'] ?? $_SESSION['username'] ?? '');
   $_SESSION['role'] = normalize_role($row['role'] ?? null);
+  $_SESSION['account_id'] = (int) ($row['account_id'] ?? accounts_default_id($pdo));
 } catch (Throwable $e) {
   $_SESSION['role'] = normalize_role($_SESSION['role'] ?? null);
+  $_SESSION['account_id'] = (int) ($_SESSION['account_id'] ?? accounts_default_id($pdo));
 }
