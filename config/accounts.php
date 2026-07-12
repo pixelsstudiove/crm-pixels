@@ -40,11 +40,18 @@ function accounts_default_id(PDO $pdo): int {
   $table = accounts_table();
   $slug = (string) app_config('accounts.default_slug', 'pixels-studio');
   $name = (string) app_config('accounts.default_name', 'Pixels Studio');
-  $stmt = $pdo->prepare("INSERT INTO {$table} (name, slug, status) VALUES (?, ?, 'active') ON DUPLICATE KEY UPDATE name=VALUES(name), status='active'");
-  $stmt->execute([$name, $slug]);
   $find = $pdo->prepare("SELECT id FROM {$table} WHERE slug=? LIMIT 1");
   $find->execute([$slug]);
-  return (int) ($find->fetchColumn() ?: 1);
+  $defaultId = (int) ($find->fetchColumn() ?: 0);
+  if ($defaultId > 0) return $defaultId;
+
+  $existing = $pdo->query("SELECT id FROM {$table} ORDER BY id ASC LIMIT 1");
+  $existingId = $existing ? (int) ($existing->fetchColumn() ?: 0) : 0;
+  if ($existingId > 0) return $existingId;
+
+  $stmt = $pdo->prepare("INSERT INTO {$table} (name, slug, status) VALUES (?, ?, 'active')");
+  $stmt->execute([$name, $slug]);
+  return (int) $pdo->lastInsertId();
 }
 
 function accounts_find(PDO $pdo, int $accountId): ?array {
