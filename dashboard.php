@@ -682,9 +682,9 @@ function dash_channel_label(array $channel): string {
               <div class="menu-dropdown" data-menu>
                 <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
                 <div class="menu-panel" role="menu">
-                  <?php if (can('view_conversations')): ?><a class="menu-item" href="inbox.php">Inbox</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Ver canales</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="webhook_logs.php">Ver eventos</a><?php endif; ?>
+                  <?php if (can('view_conversations')): ?><a class="menu-item" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="<?= h(account_url('channels.php')) ?>">Ver canales</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="<?= h(account_url('webhook_logs.php')) ?>">Ver eventos</a><?php endif; ?>
                 </div>
               </div>
             <?php endif; ?>
@@ -693,8 +693,8 @@ function dash_channel_label(array $channel): string {
               <div class="menu-panel" role="menu">
                 <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
                 <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
-                <?php if (can('manage_accounts')): ?><a class="menu-item" href="accounts.php">Gestión de cuentas</a><?php endif; ?>
-                <?php if ($canManageUsers): ?><a class="menu-item" href="users.php">Gestión de usuarios</a><?php endif; ?>
+                <?php if (can('manage_accounts')): ?><a class="menu-item" href="/accounts.php">Gestión de cuentas</a><?php endif; ?>
+                <?php if ($canManageUsers): ?><a class="menu-item" href="/users.php">Gestión de usuarios</a><?php endif; ?>
                 <form class="menu-form" action="/logout.php" method="post">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                   <button class="menu-item" type="submit">Cerrar sesión</button>

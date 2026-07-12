@@ -114,9 +114,9 @@ try {
             <p class="subtitle">Conecta la fanpage e Instagram del cliente para capturar DMs como leads.</p>
           </div>
           <div class="channel-actions">
-            <a class="channel-link" href="dashboard.php">Dashboard</a>
-            <?php if (can('view_conversations')): ?><a class="channel-link" href="inbox.php">Inbox</a><?php endif; ?>
-            <a class="channel-link" href="webhook_logs.php">Eventos</a>
+            <a class="channel-link" href="<?= h(account_url('dashboard.php')) ?>">Dashboard</a>
+            <?php if (can('view_conversations')): ?><a class="channel-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
+            <a class="channel-link" href="<?= h(account_url('webhook_logs.php')) ?>">Eventos</a>
             <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($authUrl) ?>">Conectar Instagram</a>
           </div>
         </header>

@@ -168,8 +168,8 @@ try {
             <p class="subtitle">Administra el acceso del equipo al CRM.</p>
           </div>
           <div class="users-actions">
-            <a class="users-link" href="dashboard.php">Volver al dashboard</a>
-            <?php if (can('manage_accounts')): ?><a class="users-link" href="accounts.php">Gestionar cuentas</a><?php endif; ?>
+            <a class="users-link" href="<?= h(account_url('dashboard.php')) ?>">Volver al dashboard</a>
+            <?php if (can('manage_accounts')): ?><a class="users-link" href="/accounts.php">Gestionar cuentas</a><?php endif; ?>
           </div>
         </header>
 

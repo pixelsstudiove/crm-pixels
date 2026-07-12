@@ -109,8 +109,8 @@ SQL);
             <p class="subtitle">Crea las cuentas cliente que luego tendrán sus propios usuarios, canales e inbox.</p>
           </div>
           <div class="accounts-actions">
-            <a class="accounts-link" href="users.php">Usuarios</a>
-            <a class="accounts-link" href="dashboard.php">Dashboard</a>
+            <a class="accounts-link" href="/users.php">Usuarios</a>
+            <a class="accounts-link" href="<?= h(account_url('dashboard.php', [], '')) ?>">Dashboard</a>
           </div>
         </header>
 

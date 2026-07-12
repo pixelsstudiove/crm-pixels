@@ -148,9 +148,9 @@ function log_badge_class(string $status): string {
             <p class="subtitle">Monitoreo tecnico de mensajes recibidos por el webhook.</p>
           </div>
           <div class="logs-actions">
-            <a class="logs-link" href="inbox.php">Inbox</a>
-            <a class="logs-link" href="channels.php">Canales</a>
-            <a class="logs-link" href="dashboard.php">Dashboard</a>
+            <a class="logs-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a>
+            <a class="logs-link" href="<?= h(account_url('channels.php')) ?>">Canales</a>
+            <a class="logs-link" href="<?= h(account_url('dashboard.php')) ?>">Dashboard</a>
           </div>
         </header>
 
