@@ -56,7 +56,7 @@ function lead_status_history_rows(PDO $pdo, int $leadId, int $limit = 80): array
   lead_status_history_ensure_schema($pdo);
   $table = lead_status_history_table();
   $limit = max(1, min(200, $limit));
-  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE lead_id=? ORDER BY created_at DESC, id DESC LIMIT {$limit}");
+  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE lead_id=? ORDER BY created_at ASC, id ASC LIMIT {$limit}");
   $stmt->execute([$leadId]);
   return $stmt->fetchAll() ?: [];
 }
