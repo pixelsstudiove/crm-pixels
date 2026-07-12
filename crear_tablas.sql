@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS `conversation_contacts` (
 CREATE TABLE IF NOT EXISTS `conversations` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
+  `public_id` INT UNSIGNED NULL,
   `channel_id` INT UNSIGNED NULL,
   `contact_id` INT UNSIGNED NOT NULL,
   `lead_id` INT UNSIGNED NULL,
@@ -139,6 +140,7 @@ CREATE TABLE IF NOT EXISTS `conversations` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY `uniq_external_thread` (`account_id`, `external_source`, `external_thread_id`),
+  UNIQUE KEY `uniq_account_public_id` (`account_id`, `public_id`),
   KEY `idx_account_id` (`account_id`),
   KEY `idx_channel_id` (`channel_id`),
   KEY `idx_contact_id` (`contact_id`),

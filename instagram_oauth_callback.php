@@ -9,7 +9,9 @@ $channelsTable = ig_channels_table();
 ig_channels_ensure_schema($pdo, $channelsTable);
 
 function oauth_fail(string $message): void {
-  header('Location: channels.php?notice=' . rawurlencode($message));
+  global $oauthReturnSlug;
+  $slug = trim((string) ($oauthReturnSlug ?? ($_SESSION['instagram_oauth_account_slug'] ?? '')));
+  header('Location: ' . account_url('channels.php', ['notice' => $message], $slug !== '' ? $slug : null));
   exit;
 }
 
@@ -17,8 +19,11 @@ $state = (string) ($_GET['state'] ?? '');
 $code = (string) ($_GET['code'] ?? '');
 $expectedState = (string) ($_SESSION['instagram_oauth_state'] ?? '');
 $redirectUri = (string) ($_SESSION['instagram_oauth_redirect'] ?? '');
+$targetAccountId = (int) (($_SESSION['instagram_oauth_account_id'] ?? 0) ?: current_account_id() ?: accounts_default_id($pdo));
+$targetAccountSlug = trim((string) ($_SESSION['instagram_oauth_account_slug'] ?? accounts_slug_for_id($pdo, $targetAccountId)));
+$oauthReturnSlug = $targetAccountSlug;
 
-unset($_SESSION['instagram_oauth_state'], $_SESSION['instagram_oauth_redirect']);
+unset($_SESSION['instagram_oauth_state'], $_SESSION['instagram_oauth_redirect'], $_SESSION['instagram_oauth_account_id'], $_SESSION['instagram_oauth_account_slug']);
 
 if ($state === '' || $expectedState === '' || !hash_equals($expectedState, $state)) {
   oauth_fail('No se pudo validar la conexion con Meta.');
@@ -66,6 +71,7 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
   ]);
 
   ig_channel_upsert($pdo, $channelsTable, [
+    'account_id' => $targetAccountId,
     'page_id' => $pageId,
     'page_name' => (string) ($page['name'] ?? ''),
     'instagram_user_id' => (string) $ig['id'],
@@ -80,5 +86,5 @@ if ($saved <= 0) {
   oauth_fail('No encontramos una cuenta de Instagram profesional conectada a tus paginas.');
 }
 
-header('Location: channels.php?notice=' . rawurlencode('Instagram conectado correctamente.'));
+header('Location: ' . account_url('channels.php', ['notice' => 'Instagram conectado correctamente.'], $targetAccountSlug !== '' ? $targetAccountSlug : null));
 exit;

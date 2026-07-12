@@ -25,9 +25,10 @@ function send_json(array $payload, int $status = 200): void {
   exit;
 }
 
-function send_redirect(int $conversationId, string $notice): void {
-  if (send_wants_json()) send_json(['ok' => false, 'error' => $notice, 'conversation_id' => $conversationId], 400);
-  header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode($notice));
+function send_redirect(int $conversationId, string $notice, ?int $routeId = null): void {
+  $routeId = $routeId !== null && $routeId > 0 ? $routeId : $conversationId;
+  if (send_wants_json()) send_json(['ok' => false, 'error' => $notice, 'conversation_id' => $routeId], 400);
+  header('Location: ' . account_url('inbox.php', ['id' => $routeId, 'notice' => $notice]));
   exit;
 }
 
@@ -79,19 +80,25 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   exit;
 }
 
-$conversationId = (int) ($_POST['conversation_id'] ?? 0);
+$conversationRouteId = (int) ($_POST['conversation_id'] ?? 0);
+$requestAccountId = accounts_request_account_id($pdo);
+$postAccountId = max(0, (int) ($_POST['account_id'] ?? 0));
+$lookupAccountId = $requestAccountId > 0 ? $requestAccountId : $postAccountId;
+$conversationId = $lookupAccountId > 0
+  ? conv_resolve_public_conversation_id($pdo, $lookupAccountId, $conversationRouteId)
+  : $conversationRouteId;
 $csrf = (string) ($_POST['csrf'] ?? '');
-if ($conversationId <= 0) send_redirect(0, 'Conversacion invalida.');
+if ($conversationId <= 0) send_redirect(0, 'Conversacion invalida.', $conversationRouteId);
 if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
-  send_redirect($conversationId, 'Sesion invalida. Recarga la pagina.');
+  send_redirect($conversationId, 'Sesion invalida. Recarga la pagina.', $conversationRouteId);
 }
 
 $message = trim((string) ($_POST['message'] ?? ''));
 $mediaUpload = $_FILES['media'] ?? ($_FILES['image'] ?? null);
 $mediaUploads = send_normalize_uploads($mediaUpload);
 $hasMedia = count($mediaUploads) > 0;
-if ($message === '' && !$hasMedia) send_redirect($conversationId, 'Escribe un mensaje o adjunta una imagen/audio antes de enviar.');
-if (mb_strlen($message) > 1000) send_redirect($conversationId, 'El mensaje supera el limite permitido.');
+if ($message === '' && !$hasMedia) send_redirect($conversationId, 'Escribe un mensaje o adjunta una imagen/audio antes de enviar.', $conversationRouteId);
+if (mb_strlen($message) > 1000) send_redirect($conversationId, 'El mensaje supera el limite permitido.', $conversationRouteId);
 
 $conversationSql = <<<SQL
 SELECT
@@ -114,11 +121,11 @@ $accountSql = is_super_admin() ? '' : 'AND c.account_id = ?';
 $stmt = $pdo->prepare(sprintf($conversationSql, $accountSql));
 $stmt->execute(is_super_admin() ? [$conversationId] : [$conversationId, $currentAccountId]);
 $conversation = $stmt->fetch();
-if (!$conversation) send_redirect($conversationId, 'No se encontro la conversacion.');
+if (!$conversation) send_redirect($conversationId, 'No se encontro la conversacion.', $conversationRouteId);
 
 $replyWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? '');
 if (!($replyWindow['can_reply'] ?? false)) {
-  send_redirect($conversationId, 'Chat vencido. No se puede responder desde el CRM hasta recibir un nuevo mensaje del cliente.');
+  send_redirect($conversationId, 'Chat vencido. No se puede responder desde el CRM hasta recibir un nuevo mensaje del cliente.', $conversationRouteId);
 }
 
 $now = gmdate('Y-m-d H:i:s');
@@ -127,31 +134,31 @@ $lastPreview = $message;
 $pendingMedia = [];
 
 if ($hasMedia) {
-  if (!r2_is_configured()) send_redirect($conversationId, 'R2 no esta configurado para enviar adjuntos.');
-  if (count($mediaUploads) > 5) send_redirect($conversationId, 'Puedes adjuntar un maximo de 5 fotos por envio.');
+  if (!r2_is_configured()) send_redirect($conversationId, 'R2 no esta configurado para enviar adjuntos.', $conversationRouteId);
+  if (count($mediaUploads) > 5) send_redirect($conversationId, 'Puedes adjuntar un maximo de 5 fotos por envio.', $conversationRouteId);
   $maxBytes = max(1024, (int) app_config('media.max_upload_bytes', 8388608));
   $finfo = new finfo(FILEINFO_MIME_TYPE);
   foreach ($mediaUploads as $mediaUpload) {
     $errorCode = (int) ($mediaUpload['error'] ?? UPLOAD_ERR_OK);
-    if ($errorCode !== UPLOAD_ERR_OK) send_redirect($conversationId, 'No se pudo recibir uno de los adjuntos.');
+    if ($errorCode !== UPLOAD_ERR_OK) send_redirect($conversationId, 'No se pudo recibir uno de los adjuntos.', $conversationRouteId);
     $tmp = (string) ($mediaUpload['tmp_name'] ?? '');
-    if ($tmp === '' || !is_uploaded_file($tmp)) send_redirect($conversationId, 'Adjunto invalido.');
+    if ($tmp === '' || !is_uploaded_file($tmp)) send_redirect($conversationId, 'Adjunto invalido.', $conversationRouteId);
     $bytes = file_get_contents($tmp);
-    if (!is_string($bytes) || $bytes === '') send_redirect($conversationId, 'El adjunto esta vacio.');
-    if (strlen($bytes) > $maxBytes) send_redirect($conversationId, 'Uno de los adjuntos supera el tamaño permitido.');
+    if (!is_string($bytes) || $bytes === '') send_redirect($conversationId, 'El adjunto esta vacio.', $conversationRouteId);
+    if (strlen($bytes) > $maxBytes) send_redirect($conversationId, 'Uno de los adjuntos supera el tamaño permitido.', $conversationRouteId);
     $mime = (string) ($finfo->buffer($bytes) ?: '');
     $mediaType = send_media_type_from_mime($mime);
-    if ($mediaType === null) send_redirect($conversationId, 'Solo se permiten imagenes JPG, PNG, GIF, WEBP o audios MP3, M4A, AAC, OGG, WAV, WEBM.');
-    if (count($mediaUploads) > 1 && $mediaType !== 'image') send_redirect($conversationId, 'Solo puedes adjuntar varias fotos juntas. Los audios se envian uno por uno.');
+    if ($mediaType === null) send_redirect($conversationId, 'Solo se permiten imagenes JPG, PNG, GIF, WEBP o audios MP3, M4A, AAC, OGG, WAV, WEBM.', $conversationRouteId);
+    if (count($mediaUploads) > 1 && $mediaType !== 'image') send_redirect($conversationId, 'Solo puedes adjuntar varias fotos juntas. Los audios se envian uno por uno.', $conversationRouteId);
     if ($mediaType === 'audio' && $mime === 'video/mp4') $mime = 'audio/mp4';
     if ($mediaType === 'audio' && $mime === 'video/webm') $mime = 'audio/webm';
     if ($mediaType === 'audio' && $mime === 'application/ogg') $mime = 'audio/ogg';
 
     $key = r2_random_key('instagram/outbound/' . $mediaType . '/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);
-    if (!($upload['ok'] ?? false)) send_redirect($conversationId, 'No se pudo subir uno de los adjuntos a R2.');
+    if (!($upload['ok'] ?? false)) send_redirect($conversationId, 'No se pudo subir uno de los adjuntos a R2.', $conversationRouteId);
     $signedUrl = r2_presigned_url($key, 3600);
-    if (!$signedUrl) send_redirect($conversationId, 'No se pudo preparar uno de los adjuntos para Meta.');
+    if (!$signedUrl) send_redirect($conversationId, 'No se pudo preparar uno de los adjuntos para Meta.', $conversationRouteId);
 
     $pendingMedia[] = [
       'bytes' => $bytes,
@@ -167,7 +174,7 @@ if ($hasMedia) {
 if ($message !== '') {
   $result = conv_send_instagram_message($pdo, $conversation, $message);
   if (!($result['ok'] ?? false)) {
-    send_redirect($conversationId, 'Meta no pudo enviar el mensaje: ' . (string) ($result['error'] ?? 'Error desconocido.'));
+    send_redirect($conversationId, 'Meta no pudo enviar el mensaje: ' . (string) ($result['error'] ?? 'Error desconocido.'), $conversationRouteId);
   }
 
   $data = is_array($result['data'] ?? null) ? $result['data'] : [];
@@ -197,12 +204,12 @@ if ($message !== '') {
 }
 
 if ($hasMedia) {
-  if (!$pendingMedia) send_redirect($conversationId, 'No se pudo preparar el adjunto.');
+  if (!$pendingMedia) send_redirect($conversationId, 'No se pudo preparar el adjunto.', $conversationRouteId);
   foreach ($pendingMedia as $pendingMediaItem) {
     $mediaType = (string) ($pendingMediaItem['type'] ?? 'image');
     $result = conv_send_instagram_attachment($pdo, $conversation, (string) $pendingMediaItem['signed_url'], $mediaType);
     if (!($result['ok'] ?? false)) {
-      send_redirect($conversationId, 'Meta no pudo enviar el ' . send_media_label($mediaType) . ': ' . (string) ($result['error'] ?? 'Error desconocido.'));
+      send_redirect($conversationId, 'Meta no pudo enviar el ' . send_media_label($mediaType) . ': ' . (string) ($result['error'] ?? 'Error desconocido.'), $conversationRouteId);
     }
 
     $data = is_array($result['data'] ?? null) ? $result['data'] : [];
@@ -269,10 +276,10 @@ if (send_wants_json()) {
   send_json([
     'ok' => true,
     'notice' => 'Mensaje enviado.',
-    'conversation_id' => $conversationId,
+    'conversation_id' => $conversationRouteId,
     'message' => $responseMessages[0] ?? null,
     'messages' => $responseMessages,
   ]);
 }
 
-send_redirect($conversationId, 'Mensaje enviado.');
+send_redirect($conversationId, 'Mensaje enviado.', $conversationRouteId);

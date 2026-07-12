@@ -12,6 +12,7 @@ $contactsTable = conv_contacts_table();
 $conversationsTable = conv_conversations_table();
 $messagesTable = conv_messages_table();
 $channelsTable = ig_channels_table();
+$accountsTable = accounts_table();
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $canSendMessages = can('send_messages');
@@ -59,6 +60,14 @@ function inbox_json_error(string $message, int $status = 422): void {
   exit;
 }
 
+$requestSlug = accounts_request_slug();
+$requestAccount = accounts_request_account($pdo);
+if ($requestSlug !== '' && !$requestAccount) {
+  http_response_code(404);
+  exit('Cuenta no encontrada.');
+}
+$requestAccountId = $requestAccount ? (int) ($requestAccount['id'] ?? 0) : 0;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = (string) ($_POST['csrf'] ?? '');
   if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
@@ -66,7 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors[] = 'CSRF invalido. Recarga la pagina.';
   } else {
     $action = (string) ($_POST['action'] ?? '');
-    $conversationId = (int) ($_POST['conversation_id'] ?? 0);
+    $conversationRouteId = (int) ($_POST['conversation_id'] ?? 0);
+    $postAccountId = max(0, (int) ($_POST['account_id'] ?? 0));
+    $postLookupAccountId = $requestAccountId > 0 ? $requestAccountId : $postAccountId;
+    $conversationId = $postLookupAccountId > 0
+      ? conv_resolve_public_conversation_id($pdo, $postLookupAccountId, $conversationRouteId)
+      : $conversationRouteId;
     if ($action === 'update_status' && $canManageConversations && $conversationId > 0) {
       $status = (string) ($_POST['status'] ?? '');
       if (array_key_exists($status, $statusOptions)) {
@@ -82,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           echo json_encode(['ok' => true, 'status' => $status, 'label' => (string) $statusOptions[$status], 'notice' => 'Estado actualizado.'], JSON_UNESCAPED_UNICODE);
           exit;
         }
-        header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Estado actualizado.'));
+        header('Location: ' . account_url('inbox.php', ['id' => $conversationRouteId, 'notice' => 'Estado actualizado.']));
         exit;
       }
       if (inbox_wants_json()) inbox_json_error('Selecciona un estado valido.');
@@ -125,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             echo json_encode(['ok' => true, 'sales_status' => $salesStatus, 'label' => (string) $salesStatusOptions[$salesStatus], 'notice' => 'Status comercial actualizado.'], JSON_UNESCAPED_UNICODE);
             exit;
           }
-          header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
+          header('Location: ' . account_url('inbox.php', ['id' => $conversationRouteId, 'notice' => 'Status comercial actualizado.']));
           exit;
         }
       }
@@ -138,7 +152,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $filterStatus = trim((string) ($_GET['status'] ?? ''));
 if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
 $q = trim((string) ($_GET['q'] ?? ''));
-$selectedId = max(0, (int) ($_GET['id'] ?? 0));
+$selectedRouteId = max(0, (int) ($_GET['id'] ?? 0));
+$selectedId = $selectedRouteId;
 $accountOptions = [];
 $filterAccountId = 0;
 if (is_super_admin()) {
@@ -149,8 +164,12 @@ if (is_super_admin()) {
     $accountOptions = [];
   }
   $accountIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $accountOptions);
-  $filterAccountId = max(0, (int) ($_GET['account_id'] ?? 0));
+  $filterAccountId = $requestAccountId > 0 ? $requestAccountId : max(0, (int) ($_GET['account_id'] ?? 0));
   if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
+}
+$publicLookupAccountId = $requestAccountId > 0 ? $requestAccountId : $filterAccountId;
+if ($selectedRouteId > 0 && $publicLookupAccountId > 0) {
+  $selectedId = conv_resolve_public_conversation_id($pdo, $publicLookupAccountId, $selectedRouteId);
 }
 
 $channelOptions = [];
@@ -211,6 +230,7 @@ SELECT
   ct.profile_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
+  a.slug AS account_slug,
   l.fullname AS lead_fullname,
   (
     SELECT MAX(im.sent_at)
@@ -220,6 +240,7 @@ SELECT
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
+LEFT JOIN {$accountsTable} a ON a.id = c.account_id
 LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id
 {$whereSql}
 ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
@@ -230,7 +251,10 @@ foreach ($params as $key => $value) $stmt->bindValue($key, $value);
 $stmt->execute();
 $conversations = $stmt->fetchAll();
 
-if ($selectedId <= 0 && $conversations) $selectedId = (int) $conversations[0]['id'];
+if ($selectedId <= 0 && $conversations) {
+  $selectedId = (int) $conversations[0]['id'];
+  $selectedRouteId = conv_display_id($conversations[0]);
+}
 
 $selected = null;
 if ($selectedId > 0) {
@@ -243,6 +267,7 @@ SELECT
   ct.profile_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
+  a.slug AS account_slug,
   l.fullname AS lead_fullname,
   l.sales_status AS lead_sales_status,
   l.notes AS lead_notes,
@@ -254,6 +279,7 @@ SELECT
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
+LEFT JOIN {$accountsTable} a ON a.id = c.account_id
 LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id
 WHERE c.id = ?
   %s
@@ -278,6 +304,7 @@ SQL;
 
 $messages = [];
 if ($selected) {
+  $selectedRouteId = conv_display_id($selected);
   $msgStmt = $pdo->prepare("SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at ASC, m.id ASC");
   $msgStmt->execute([(int) $selected['id']]);
   $messages = $msgStmt->fetchAll();
@@ -553,10 +580,11 @@ function inbox_visible_message_text($value, array $attachments): string {
               </select>
               <button class="inbox-btn" type="submit">Buscar</button>
             </form>
-            <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedId ?>">
+            <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedRouteId ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
-                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="inbox.php?id=<?= (int) $conversation['id'] ?><?= $filterAccountId > 0 ? '&account_id=' . (int) $filterAccountId : '' ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?><?= $filterStatus !== '' ? '&status=' . h(rawurlencode($filterStatus)) : '' ?><?= $q !== '' ? '&q=' . h(rawurlencode($q)) : '' ?>">
+                <?php $conversationSlug = trim((string) ($conversation['account_slug'] ?? $requestSlug)); ?>
+                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="<?= h(account_url('inbox.php', ['id' => conv_display_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
                   <div class="conversation-row">
                     <span class="conversation-name"><?= h(inbox_contact_name($conversation)) ?></span>
                     <span class="conversation-time"><?= h(inbox_time($conversation['last_message_at'] ?? $conversation['created_at'] ?? '')) ?></span>
@@ -586,7 +614,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
                   <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
                 </div>
-                <a class="inbox-link" href="dashboard.php?q=<?= h(rawurlencode($funnelSearch)) ?><?= $filterAccountId > 0 ? '&account_id=' . (int) $filterAccountId : '' ?>">Ver en embudo</a>
+                <a class="inbox-link" href="<?= h(account_url('dashboard.php', ['q' => $funnelSearch, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null], $requestSlug !== '' ? $requestSlug : null)) ?>">Ver en embudo</a>
               </header>
               <?php $showChatWindowAlert = in_array((string) ($replyWindow['status'] ?? ''), ['expired', 'unknown'], true); ?>
               <?php if ($replyWindow): ?>
@@ -626,9 +654,10 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php endif; ?>
               </div>
 
-              <form class="reply-box <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="send_instagram_message.php" enctype="multipart/form-data">
+              <form class="reply-box <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="<?= h(account_url('send_instagram_message.php')) ?>" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
+                <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                <?php if ($filterAccountId > 0 && $requestSlug === ''): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
                 <div class="composer-main">
                   <div class="composer-input">
                     <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>></textarea>
@@ -700,10 +729,11 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <span>Anotaciones</span>
                 <textarea class="side-notes-input" data-lead-notes data-lead-id="<?= (int) $selected['lead_id'] ?>" maxlength="2000" rows="4" placeholder="Agregar anotación..." <?= $canEditLeads ? '' : 'disabled' ?>><?= h((string) ($selected['lead_notes'] ?? '')) ?></textarea>
               </label>
-              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>" data-auto-status-form data-status-target="salesStatusLabel">
+              <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="salesStatusLabel">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_sales_status">
-                <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
+                <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                <?php if ($filterAccountId > 0 && $requestSlug === ''): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
                 <input type="hidden" name="lead_id" value="<?= (int) $selected['lead_id'] ?>">
                 <label class="field">
                   <span class="field-label">Status comercial</span>
@@ -717,10 +747,11 @@ function inbox_visible_message_text($value, array $attachments): string {
               <button class="inbox-link" type="button" data-history-open data-lead-id="<?= (int) $selected['lead_id'] ?>">Ver historial</button>
               <?php endif; ?>
 
-              <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>" data-auto-status-form data-status-target="conversationStatusLabel">
+              <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="conversationStatusLabel">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_status">
-                <input type="hidden" name="conversation_id" value="<?= (int) $selected['id'] ?>">
+                <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                <?php if ($filterAccountId > 0 && $requestSlug === ''): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
                 <label class="field">
                   <span class="field-label">Estado conversacional</span>
                   <select name="status" <?= $canManageConversations ? '' : 'disabled' ?>>
@@ -759,7 +790,7 @@ function inbox_visible_message_text($value, array $attachments): string {
   <script src="js/dashboard.js?v=<?= (int) @filemtime(__DIR__ . '/js/dashboard.js') ?>" defer></script>
   <script>
     const inboxState = {
-      conversationId: <?= (int) $selectedId ?>,
+      conversationId: <?= (int) $selectedRouteId ?>,
       accountId: <?= (int) $filterAccountId ?>,
       channelId: <?= (int) $filterChannelId ?>,
       q: <?= json_encode($q, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
@@ -1021,14 +1052,14 @@ function inbox_visible_message_text($value, array $attachments): string {
       return 'webm';
     }
 
-    function conversationHref(id) {
+    function conversationHref(id, slug = '') {
       const params = new URLSearchParams();
       params.set('id', String(id));
-      if (inboxState.accountId) params.set('account_id', String(inboxState.accountId));
       if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
       if (inboxState.status) params.set('status', inboxState.status);
       if (inboxState.q) params.set('q', inboxState.q);
-      return `inbox.php?${params.toString()}`;
+      const cleanSlug = String(slug || '').trim();
+      return `${cleanSlug ? `/${encodeURIComponent(cleanSlug)}/` : ''}inbox.php?${params.toString()}`;
     }
 
     function renderConversations(items) {
@@ -1041,7 +1072,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         const active = Number(item.id) === Number(inboxState.conversationId);
         const unread = active ? 0 : Number(item.unread_count || 0);
         return `
-          <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id))}">
+          <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id, item.account_slug || ''))}">
             <div class="conversation-row">
               <span class="conversation-name">${escapeHtml(item.name)}</span>
               <span class="conversation-time">${escapeHtml(item.time)}</span>

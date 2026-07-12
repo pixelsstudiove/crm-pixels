@@ -39,10 +39,13 @@ Como super admin:
 - En el embudo puedes filtrar por cuenta.
 - En inbox puedes filtrar por cuenta, canal, busqueda y estado.
 - En eventos puedes filtrar logs por cuenta y reparar historial solo de esa cuenta.
+- Las rutas por cuenta deben responder con el slug, por ejemplo `/cliente-demo/dashboard.php` y `/cliente-demo/inbox.php`.
+- Las conversaciones muestran un numero publico por cuenta. El `id` visible en `/cliente-demo/inbox.php?id=1` no es el ID interno global.
 
 Como admin o vendedor:
 
 - Solo deben ver conversaciones, leads, canales y eventos de su propia cuenta.
+- Si entran por una ruta sin slug, el CRM debe redirigirlos a su ruta de cuenta.
 
 ## 5. Cierre
 

@@ -8,6 +8,8 @@ require_permission('manage_integrations');
 $channelsTable = ig_channels_table();
 ig_channels_ensure_schema($pdo, $channelsTable);
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
+$requestAccountId = accounts_request_account_id($pdo);
+$scopeAccountId = $requestAccountId > 0 ? $requestAccountId : $currentAccountId;
 
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
@@ -20,21 +22,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
     $id = (int) ($_POST['id'] ?? 0);
     if ($action === 'disconnect' && $id > 0) {
-      if (is_super_admin()) {
+      if (is_super_admin() && $requestAccountId <= 0) {
         $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=?");
         $stmt->execute([$id]);
       } else {
         $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=? AND account_id=?");
-        $stmt->execute([$id, $currentAccountId]);
+        $stmt->execute([$id, $scopeAccountId]);
       }
       $notice = 'Canal desconectado.';
     } elseif ($action === 'connect' && $id > 0) {
-      if (is_super_admin()) {
+      if (is_super_admin() && $requestAccountId <= 0) {
         $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
         $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
       } else {
         $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=? AND account_id=?");
-        $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id, $currentAccountId]);
+        $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id, $scopeAccountId]);
       }
       $notice = 'Canal conectado. Los proximos mensajes entraran al inbox.';
     }
@@ -49,6 +51,8 @@ $canConnect = $appId !== '' && $appSecret !== '';
 if ($canConnect) {
   $_SESSION['instagram_oauth_state'] = bin2hex(random_bytes(24));
   $_SESSION['instagram_oauth_redirect'] = $callbackUrl;
+  $_SESSION['instagram_oauth_account_id'] = $scopeAccountId;
+  $_SESSION['instagram_oauth_account_slug'] = accounts_slug_for_id($pdo, $scopeAccountId);
   $authUrl = 'https://www.facebook.com/' . rawurlencode((string) app_config('instagram.graph_version', 'v20.0')) . '/dialog/oauth?' . http_build_query([
     'client_id' => $appId,
     'redirect_uri' => $callbackUrl,
@@ -62,11 +66,11 @@ if ($canConnect) {
 
 $channels = [];
 try {
-  if (is_super_admin()) {
+  if (is_super_admin() && $requestAccountId <= 0) {
     $stmt = $pdo->query("SELECT * FROM {$channelsTable} ORDER BY is_active DESC, updated_at DESC, created_at DESC");
   } else {
     $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE account_id=? ORDER BY is_active DESC, updated_at DESC, created_at DESC");
-    $stmt->execute([$currentAccountId]);
+    $stmt->execute([$scopeAccountId]);
   }
   $channels = $stmt ? $stmt->fetchAll() : [];
 } catch (Throwable $e) {

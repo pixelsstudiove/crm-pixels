@@ -77,6 +77,23 @@ try {
     header('Location: login.php?error=account_suspended');
     exit;
   }
+  $requestAccount = accounts_request_account($pdo);
+  if ($requestAccount && current_user_role() !== 'super_admin' && (int) ($requestAccount['id'] ?? 0) !== (int) $_SESSION['account_id']) {
+    http_response_code(403);
+    exit('Acceso denegado.');
+  }
+  if ($_SERVER['REQUEST_METHOD'] === 'GET' && current_user_role() !== 'super_admin' && !$requestAccount) {
+    $script = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (in_array($script, ['dashboard.php', 'inbox.php', 'channels.php', 'webhook_logs.php'], true)) {
+      $slug = accounts_slug_for_id($pdo, (int) $_SESSION['account_id']);
+      if ($slug !== '') {
+        $params = $_GET;
+        unset($params['account_slug']);
+        header('Location: ' . account_url($script, $params, $slug));
+        exit;
+      }
+    }
+  }
 } catch (Throwable $e) {
   $_SESSION['role'] = normalize_role($_SESSION['role'] ?? null);
   $_SESSION['account_id'] = (int) ($_SESSION['account_id'] ?? accounts_default_id($pdo));

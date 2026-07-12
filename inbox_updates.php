@@ -13,6 +13,7 @@ $contactsTable = conv_contacts_table();
 $conversationsTable = conv_conversations_table();
 $messagesTable = conv_messages_table();
 $channelsTable = ig_channels_table();
+$accountsTable = accounts_table();
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 
 $statusOptions = [
@@ -45,7 +46,15 @@ try {
   $filterStatus = trim((string) ($_GET['status'] ?? ''));
   if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
   $q = trim((string) ($_GET['q'] ?? ''));
-  $selectedId = max(0, (int) ($_GET['id'] ?? 0));
+  $requestSlug = accounts_request_slug();
+  $requestAccount = accounts_request_account($pdo);
+  if ($requestSlug !== '' && !$requestAccount) {
+    echo json_encode(['ok' => false, 'error' => 'Cuenta no encontrada.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+  $requestAccountId = $requestAccount ? (int) ($requestAccount['id'] ?? 0) : 0;
+  $selectedRouteId = max(0, (int) ($_GET['id'] ?? 0));
+  $selectedId = $selectedRouteId;
   $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
   $filterAccountId = 0;
   if (is_super_admin()) {
@@ -56,8 +65,12 @@ try {
     } catch (Throwable $e) {
       $accountIds = [];
     }
-    $filterAccountId = max(0, (int) ($_GET['account_id'] ?? 0));
+    $filterAccountId = $requestAccountId > 0 ? $requestAccountId : max(0, (int) ($_GET['account_id'] ?? 0));
     if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
+  }
+  $publicLookupAccountId = $requestAccountId > 0 ? $requestAccountId : $filterAccountId;
+  if ($selectedRouteId > 0 && $publicLookupAccountId > 0) {
+    $selectedId = conv_resolve_public_conversation_id($pdo, $publicLookupAccountId, $selectedRouteId);
   }
 
   $where = [];
@@ -92,6 +105,7 @@ SELECT
   ct.profile_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
+  a.slug AS account_slug,
   l.fullname AS lead_fullname,
   (
     SELECT MAX(im.sent_at)
@@ -101,6 +115,7 @@ SELECT
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
+LEFT JOIN {$accountsTable} a ON a.id = c.account_id
 LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id
 {$whereSql}
 ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
@@ -114,7 +129,8 @@ SQL;
   $conversations = [];
   foreach ($rows as $row) {
     $conversations[] = [
-      'id' => (int) $row['id'],
+      'id' => conv_display_id($row),
+      'account_slug' => (string) ($row['account_slug'] ?? ''),
       'name' => updates_contact_name($row),
       'time' => updates_time($row['last_message_at'] ?? $row['created_at'] ?? ''),
       'status' => (string) ($row['status'] ?? ''),
@@ -137,6 +153,7 @@ SELECT
   ct.profile_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
+  a.slug AS account_slug,
   l.fullname AS lead_fullname,
   l.sales_status AS lead_sales_status,
   (
@@ -147,6 +164,7 @@ SELECT
 FROM {$conversationsTable} c
 JOIN {$contactsTable} ct ON ct.id = c.contact_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
+LEFT JOIN {$accountsTable} a ON a.id = c.account_id
 LEFT JOIN {$TABLE_LEADS} l ON l.id = c.lead_id
 WHERE c.id = ?
   %s
@@ -167,6 +185,7 @@ SQL;
       $selected = $detailStmt->fetch() ?: null;
     }
     if ($selected) {
+      $selectedRouteId = conv_display_id($selected);
       conv_mark_read($pdo, (int) $selected['id']);
       $msgStmt = $pdo->prepare("SELECT * FROM (SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at DESC, m.id DESC LIMIT 120) recent_messages ORDER BY sent_at ASC, id ASC");
       $msgStmt->execute([(int) $selected['id']]);
@@ -190,7 +209,7 @@ SQL;
 
   echo json_encode([
     'ok' => true,
-    'conversation_id' => $selectedId,
+    'conversation_id' => $selectedRouteId,
     'conversations' => $conversations,
     'messages' => $messages,
     'reply_window' => $selected ? meta_reply_window_info($selected['last_inbound_at'] ?? '') : null,

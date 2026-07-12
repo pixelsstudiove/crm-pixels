@@ -57,6 +57,51 @@ function accounts_find(PDO $pdo, int $accountId): ?array {
   return $row ?: null;
 }
 
+function accounts_find_by_slug(PDO $pdo, string $slug): ?array {
+  $slug = strtolower(trim($slug));
+  if (!preg_match('/^[a-z0-9-]{3,80}$/', $slug)) return null;
+  accounts_ensure_schema($pdo);
+  $table = accounts_table();
+  $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE slug=? LIMIT 1");
+  $stmt->execute([$slug]);
+  $row = $stmt->fetch();
+  return $row ?: null;
+}
+
+function accounts_slug_for_id(PDO $pdo, int $accountId): string {
+  $account = accounts_find($pdo, $accountId);
+  return trim((string) ($account['slug'] ?? ''));
+}
+
+function accounts_request_slug(): string {
+  $slug = strtolower(trim((string) ($_GET['account_slug'] ?? $_POST['account_slug'] ?? '')));
+  if ($slug !== '' && preg_match('/^[a-z0-9-]{3,80}$/', $slug)) return $slug;
+  return '';
+}
+
+function accounts_request_account(PDO $pdo): ?array {
+  $slug = accounts_request_slug();
+  return $slug !== '' ? accounts_find_by_slug($pdo, $slug) : null;
+}
+
+function accounts_request_account_id(PDO $pdo): int {
+  $account = accounts_request_account($pdo);
+  return $account ? (int) ($account['id'] ?? 0) : 0;
+}
+
+function accounts_request_account_slug(PDO $pdo): string {
+  $account = accounts_request_account($pdo);
+  return $account ? (string) ($account['slug'] ?? '') : '';
+}
+
+function account_url(string $script, array $params = [], ?string $slug = null): string {
+  $script = ltrim($script, '/');
+  $slug = $slug !== null ? strtolower(trim($slug)) : accounts_request_slug();
+  $path = $slug !== '' ? '/' . rawurlencode($slug) . '/' . $script : $script;
+  $query = http_build_query(array_filter($params, static fn($value) => $value !== null && $value !== ''), '', '&', PHP_QUERY_RFC3986);
+  return $path . ($query !== '' ? '?' . $query : '');
+}
+
 function accounts_is_active(PDO $pdo, int $accountId): bool {
   $account = accounts_find($pdo, $accountId);
   return !$account || (string) ($account['status'] ?? 'active') === 'active';

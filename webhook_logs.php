@@ -84,18 +84,20 @@ if ($status !== '' && !in_array($status, $allowedStatuses, true)) $status = '';
 $whereParts = [];
 $params = [];
 if ($status !== '') {
-  $whereParts[] = 'status = :status';
+  $whereParts[] = 'l.status = :status';
   $params[':status'] = $status;
 }
 if (!is_super_admin()) {
-  $whereParts[] = 'account_id = :account_id';
+  $whereParts[] = 'l.account_id = :account_id';
   $params[':account_id'] = $currentAccountId;
 } elseif ($filterAccountId > 0) {
-  $whereParts[] = 'account_id = :account_id';
+  $whereParts[] = 'l.account_id = :account_id';
   $params[':account_id'] = $filterAccountId;
 }
 $where = $whereParts ? 'WHERE ' . implode(' AND ', $whereParts) : '';
-$stmt = $pdo->prepare("SELECT * FROM {$logsTable} {$where} ORDER BY id DESC LIMIT 150");
+$conversationsTable = conv_conversations_table();
+$accountsTable = accounts_table();
+$stmt = $pdo->prepare("SELECT l.*, c.public_id AS conversation_public_id, a.slug AS account_slug FROM {$logsTable} l LEFT JOIN {$conversationsTable} c ON c.id = l.conversation_id LEFT JOIN {$accountsTable} a ON a.id = l.account_id {$where} ORDER BY l.id DESC LIMIT 150");
 foreach ($params as $key => $value) $stmt->bindValue($key, $value);
 $stmt->execute();
 $logs = $stmt->fetchAll();
@@ -204,7 +206,17 @@ function log_badge_class(string $status): string {
                   <td class="mono"><?= h((string) ($log['sender_id'] ?: '—')) ?></td>
                   <td class="preview"><?= h((string) ($log['message_preview'] ?: '—')) ?><br><span class="mono"><?= h((string) ($log['external_message_id'] ?: '—')) ?></span></td>
                   <td class="mono"><?= $log['lead_id'] ? '#' . (int) $log['lead_id'] : '—' ?></td>
-                  <td class="mono"><?= $log['conversation_id'] ? '<a href="conversation_debug.php?id=' . (int) $log['conversation_id'] . '">#' . (int) $log['conversation_id'] . '</a>' : '—' ?></td>
+                  <td class="mono">
+                    <?php if ($log['conversation_id']): ?>
+                      <?php
+                        $logPublicId = (int) ($log['conversation_public_id'] ?? $log['conversation_id']);
+                        $logSlug = trim((string) ($log['account_slug'] ?? accounts_request_slug()));
+                      ?>
+                      <a href="<?= h(account_url('conversation_debug.php', ['id' => $logPublicId], $logSlug !== '' ? $logSlug : null)) ?>">#<?= $logPublicId ?></a>
+                    <?php else: ?>
+                      —
+                    <?php endif; ?>
+                  </td>
                   <td class="preview"><?= h((string) ($log['error_message'] ?: '—')) ?></td>
                   <td><?= h(app_datetime($log['created_at'] ?? '')) ?></td>
                 </tr>
