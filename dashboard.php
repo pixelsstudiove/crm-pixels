@@ -271,7 +271,7 @@ foreach ($salesStatusOptions as $statusValue => $statusLabel) {
   ];
 }
 $displayTotal = $filterSalesStatus !== '' ? ($statusCounts[$filterSalesStatus] ?? 0) : $total;
-$filteredPageSize = 50;
+$filteredPageSize = 40;
 $funnelPage = $filterSalesStatus !== '' ? max(1, (int) ($_GET['page'] ?? 1)) : 1;
 $funnelLimit = $filterSalesStatus !== '' ? $filteredPageSize : 300;
 $funnelTotalPages = $filterSalesStatus !== '' ? max(1, (int) ceil($displayTotal / $filteredPageSize)) : 1;
@@ -754,7 +754,7 @@ function dash_channel_label(array $channel): string {
               $paginationWindowEnd = min($funnelTotalPages, $funnelPage + 2);
             ?>
             <nav class="funnel-pagination" aria-label="Paginación de conversaciones filtradas">
-              <span class="funnel-page-status">Página <?= (int) $funnelPage ?> de <?= (int) $funnelTotalPages ?> · 50 conversaciones por página</span>
+              <span class="funnel-page-status">Página <?= (int) $funnelPage ?> de <?= (int) $funnelTotalPages ?> · 40 conversaciones por página</span>
               <?php if ($funnelPage > 1): ?>
                 <a class="funnel-page-link" href="<?= h(dashboard_query_url($paginationBaseParams + ['page' => $funnelPage - 1])) ?>">Anterior</a>
               <?php endif; ?>
