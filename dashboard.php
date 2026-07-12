@@ -187,7 +187,7 @@ $accountOptions = [];
 $filterAccountId = 0;
 if (is_super_admin()) {
   try {
-    $accountStmt = $pdo->query("SELECT id, name FROM " . accounts_table() . " ORDER BY name ASC");
+    $accountStmt = $pdo->query("SELECT id, name, slug FROM " . accounts_table() . " ORDER BY name ASC");
     $accountOptions = $accountStmt ? $accountStmt->fetchAll() : [];
   } catch (Throwable $e) {
     $accountOptions = [];
@@ -258,7 +258,7 @@ if ($filterSalesStatus !== '') {
 }
 $funnelWhereSql = $funnelWhereConditions ? 'WHERE ' . implode(' AND ', $funnelWhereConditions) : '';
 $activeFilters = array_filter([
-  'account_id' => $filterAccountId > 0 ? $filterAccountId : null,
+  'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null,
   'channel_id' => $filterChannelId > 0 ? $filterChannelId : null,
   'q' => $q,
   'sales_status' => $filterSalesStatus,
@@ -295,7 +295,7 @@ $summaryToneByStatus = [
   'no_responde' => 'muted',
 ];
 $summaryBaseParams = [];
-if ($filterAccountId > 0) $summaryBaseParams['account_id'] = $filterAccountId;
+if ($filterAccountId > 0 && $requestSlug === '') $summaryBaseParams['account_id'] = $filterAccountId;
 if ($filterChannelId > 0) $summaryBaseParams['channel_id'] = $filterChannelId;
 if ($q !== '') $summaryBaseParams['q'] = $q;
 function dashboard_query_url(array $params): string {
@@ -506,6 +506,9 @@ function dash_channel_label(array $channel): string {
     .wa-btn:hover, .user-btn:hover, .logout-btn:hover, .search-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .wa-btn:active, .user-btn:active, .logout-btn:active, .search-btn:active { transform:translateY(1px); }
     .role-pill { display:inline-flex; align-items:center; justify-content:center; min-height:28px; padding:0 10px; border-radius:999px; border:1px solid #8bdfff; background:#eefaff; color:#006e95; font-size:.78rem; font-weight:900; white-space:nowrap; }
+    .account-switch { display:inline-flex; align-items:center; height:40px; }
+    .account-switch select { appearance:none; min-width:190px; height:40px; padding:0 34px 0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font:inherit; font-size:.95rem; font-weight:850; cursor:pointer; }
+    .account-switch select:hover, .account-switch select:focus { background:#dff6ff; border-color:#8bdfff; outline:none; }
     .menu-dropdown { position:relative; }
     .menu-trigger { appearance:none; display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font:inherit; font-size:.95rem; font-weight:850; cursor:pointer; user-select:none; transition:background .2s ease, border-color .2s ease, transform .06s ease; }
     .menu-trigger::after { content:"⌄"; color:#007ea8; font-size:.95rem; line-height:1; transform:translateY(-1px); }
@@ -537,7 +540,7 @@ function dash_channel_label(array $channel): string {
     .filters-toggle { display:none; align-items:center; justify-content:center; min-height:40px; margin-top:14px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.95rem; font-weight:800; cursor:pointer; }
     .filters-toggle:hover { background:#dff6ff; border-color:#8bdfff; }
     .filters-toggle:active { transform:translateY(1px); }
-    .filters-form { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)) auto; gap:10px; align-items:end; justify-content:start; }
+    .filters-form { display:grid; grid-template-columns:minmax(260px, 1fr) minmax(220px, 320px) auto; gap:10px; align-items:end; justify-content:start; }
     .filter-field { display:grid; gap:6px; min-width:0; }
     .filter-field span { color:var(--brand-muted); font-size:.78rem; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
     .filter-field input, .filter-field select { width:100%; height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; font-weight:700; }
@@ -663,6 +666,17 @@ function dash_channel_label(array $channel): string {
             <h1 class="title"><?= h(app_config('ui.dashboard_heading', 'Dashboard')) ?></h1>
           </div>
           <div class="topbar-right">
+            <?php if (is_super_admin()): ?>
+              <label class="account-switch" aria-label="Cambiar cuenta">
+                <select onchange="if (this.value) window.location.href = this.value">
+                  <option value="<?= h(account_url('dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'sales_status' => $filterSalesStatus], '')) ?>" <?= $filterAccountId <= 0 ? 'selected' : '' ?>>Todas las cuentas</option>
+                  <?php foreach ($accountOptions as $account): ?>
+                    <?php $accountSlug = trim((string) ($account['slug'] ?? '')); ?>
+                    <option value="<?= h(account_url('dashboard.php', ['q' => $q, 'channel_id' => null, 'sales_status' => $filterSalesStatus], $accountSlug !== '' ? $accountSlug : null)) ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+            <?php endif; ?>
             <?php if (can('view_conversations') || $canManageIntegrations): ?>
               <div class="menu-dropdown" data-menu>
                 <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
@@ -680,7 +694,7 @@ function dash_channel_label(array $channel): string {
                 <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
                 <?php if (can('manage_accounts')): ?><a class="menu-item" href="accounts.php">Gestión de cuentas</a><?php endif; ?>
                 <?php if ($canManageUsers): ?><a class="menu-item" href="users.php">Gestión de usuarios</a><?php endif; ?>
-                <form class="menu-form" action="logout.php" method="post">
+                <form class="menu-form" action="/logout.php" method="post">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                   <button class="menu-item" type="submit">Cerrar sesión</button>
                 </form>
@@ -707,17 +721,6 @@ function dash_channel_label(array $channel): string {
         <div class="lead-filters" id="leadFilters" aria-label="Filtros de conversaciones">
           <form class="filters-form" method="get" action="dashboard.php">
             <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
-            <?php if (is_super_admin()): ?>
-            <label class="filter-field">
-              <span>Cuenta</span>
-              <select name="account_id">
-                <option value="">Todas</option>
-                <?php foreach ($accountOptions as $account): ?>
-                  <option value="<?= (int) $account['id'] ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
-                <?php endforeach; ?>
-              </select>
-            </label>
-            <?php endif; ?>
             <label class="filter-field">
               <span>Buscar</span>
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Cliente, Instagram o mensaje">
