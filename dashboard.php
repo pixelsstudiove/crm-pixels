@@ -607,10 +607,11 @@ function dash_channel_label(array $channel): string {
           <div class="topbar-right">
             <?php if (can('view_conversations') || $canManageIntegrations): ?>
               <div class="menu-dropdown" data-menu>
-                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">CRM</button>
+                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
                 <div class="menu-panel" role="menu">
                   <?php if (can('view_conversations')): ?><a class="menu-item" href="inbox.php">Inbox</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Gestionar canales</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Ver canales</a><?php endif; ?>
+                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="webhook_logs.php">Ver eventos</a><?php endif; ?>
                 </div>
               </div>
             <?php endif; ?>

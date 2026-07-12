@@ -416,9 +416,9 @@ function inbox_visible_message_text($value, array $attachments): string {
           <div class="inbox-actions">
             <?php if ($canViewDashboard || $canManageIntegrations): ?>
               <div class="menu-dropdown" data-menu>
-                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Embudo</button>
+                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
                 <div class="menu-panel" role="menu">
-                  <?php if ($canViewDashboard): ?><a class="menu-item" href="dashboard.php">Embudo</a><?php endif; ?>
+                  <?php if ($canViewDashboard): ?><a class="menu-item" href="dashboard.php">Embudo comercial</a><?php endif; ?>
                   <?php if ($canManageIntegrations): ?><a class="menu-item" href="channels.php">Ver canales</a><?php endif; ?>
                   <?php if ($canManageIntegrations): ?><a class="menu-item" href="webhook_logs.php">Ver eventos</a><?php endif; ?>
                 </div>
