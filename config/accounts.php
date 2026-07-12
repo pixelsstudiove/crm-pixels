@@ -97,7 +97,7 @@ function accounts_request_account_slug(PDO $pdo): string {
 function account_url(string $script, array $params = [], ?string $slug = null): string {
   $script = ltrim($script, '/');
   $slug = $slug !== null ? strtolower(trim($slug)) : accounts_request_slug();
-  $path = $slug !== '' ? '/' . rawurlencode($slug) . '/' . $script : $script;
+  $path = $slug !== '' ? '/' . rawurlencode($slug) . '/' . $script : '/' . $script;
   $query = http_build_query(array_filter($params, static fn($value) => $value !== null && $value !== ''), '', '&', PHP_QUERY_RFC3986);
   return $path . ($query !== '' ? '?' . $query : '');
 }
