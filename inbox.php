@@ -491,12 +491,16 @@ function inbox_visible_message_text($value, array $attachments): string {
 
           <section class="inbox-panel" aria-label="Chat">
             <?php if ($selected): ?>
+              <?php
+                $funnelSearch = trim((string) ($selected['username'] ?? ''));
+                $funnelSearch = $funnelSearch !== '' ? ltrim($funnelSearch, '@') : inbox_contact_name($selected);
+              ?>
               <header class="chat-header">
                 <div>
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
                   <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
                 </div>
-                <a class="inbox-link" href="dashboard.php?q=<?= (int) $selected['id'] ?>">Ver en embudo</a>
+                <a class="inbox-link" href="dashboard.php?q=<?= h(rawurlencode($funnelSearch)) ?>">Ver en embudo</a>
               </header>
               <?php $showChatWindowAlert = in_array((string) ($replyWindow['status'] ?? ''), ['expired', 'unknown'], true); ?>
               <?php if ($replyWindow): ?>
