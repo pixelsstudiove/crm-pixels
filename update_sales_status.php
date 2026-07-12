@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/auth/require_auth.php';
+require_once __DIR__ . '/config/lead_status_history.php';
 header('Content-Type: application/json; charset=utf-8');
 
 if (!can('edit_leads')) {
@@ -21,6 +22,7 @@ if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], (stri
 
 $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
 $salesStatus = isset($_POST['sales_status']) ? trim((string) $_POST['sales_status']) : '';
+$changeReason = isset($_POST['change_reason']) ? trim((string) $_POST['change_reason']) : '';
 $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
 
 if ($allowedStatuses === []) {
@@ -43,6 +45,12 @@ if ($id <= 0 || !in_array($salesStatus, $allowedStatuses, true)) {
   exit;
 }
 
+if (mb_strlen($changeReason) < 4) {
+  http_response_code(422);
+  echo json_encode(['ok' => false, 'error' => 'Indica el motivo del cambio.'], JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
 try {
   $chk = $pdo->prepare('SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=? AND TABLE_NAME=? AND COLUMN_NAME=?');
   $chk->execute([$DB_NAME, $TABLE_LEADS, 'sales_status']);
@@ -60,8 +68,23 @@ try {
     try { $pdo->exec("ALTER TABLE {$TABLE_LEADS} ADD KEY idx_sales_status (sales_status)"); } catch (Throwable $e) { /* índice existente */ }
   }
 
+  $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? LIMIT 1");
+  $current->execute([$id]);
+  $previousStatus = (string) ($current->fetchColumn() ?: '');
+  if ($previousStatus === $salesStatus) {
+    echo json_encode([
+      'ok' => true,
+      'sales_status' => $salesStatus,
+      'label' => (string) app_config('sales_funnel.statuses.' . $salesStatus, $salesStatus),
+      'updated_at' => '',
+      'unchanged' => true,
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
+
   $upd = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
   $upd->execute([$salesStatus, $id]);
+  lead_status_history_record($pdo, $id, $previousStatus !== '' ? $previousStatus : null, $salesStatus, $changeReason);
   $stamp = $pdo->prepare("SELECT updated_at FROM {$TABLE_LEADS} WHERE id=?");
   $stamp->execute([$id]);
   $updatedAt = (string) ($stamp->fetchColumn() ?: '');

@@ -104,6 +104,108 @@
 
   const csrf = document.querySelector('meta[name="csrf"]')?.getAttribute('content') || '';
 
+  function escapeHtml(value){
+    return String(value ?? '').replace(/[&<>"']/g, (char)=>({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;'
+    }[char]));
+  }
+
+  function ensureLeadModal(){
+    let modal = document.getElementById('leadWorkflowModal');
+    if(modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'leadWorkflowModal';
+    modal.className = 'modal-backdrop';
+    modal.setAttribute('data-modal', '');
+    modal.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="leadWorkflowTitle">
+        <h2 id="leadWorkflowTitle"></h2>
+        <p class="subtitle" id="leadWorkflowSubtitle"></p>
+        <div id="leadWorkflowBody"></div>
+      </div>
+    `;
+    modal.addEventListener('click', (event)=>{
+      if(event.target === modal) modal.classList.remove('is-open');
+    });
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function requestStatusChangeReason(previousLabel, nextLabel){
+    return new Promise((resolve)=>{
+      const modal = ensureLeadModal();
+      const title = modal.querySelector('#leadWorkflowTitle');
+      const subtitle = modal.querySelector('#leadWorkflowSubtitle');
+      const body = modal.querySelector('#leadWorkflowBody');
+      title.textContent = 'Motivo del cambio';
+      subtitle.textContent = `${previousLabel || 'Status actual'} → ${nextLabel || 'Nuevo status'}`;
+      body.innerHTML = `
+        <label class="field">
+          <span class="field-label">Motivo del cambio</span>
+          <textarea id="statusChangeReason" maxlength="1000" placeholder="Ej: Cliente solicitó presupuesto, se validó interés o no respondió al seguimiento."></textarea>
+        </label>
+        <div class="form-alert alert-error" id="statusChangeError" style="display:none"></div>
+        <div class="actions">
+          <button type="button" class="btn-secondary" data-reason-cancel>Cancelar</button>
+          <button type="button" class="btn-secondary" data-reason-save>Guardar cambio</button>
+        </div>
+      `;
+      const textarea = body.querySelector('#statusChangeReason');
+      const error = body.querySelector('#statusChangeError');
+      const finish = (value)=>{
+        modal.classList.remove('is-open');
+        resolve(value);
+      };
+      body.querySelector('[data-reason-cancel]').addEventListener('click', ()=>finish(null), { once:true });
+      body.querySelector('[data-reason-save]').addEventListener('click', ()=>{
+        const reason = textarea.value.trim();
+        if(reason.length < 4){
+          error.textContent = 'Indica el motivo del cambio.';
+          error.style.display = 'block';
+          textarea.focus();
+          return;
+        }
+        finish(reason);
+      });
+      modal.classList.add('is-open');
+      window.setTimeout(()=>textarea.focus(), 30);
+    });
+  }
+
+  async function openLeadHistory(leadId){
+    const modal = ensureLeadModal();
+    const title = modal.querySelector('#leadWorkflowTitle');
+    const subtitle = modal.querySelector('#leadWorkflowSubtitle');
+    const body = modal.querySelector('#leadWorkflowBody');
+    title.textContent = 'Historial de cambios';
+    subtitle.textContent = 'Bitácora comercial del lead.';
+    body.innerHTML = '<p class="subtitle">Cargando historial...</p>';
+    modal.classList.add('is-open');
+
+    try{
+      const res = await fetch(`lead_status_history.php?lead_id=${encodeURIComponent(leadId)}`, {
+        headers:{ 'Accept':'application/json', 'X-Requested-With':'fetch' },
+        cache:'no-store'
+      });
+      const data = await res.json().catch(()=>({ ok:false }));
+      if(!res.ok || !data.ok) throw new Error(data.error || 'No se pudo cargar el historial.');
+      const items = Array.isArray(data.items) ? data.items : [];
+      body.innerHTML = items.length ? `
+        <div class="history-list">
+          ${items.map(item => `
+            <article class="history-item">
+              <strong>${escapeHtml(item.previous_label)} → ${escapeHtml(item.new_label)}</strong>
+              <p>${escapeHtml(item.reason)}</p>
+              <div class="history-meta">${escapeHtml(item.username || 'Sistema')} · ${escapeHtml(item.created_at || '')}</div>
+            </article>
+          `).join('')}
+        </div>
+      ` : '<p class="subtitle">Este lead aún no tiene cambios de status registrados.</p>';
+    }catch(error){
+      body.innerHTML = `<div class="form-alert alert-error" style="display:block">${escapeHtml(error.message || 'No se pudo cargar el historial.')}</div>`;
+    }
+  }
+
   function bindDashboardControls(){
     const filtersToggle = document.querySelector('[data-filters-toggle]');
     const filtersPanel = document.getElementById('leadFilters');
@@ -141,6 +243,15 @@
         const id = input.getAttribute('data-id') || tr?.getAttribute('data-id');
         const nextValue = input.value;
         if(!id) return;
+        if(nextValue === previousValue) return;
+
+        const previousLabel = input.querySelector(`option[value="${cssEscapeValue(previousValue)}"]`)?.textContent || previousValue;
+        const nextLabel = input.options[input.selectedIndex]?.textContent || nextValue;
+        const changeReason = await requestStatusChangeReason(previousLabel, nextLabel);
+        if(changeReason === null){
+          input.value = previousValue;
+          return;
+        }
 
         input.disabled = true;
         input.classList.add('is-saving');
@@ -149,6 +260,7 @@
           const fd = new FormData();
           fd.append('id', id);
           fd.append('sales_status', nextValue);
+          fd.append('change_reason', changeReason);
           fd.append('csrf', csrf);
 
           const res = await fetch('update_sales_status.php', { method:'POST', body: fd });
@@ -175,6 +287,15 @@
           input.disabled = false;
           input.classList.remove('is-saving');
         }
+      });
+    });
+
+    document.querySelectorAll('[data-history-open]').forEach(button=>{
+      if(button.dataset.bound) return;
+      button.dataset.bound = '1';
+      button.addEventListener('click', ()=>{
+        const leadId = button.getAttribute('data-lead-id');
+        if(leadId) openLeadHistory(leadId);
       });
     });
 

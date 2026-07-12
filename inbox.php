@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/lead_status_history.php';
 require_permission('view_conversations');
 
 conv_ensure_schema($pdo);
@@ -83,9 +84,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'update_sales_status' && $canEditLeads && $conversationId > 0) {
       $leadId = (int) ($_POST['lead_id'] ?? 0);
       $salesStatus = (string) ($_POST['sales_status'] ?? '');
-      if ($leadId > 0 && array_key_exists($salesStatus, $salesStatusOptions)) {
+      $changeReason = trim((string) ($_POST['change_reason'] ?? ''));
+      if ($leadId <= 0 || !array_key_exists($salesStatus, $salesStatusOptions)) {
+        if (inbox_wants_json()) inbox_json_error('Selecciona un status comercial valido.');
+        $errors[] = 'Selecciona un status comercial valido.';
+      } elseif (mb_strlen($changeReason) < 4) {
+        if (inbox_wants_json()) inbox_json_error('Indica el motivo del cambio.');
+        $errors[] = 'Indica el motivo del cambio.';
+      } else {
+        $current = $pdo->prepare("SELECT sales_status FROM {$TABLE_LEADS} WHERE id=? LIMIT 1");
+        $current->execute([$leadId]);
+        $previousStatus = (string) ($current->fetchColumn() ?: '');
         $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");
         $stmt->execute([$salesStatus, $leadId]);
+        if ($previousStatus !== $salesStatus) {
+          lead_status_history_record($pdo, $leadId, $previousStatus !== '' ? $previousStatus : null, $salesStatus, $changeReason);
+        }
         if (inbox_wants_json()) {
           header('Content-Type: application/json; charset=utf-8');
           echo json_encode(['ok' => true, 'sales_status' => $salesStatus, 'label' => (string) $salesStatusOptions[$salesStatus], 'notice' => 'Status comercial actualizado.'], JSON_UNESCAPED_UNICODE);
@@ -94,8 +108,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: inbox.php?id=' . $conversationId . '&notice=' . rawurlencode('Status comercial actualizado.'));
         exit;
       }
-      if (inbox_wants_json()) inbox_json_error('Selecciona un status comercial valido.');
-      $errors[] = 'Selecciona un status comercial valido.';
     } elseif (inbox_wants_json()) {
       inbox_json_error('No tienes permiso o la accion no es valida.', 403);
     }
@@ -273,7 +285,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .inbox-card > .panel { width:100%; height:100%; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
     .inbox-header { flex:0 0 auto; display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
     .inbox-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .inbox-link, .inbox-btn { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font-weight:850; text-decoration:none; cursor:pointer; }
+    .inbox-link, .inbox-btn { appearance:none; display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:#007ea8; font:inherit; font-weight:850; text-decoration:none; cursor:pointer; }
     .inbox-link.primary, .inbox-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .inbox-link:hover, .inbox-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .menu-dropdown { position:relative; }
@@ -400,7 +412,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     .modal .subtitle { color:rgba(234,250,255,.86); }
     .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
     .modal .field-label { color:#eafaff; }
-    .modal input { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.22); color:#fff; }
+    .modal input, .modal textarea { width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.22); border-radius:12px; color:#fff; padding:10px 12px; font:inherit; outline:none; }
+    .modal textarea { min-height:110px; resize:vertical; line-height:1.4; }
+    .modal input:focus, .modal textarea:focus { border-color:#8bdfff; box-shadow:0 0 0 3px rgba(0,212,255,.14); }
+    .history-list { display:grid; gap:10px; margin-top:14px; max-height:360px; overflow:auto; }
+    .history-item { border:1px solid rgba(255,255,255,.18); border-radius:14px; padding:12px; background:rgba(255,255,255,.06); }
+    .history-item strong { display:block; color:#fff; margin-bottom:5px; }
+    .history-item p { margin:0; color:rgba(234,250,255,.88); line-height:1.4; }
+    .history-meta { margin-top:7px; color:rgba(234,250,255,.66); font-size:.82rem; font-weight:750; }
     .btn-secondary { appearance:none; border:1px solid rgba(255,255,255,.35); background:transparent; color:#eafaff; padding:10px 14px; border-radius:12px; cursor:pointer; }
     .btn-secondary:hover { background:rgba(255,255,255,.08); }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); grid-template-rows:minmax(0, 1fr) auto; overflow:auto; } .side-panel { grid-column:1 / -1; max-height:none; } }
@@ -628,6 +647,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   </select>
                 </label>
               </form>
+              <button class="inbox-link" type="button" data-history-open data-lead-id="<?= (int) $selected['lead_id'] ?>">Ver historial</button>
               <?php endif; ?>
 
               <form class="status-form" method="post" action="inbox.php?id=<?= (int) $selected['id'] ?>" data-auto-status-form data-status-target="conversationStatusLabel">
@@ -746,6 +766,102 @@ function inbox_visible_message_text($value, array $attachments): string {
       if (!noticeArea || !message) return;
       noticeArea.innerHTML = `<div class="form-alert ${type === 'error' ? 'alert-error' : 'alert-info'} notice">${escapeHtml(message)}</div>`;
       window.setTimeout(() => { if (noticeArea) noticeArea.innerHTML = ''; }, 4200);
+    }
+
+    function ensureLeadWorkflowModal() {
+      let modal = document.getElementById('leadWorkflowModal');
+      if (modal) return modal;
+      modal = document.createElement('div');
+      modal.id = 'leadWorkflowModal';
+      modal.className = 'modal-backdrop';
+      modal.setAttribute('data-modal', '');
+      modal.innerHTML = `
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="leadWorkflowTitle">
+          <h2 id="leadWorkflowTitle"></h2>
+          <p class="subtitle" id="leadWorkflowSubtitle"></p>
+          <div id="leadWorkflowBody"></div>
+        </div>
+      `;
+      modal.addEventListener('click', event => {
+        if (event.target === modal) modal.classList.remove('is-open');
+      });
+      document.body.appendChild(modal);
+      return modal;
+    }
+
+    function requestStatusChangeReason(previousLabel, nextLabel) {
+      return new Promise(resolve => {
+        const modal = ensureLeadWorkflowModal();
+        const title = modal.querySelector('#leadWorkflowTitle');
+        const subtitle = modal.querySelector('#leadWorkflowSubtitle');
+        const body = modal.querySelector('#leadWorkflowBody');
+        title.textContent = 'Motivo del cambio';
+        subtitle.textContent = `${previousLabel || 'Status actual'} → ${nextLabel || 'Nuevo status'}`;
+        body.innerHTML = `
+          <label class="field">
+            <span class="field-label">Motivo del cambio</span>
+            <textarea id="statusChangeReason" maxlength="1000" placeholder="Ej: Cliente solicitó presupuesto, se validó interés o no respondió al seguimiento."></textarea>
+          </label>
+          <div class="form-alert alert-error" id="statusChangeError" style="display:none"></div>
+          <div class="actions">
+            <button type="button" class="btn-secondary" data-reason-cancel>Cancelar</button>
+            <button type="button" class="btn-secondary" data-reason-save>Guardar cambio</button>
+          </div>
+        `;
+        const textarea = body.querySelector('#statusChangeReason');
+        const error = body.querySelector('#statusChangeError');
+        const finish = value => {
+          modal.classList.remove('is-open');
+          resolve(value);
+        };
+        body.querySelector('[data-reason-cancel]').addEventListener('click', () => finish(null), { once: true });
+        body.querySelector('[data-reason-save]').addEventListener('click', () => {
+          const reason = textarea.value.trim();
+          if (reason.length < 4) {
+            error.textContent = 'Indica el motivo del cambio.';
+            error.style.display = 'block';
+            textarea.focus();
+            return;
+          }
+          finish(reason);
+        });
+        modal.classList.add('is-open');
+        window.setTimeout(() => textarea.focus(), 30);
+      });
+    }
+
+    async function openLeadHistory(leadId) {
+      const modal = ensureLeadWorkflowModal();
+      const title = modal.querySelector('#leadWorkflowTitle');
+      const subtitle = modal.querySelector('#leadWorkflowSubtitle');
+      const body = modal.querySelector('#leadWorkflowBody');
+      title.textContent = 'Historial de cambios';
+      subtitle.textContent = 'Bitácora comercial del lead.';
+      body.innerHTML = '<p class="subtitle">Cargando historial...</p>';
+      modal.classList.add('is-open');
+
+      try {
+        const response = await fetch(`lead_status_history.php?lead_id=${encodeURIComponent(leadId)}`, {
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+          cache: 'no-store'
+        });
+        const data = await response.json().catch(() => ({ ok: false }));
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No se pudo cargar el historial.');
+        const items = Array.isArray(data.items) ? data.items : [];
+        body.innerHTML = items.length ? `
+          <div class="history-list">
+            ${items.map(item => `
+              <article class="history-item">
+                <strong>${escapeHtml(item.previous_label)} → ${escapeHtml(item.new_label)}</strong>
+                <p>${escapeHtml(item.reason)}</p>
+                <div class="history-meta">${escapeHtml(item.username || 'Sistema')} · ${escapeHtml(item.created_at || '')}</div>
+              </article>
+            `).join('')}
+          </div>
+        ` : '<p class="subtitle">Este lead aún no tiene cambios de status registrados.</p>';
+      } catch (error) {
+        body.innerHTML = `<div class="form-alert alert-error" style="display:block">${escapeHtml(error.message || 'No se pudo cargar el historial.')}</div>`;
+      }
     }
 
     function attachmentMarkup(attachments) {
@@ -1493,7 +1609,21 @@ function inbox_visible_message_text($value, array $attachments): string {
 
       select.addEventListener('change', async () => {
         const nextValue = select.value;
+        if (nextValue === previousValue) return;
+        const isSalesStatus = String(form.querySelector('input[name="action"]')?.value || '') === 'update_sales_status';
+        let changeReason = '';
+        if (isSalesStatus) {
+          const previousLabel = Array.from(select.options).find(option => option.value === previousValue)?.textContent || previousValue;
+          const nextLabel = select.options[select.selectedIndex]?.textContent || nextValue;
+          const reason = await requestStatusChangeReason(previousLabel, nextLabel);
+          if (reason === null) {
+            select.value = previousValue;
+            return;
+          }
+          changeReason = reason;
+        }
         const formData = new FormData(form);
+        if (isSalesStatus) formData.append('change_reason', changeReason);
         const actionUrl = form.getAttribute('action') || window.location.href;
         select.disabled = true;
         try {
@@ -1517,6 +1647,13 @@ function inbox_visible_message_text($value, array $attachments): string {
         } finally {
           select.disabled = false;
         }
+      });
+    });
+
+    document.querySelectorAll('[data-history-open]').forEach(button => {
+      button.addEventListener('click', () => {
+        const leadId = button.getAttribute('data-lead-id');
+        if (leadId) openLeadHistory(leadId);
       });
     });
 

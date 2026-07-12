@@ -546,7 +546,7 @@ function dash_channel_label(array $channel): string {
     .funnel-card-title strong { color:var(--brand-ink); line-height:1.2; }
     .funnel-id { color:#007ea8; font-size:.78rem; font-weight:900; }
     .funnel-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:2px; }
-    .funnel-action-link { display:inline-flex; width:100%; align-items:center; justify-content:center; min-height:38px; padding:0 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font-size:.82rem; font-weight:850; text-decoration:none; }
+    .funnel-action-link { appearance:none; display:inline-flex; width:100%; align-items:center; justify-content:center; min-height:38px; padding:0 10px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font:inherit; font-size:.82rem; font-weight:850; text-decoration:none; cursor:pointer; }
     .funnel-action-link:hover { background:#dff6ff; border-color:#8bdfff; }
     .funnel-meta { display:grid; gap:4px; color:var(--brand-muted); font-size:.83rem; line-height:1.3; }
     .funnel-meta-line { display:flex; gap:5px; align-items:center; flex-wrap:wrap; }
@@ -573,7 +573,14 @@ function dash_channel_label(array $channel): string {
     .modal .subtitle { color:rgba(234,250,255,.86); }
     .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
     .modal .field-label { color:#eafaff; }
-    .modal input { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.22); color:#fff; }
+    .modal input, .modal textarea { width:100%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.22); border-radius:12px; color:#fff; padding:10px 12px; font:inherit; outline:none; }
+    .modal textarea { min-height:110px; resize:vertical; line-height:1.4; }
+    .modal input:focus, .modal textarea:focus { border-color:#8bdfff; box-shadow:0 0 0 3px rgba(0,212,255,.14); }
+    .history-list { display:grid; gap:10px; margin-top:14px; max-height:360px; overflow:auto; }
+    .history-item { border:1px solid rgba(255,255,255,.18); border-radius:14px; padding:12px; background:rgba(255,255,255,.06); }
+    .history-item strong { display:block; color:#fff; margin-bottom:5px; }
+    .history-item p { margin:0; color:rgba(234,250,255,.88); line-height:1.4; }
+    .history-meta { margin-top:7px; color:rgba(234,250,255,.66); font-size:.82rem; font-weight:750; }
     .btn-secondary { appearance:none; border:1px solid rgba(255,255,255,.35); background:transparent; color:#eafaff; padding:10px 14px; border-radius:12px; cursor:pointer; }
     .btn-secondary:hover { background:rgba(255,255,255,.08); }
     @media (max-width: 1200px) { .filters-form { grid-template-columns:minmax(220px, 1fr) minmax(220px, 320px) auto; } }
@@ -736,6 +743,7 @@ function dash_channel_label(array $channel): string {
                       <?php endif; ?>
                       <div class="funnel-actions">
                         <a class="funnel-action-link" href="inbox.php?id=<?= $conversationId ?><?= $filterChannelId > 0 ? '&channel_id=' . (int) $filterChannelId : '' ?>">Abrir conversación</a>
+                        <?php if ($leadId > 0): ?><button class="funnel-action-link" type="button" data-history-open data-lead-id="<?= $leadId ?>">Ver historial</button><?php endif; ?>
                       </div>
                     </article>
                   <?php endforeach; else: ?>
