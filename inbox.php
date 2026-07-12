@@ -309,6 +309,7 @@ if ($selected) {
   $msgStmt->execute([(int) $selected['id']]);
   $messages = $msgStmt->fetchAll();
 }
+$selectedAccountId = $selected ? (int) ($selected['account_id'] ?? 0) : 0;
 $attachmentsByMessage = conv_attachments_for_messages($pdo, array_map(static fn($message) => (int) ($message['id'] ?? 0), $messages));
 $lastMessageId = 0;
 foreach ($messages as $message) $lastMessageId = max($lastMessageId, (int) ($message['id'] ?? 0));
@@ -663,7 +664,7 @@ function inbox_visible_message_text($value, array $attachments): string {
               <form class="reply-box <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="<?= h(account_url('send_instagram_message.php')) ?>" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
-                <?php if ($filterAccountId > 0 && $requestSlug === ''): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
+                <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                 <div class="composer-main">
                   <div class="composer-input">
                     <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canSendMessages && ($replyWindow['can_reply'] ?? true) ? '' : 'disabled' ?>></textarea>
@@ -739,7 +740,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_sales_status">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
-                <?php if ($filterAccountId > 0 && $requestSlug === ''): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
+                <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                 <input type="hidden" name="lead_id" value="<?= (int) $selected['lead_id'] ?>">
                 <label class="field">
                   <span class="field-label">Status comercial</span>
@@ -757,7 +758,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="action" value="update_status">
                 <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
-                <?php if ($filterAccountId > 0 && $requestSlug === ''): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
+                <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                 <label class="field">
                   <span class="field-label">Estado conversacional</span>
                   <select name="status" <?= $canManageConversations ? '' : 'disabled' ?>>
@@ -798,6 +799,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     const inboxState = {
       conversationId: <?= (int) $selectedRouteId ?>,
       accountId: <?= (int) $filterAccountId ?>,
+      selectedAccountId: <?= (int) $selectedAccountId ?>,
       channelId: <?= (int) $filterChannelId ?>,
       q: <?= json_encode($q, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
@@ -1253,6 +1255,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       try {
         const params = new URLSearchParams();
         if (inboxState.conversationId) params.set('id', String(inboxState.conversationId));
+        if (inboxState.selectedAccountId) params.set('selected_account_id', String(inboxState.selectedAccountId));
         if (inboxState.accountId) params.set('account_id', String(inboxState.accountId));
         if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
         if (inboxState.q) params.set('q', inboxState.q);

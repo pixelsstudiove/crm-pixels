@@ -56,6 +56,7 @@ try {
   $selectedRouteId = max(0, (int) ($_GET['id'] ?? 0));
   $selectedId = $selectedRouteId;
   $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
+  $selectedAccountId = max(0, (int) ($_GET['selected_account_id'] ?? 0));
   $filterAccountId = 0;
   if (is_super_admin()) {
     $accountIds = [];
@@ -68,7 +69,7 @@ try {
     $filterAccountId = $requestAccountId > 0 ? $requestAccountId : max(0, (int) ($_GET['account_id'] ?? 0));
     if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
   }
-  $publicLookupAccountId = $requestAccountId > 0 ? $requestAccountId : $filterAccountId;
+  $publicLookupAccountId = $requestAccountId > 0 ? $requestAccountId : ($selectedAccountId > 0 ? $selectedAccountId : $filterAccountId);
   if ($selectedRouteId > 0 && $publicLookupAccountId > 0) {
     $selectedId = conv_resolve_public_conversation_id($pdo, $publicLookupAccountId, $selectedRouteId);
   }
@@ -172,11 +173,11 @@ LIMIT 1
 SQL;
     $accountDetailSql = '';
     if (!is_super_admin()) $accountDetailSql = 'AND c.account_id = ?';
-    elseif ($filterAccountId > 0) $accountDetailSql = 'AND c.account_id = ?';
+    elseif ($publicLookupAccountId > 0) $accountDetailSql = 'AND c.account_id = ?';
     $detailStmt = $pdo->prepare(sprintf($detailSql, $accountDetailSql));
     $detailParams = [$selectedId];
     if (!is_super_admin()) $detailParams[] = $currentAccountId;
-    elseif ($filterAccountId > 0) $detailParams[] = $filterAccountId;
+    elseif ($publicLookupAccountId > 0) $detailParams[] = $publicLookupAccountId;
     $detailStmt->execute($detailParams);
     $selected = $detailStmt->fetch() ?: null;
     if ($selected && empty($selected['lead_id'])) {
