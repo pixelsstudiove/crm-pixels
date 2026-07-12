@@ -393,7 +393,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .inbox-panel { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; overflow:hidden; box-shadow:0 8px 22px rgba(0, 76, 110, .06); }
     .inbox-layout > .inbox-panel { min-height:0; max-height:100%; }
     .inbox-layout > .inbox-panel:first-child, .inbox-layout > .inbox-panel:nth-child(2) { display:flex; flex-direction:column; }
-    .conversation-filters { flex:0 0 auto; display:grid; grid-template-columns:minmax(0, 1fr) minmax(150px, 210px) minmax(150px, 210px) auto; gap:8px; padding:12px; border-bottom:1px solid var(--inbox-line); background:#fbfdff; }
+    .conversation-filters { flex:0 0 auto; display:grid; grid-template-columns:1fr; gap:8px; padding:12px; border-bottom:1px solid var(--inbox-line); background:#fbfdff; }
     .conversation-filters input { width:100%; min-height:40px; border:1px solid var(--line); border-radius:10px; padding:0 10px; font:inherit; color:var(--inbox-ink); background:#fff; }
     .conversation-filters select, .status-form select { appearance:none; width:100%; height:var(--field-h); padding:0 15px; outline:none; border:1px solid var(--line); border-radius:var(--radius-sm); color:var(--brand-ink); background:var(--field-bg); box-shadow:inset 0 1px 0 rgba(51,10,12,.02); font:inherit; transition:border-color .18s, box-shadow .18s; cursor:pointer; }
     .conversation-filters select:focus, .status-form select:focus { border-color:var(--focus); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
@@ -512,7 +512,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .btn-secondary { appearance:none; border:1px solid rgba(255,255,255,.35); background:transparent; color:#eafaff; padding:10px 14px; border-radius:12px; cursor:pointer; }
     .btn-secondary:hover { background:rgba(255,255,255,.08); }
     @media (max-width: 1100px) { .inbox-layout { grid-template-columns:minmax(260px, 340px) minmax(0, 1fr); grid-template-rows:minmax(0, 1fr) auto; overflow:auto; } .side-panel { grid-column:1 / -1; max-height:none; } }
-    @media (max-width: 760px) { .inbox-card { height:auto; min-height:calc(100vh - (var(--dashboard-pad) * 2)); } .inbox-card > .panel { height:auto; overflow:visible; } .inbox-layout { flex:0 0 auto; grid-template-columns:1fr; overflow:visible; } .conversation-filters { grid-template-columns:1fr; } .conversation-list { flex:0 0 auto; max-height:300px; } .message-list { min-height:320px; max-height:52vh; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:minmax(0, 1fr) 44px; } .composer-submit { grid-column:1 / -1; min-height:46px; } }
+    @media (max-width: 760px) { .inbox-card { height:auto; min-height:calc(100vh - (var(--dashboard-pad) * 2)); } .inbox-card > .panel { height:auto; overflow:visible; } .inbox-layout { flex:0 0 auto; grid-template-columns:1fr; overflow:visible; } .conversation-list { flex:0 0 auto; max-height:300px; } .message-list { min-height:320px; max-height:52vh; padding:12px; } .message { max-width:92%; } .composer-main { grid-template-columns:minmax(0, 1fr) 44px; } .composer-submit { grid-column:1 / -1; min-height:46px; } }
     @media (max-width: 700px) { .inbox-actions { width:100%; } .menu-dropdown { flex:1; } .menu-trigger { width:100%; } .menu-panel { left:0; right:auto; width:min(92vw, 280px); } }
   </style>
 </head>
@@ -585,7 +585,6 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <option value="<?= h($value) ?>" <?= $filterStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
                 <?php endforeach; ?>
               </select>
-              <button class="inbox-btn" type="submit">Buscar</button>
             </form>
             <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedRouteId ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
