@@ -293,6 +293,137 @@
     return Boolean(active.closest?.('[data-funnel-wrap]') && active.matches?.(editableSelector));
   }
 
+  function cssEscapeValue(value){
+    if(window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+    return String(value).replace(/["\\]/g, '\\$&');
+  }
+
+  function captureFunnelPosition(funnel){
+    const state = {
+      windowX: window.scrollX,
+      windowY: window.scrollY,
+      columns: {},
+      windowAnchor: null
+    };
+    if(!funnel) return state;
+
+    funnel.querySelectorAll('.funnel-column[data-status]').forEach(column=>{
+      const status = column.getAttribute('data-status') || '';
+      const list = column.querySelector('.funnel-list');
+      if(!status || !list) return;
+
+      const isScrollableList = list.scrollHeight > list.clientHeight + 2;
+      const viewportTop = isScrollableList ? list.getBoundingClientRect().top : 0;
+      const viewportBottom = isScrollableList ? list.getBoundingClientRect().bottom : window.innerHeight;
+      const columnState = {
+        scrollTop: list.scrollTop,
+        scrollLeft: list.scrollLeft,
+        anchor: null
+      };
+
+      const cards = list.querySelectorAll('.funnel-card[data-conversation-id]');
+      for(const card of cards){
+        const rect = card.getBoundingClientRect();
+        if(rect.bottom <= viewportTop || rect.top >= viewportBottom) continue;
+
+        columnState.anchor = {
+          conversationId: card.getAttribute('data-conversation-id') || '',
+          offset: rect.top - viewportTop,
+          mode: isScrollableList ? 'list' : 'window'
+        };
+
+        if(!isScrollableList && !state.windowAnchor){
+          state.windowAnchor = columnState.anchor;
+        }
+        break;
+      }
+
+      state.columns[status] = columnState;
+    });
+
+    return state;
+  }
+
+  function restoreFunnelPosition(funnel, state){
+    if(!funnel || !state) return;
+    let restoredWindowAnchor = false;
+
+    Object.entries(state.columns || {}).forEach(([status, columnState])=>{
+      const column = funnel.querySelector(`.funnel-column[data-status="${cssEscapeValue(status)}"]`);
+      const list = column?.querySelector('.funnel-list');
+      if(!list) return;
+
+      list.scrollTop = columnState.scrollTop || 0;
+      list.scrollLeft = columnState.scrollLeft || 0;
+
+      const anchor = columnState.anchor;
+      if(!anchor?.conversationId) return;
+      const card = list.querySelector(`.funnel-card[data-conversation-id="${cssEscapeValue(anchor.conversationId)}"]`);
+      if(!card) return;
+
+      if(anchor.mode === 'list'){
+        const listTop = list.getBoundingClientRect().top;
+        const currentOffset = card.getBoundingClientRect().top - listTop;
+        list.scrollTop += currentOffset - anchor.offset;
+        return;
+      }
+
+      if(!restoredWindowAnchor && state.windowAnchor?.conversationId === anchor.conversationId){
+        const currentOffset = card.getBoundingClientRect().top;
+        window.scrollBy(0, currentOffset - anchor.offset);
+        restoredWindowAnchor = true;
+      }
+    });
+
+    if(!restoredWindowAnchor){
+      window.scrollTo(state.windowX || 0, state.windowY || 0);
+    }
+  }
+
+  function updateFunnelInPlace(currentFunnel, nextFunnel){
+    if(!currentFunnel || !nextFunnel) return false;
+    const currentBoard = currentFunnel.querySelector('.funnel-board');
+    const nextBoard = nextFunnel.querySelector('.funnel-board');
+    if(!currentBoard || !nextBoard) return false;
+
+    currentFunnel.className = nextFunnel.className;
+    currentBoard.className = nextBoard.className;
+
+    const currentColumns = new Map();
+    currentBoard.querySelectorAll('.funnel-column[data-status]').forEach(column=>{
+      currentColumns.set(column.getAttribute('data-status') || '', column);
+    });
+
+    nextBoard.querySelectorAll('.funnel-column[data-status]').forEach(nextColumn=>{
+      const status = nextColumn.getAttribute('data-status') || '';
+      const currentColumn = currentColumns.get(status);
+      if(!currentColumn){
+        currentBoard.appendChild(nextColumn.cloneNode(true));
+        return;
+      }
+
+      currentColumn.className = nextColumn.className;
+      const currentHeader = currentColumn.querySelector('.funnel-column-header');
+      const nextHeader = nextColumn.querySelector('.funnel-column-header');
+      if(currentHeader && nextHeader) currentHeader.replaceWith(nextHeader.cloneNode(true));
+
+      const currentList = currentColumn.querySelector('.funnel-list');
+      const nextList = nextColumn.querySelector('.funnel-list');
+      if(currentList && nextList) currentList.innerHTML = nextList.innerHTML;
+    });
+
+    currentColumns.forEach((column, status)=>{
+      if(!nextBoard.querySelector(`.funnel-column[data-status="${cssEscapeValue(status)}"]`)) column.remove();
+    });
+
+    currentFunnel.querySelectorAll(':scope > .funnel-limit-note, :scope > .funnel-pagination').forEach(el=>el.remove());
+    nextFunnel.querySelectorAll(':scope > .funnel-limit-note, :scope > .funnel-pagination').forEach(el=>{
+      currentFunnel.appendChild(el.cloneNode(true));
+    });
+
+    return true;
+  }
+
   let dashboardPolling = false;
   async function pollDashboard(force){
     const root = document.querySelector('[data-dashboard-auto-update]');
@@ -314,8 +445,16 @@
       const nextFunnel = doc.querySelector('[data-funnel-wrap]');
       const currentSummary = document.querySelector('[data-summary-grid]');
       const currentFunnel = document.querySelector('[data-funnel-wrap]');
+      const funnelPosition = captureFunnelPosition(currentFunnel);
       if(nextSummary && currentSummary) currentSummary.replaceWith(nextSummary);
-      if(nextFunnel && currentFunnel) currentFunnel.replaceWith(nextFunnel);
+      if(nextFunnel && currentFunnel){
+        if(!updateFunnelInPlace(currentFunnel, nextFunnel)){
+          currentFunnel.replaceWith(nextFunnel);
+        }
+        window.requestAnimationFrame(()=>{
+          restoreFunnelPosition(document.querySelector('[data-funnel-wrap]'), funnelPosition);
+        });
+      }
       bindDashboardControls();
     }catch(_){
       // El dashboard se intentará actualizar de nuevo en el siguiente ciclo.
