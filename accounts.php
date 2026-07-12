@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {
     $errors[] = 'CSRF inválido. Recarga la página.';
   } else {
-    $action = (string) ($_POST['action'] ?? 'create_account');
+    $action = (string) ($_POST['action'] ?? '');
     if ($action === 'create_account' || $action === 'update_account') {
       $accountId = max(0, (int) ($_POST['id'] ?? 0));
       $name = trim((string) ($_POST['name'] ?? ''));
@@ -40,19 +40,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
       if (!$errors) {
         try {
-          if ($action === 'create_account') {
-            $stmt = $pdo->prepare("INSERT INTO {$accountsTable} (name, slug, status) VALUES (?, ?, ?)");
-            $stmt->execute([$name, $slug, $status]);
-            $notice = 'Cuenta creada correctamente.';
-          } else {
-            $stmt = $pdo->prepare("UPDATE {$accountsTable} SET name=?, slug=?, status=?, updated_at=NOW() WHERE id=?");
-            $stmt->execute([$name, $slug, $status, $accountId]);
-            $notice = 'Cuenta actualizada correctamente.';
+          if ($action === 'update_account') {
+            $existsStmt = $pdo->prepare("SELECT id FROM {$accountsTable} WHERE id=? LIMIT 1");
+            $existsStmt->execute([$accountId]);
+            if (!$existsStmt->fetchColumn()) $errors[] = 'La cuenta que intentas actualizar no existe.';
+          }
+
+          if (!$errors) {
+            $slugStmt = $action === 'create_account'
+              ? $pdo->prepare("SELECT id FROM {$accountsTable} WHERE slug=? LIMIT 1")
+              : $pdo->prepare("SELECT id FROM {$accountsTable} WHERE slug=? AND id<>? LIMIT 1");
+            $action === 'create_account' ? $slugStmt->execute([$slug]) : $slugStmt->execute([$slug, $accountId]);
+            if ($slugStmt->fetchColumn()) $errors[] = 'Ese slug ya está siendo usado por otra cuenta.';
+          }
+
+          if (!$errors) {
+            if ($action === 'create_account') {
+              $stmt = $pdo->prepare("INSERT INTO {$accountsTable} (name, slug, status) VALUES (?, ?, ?)");
+              $stmt->execute([$name, $slug, $status]);
+              $notice = 'Cuenta creada correctamente.';
+            } else {
+              $stmt = $pdo->prepare("UPDATE {$accountsTable} SET name=?, slug=?, status=?, updated_at=NOW() WHERE id=?");
+              $stmt->execute([$name, $slug, $status, $accountId]);
+              $notice = 'Cuenta actualizada correctamente.';
+            }
           }
         } catch (Throwable $e) {
           $errors[] = 'No se pudo guardar la cuenta. Verifica que el slug no esté repetido.';
         }
       }
+    } else {
+      $errors[] = 'Acción inválida. Usa el panel de Nueva cuenta para crear o el botón Guardar para actualizar una cuenta existente.';
     }
   }
 }
@@ -120,7 +138,7 @@ SQL);
         <div class="accounts-grid">
           <section class="accounts-box">
             <h2>Nueva cuenta</h2>
-            <form class="accounts-form" method="post" action="accounts.php" autocomplete="off">
+            <form class="accounts-form" method="post" action="/accounts.php" autocomplete="off">
               <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
               <input type="hidden" name="action" value="create_account">
               <label class="field">
@@ -166,7 +184,7 @@ SQL);
                       <td><?= h((string) ($statusOptions[(string) ($account['status'] ?? '')] ?? $account['status'])) ?></td>
                       <td><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</td>
                       <td>
-                        <form class="accounts-form accounts-inline" method="post" action="accounts.php" autocomplete="off">
+                        <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
                           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                           <input type="hidden" name="action" value="update_account">
                           <input type="hidden" name="id" value="<?= (int) $account['id'] ?>">
