@@ -104,181 +104,230 @@
 
   const csrf = document.querySelector('meta[name="csrf"]')?.getAttribute('content') || '';
 
-  const filtersToggle = document.querySelector('[data-filters-toggle]');
-  const filtersPanel = document.getElementById('leadFilters');
-  if(filtersToggle && filtersPanel){
-    filtersToggle.addEventListener('click', ()=>{
-      const isOpen = filtersPanel.classList.toggle('is-open');
-      filtersToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  function bindDashboardControls(){
+    const filtersToggle = document.querySelector('[data-filters-toggle]');
+    const filtersPanel = document.getElementById('leadFilters');
+    if(filtersToggle && filtersPanel && !filtersToggle.dataset.bound){
+      filtersToggle.dataset.bound = '1';
+      filtersToggle.addEventListener('click', ()=>{
+        const isOpen = filtersPanel.classList.toggle('is-open');
+        filtersToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+    }
+
+    document.querySelectorAll('.filters-form select').forEach(select=>{
+      if(select.dataset.bound) return;
+      select.dataset.bound = '1';
+      select.addEventListener('change', ()=>{
+        const form = select.closest('form');
+        if(!form) return;
+        if(typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.submit();
+      });
+    });
+
+    document.querySelectorAll('.sales-status-select').forEach(select=>{
+      if(select.dataset.bound) return;
+      select.dataset.bound = '1';
+      let previousValue = select.value;
+
+      select.addEventListener('focus', ()=>{
+        previousValue = select.value;
+      });
+
+      select.addEventListener('change', async (e)=>{
+        const input = e.currentTarget;
+        const tr = input.closest('tr');
+        const id = input.getAttribute('data-id') || tr?.getAttribute('data-id');
+        const nextValue = input.value;
+        if(!id) return;
+
+        input.disabled = true;
+        input.classList.add('is-saving');
+
+        try{
+          const fd = new FormData();
+          fd.append('id', id);
+          fd.append('sales_status', nextValue);
+          fd.append('csrf', csrf);
+
+          const res = await fetch('update_sales_status.php', { method:'POST', body: fd });
+          const data = await res.json().catch(()=>({ ok:false }));
+
+          if(!res.ok || !data.ok){
+            input.value = previousValue;
+            alert(data.error || 'No se pudo actualizar el status comercial. Intenta de nuevo.');
+            return;
+          }
+
+          previousValue = nextValue;
+          input.dataset.status = nextValue;
+          const updatedCell = input.closest('tr')?.querySelector('.updated-cell');
+          if(updatedCell && data.updated_at){
+            updatedCell.textContent = data.updated_at;
+            updatedCell.setAttribute('title', data.updated_at);
+          }
+          pollDashboard(true);
+        }catch(_){
+          input.value = previousValue;
+          alert('Error de red al actualizar el status comercial.');
+        }finally{
+          input.disabled = false;
+          input.classList.remove('is-saving');
+        }
+      });
+    });
+
+    document.querySelectorAll('.notes-input').forEach(input=>{
+      if(input.dataset.bound) return;
+      input.dataset.bound = '1';
+      let previousValue = input.value;
+
+      input.addEventListener('focus', ()=>{
+        previousValue = input.value;
+      });
+
+      input.addEventListener('change', async (e)=>{
+        const field = e.currentTarget;
+        const id = field.getAttribute('data-id');
+        const notes = field.value;
+        if(!id) return;
+
+        field.disabled = true;
+        field.classList.add('is-saving');
+
+        try{
+          const fd = new FormData();
+          fd.append('id', id);
+          fd.append('notes', notes);
+          fd.append('csrf', csrf);
+
+          const res = await fetch('update_lead_notes.php', { method:'POST', body: fd });
+          const data = await res.json().catch(()=>({ ok:false }));
+
+          if(!res.ok || !data.ok){
+            field.value = previousValue;
+            alert(data.error || 'No se pudieron actualizar las anotaciones. Intenta de nuevo.');
+            return;
+          }
+
+          previousValue = notes;
+          const updatedCell = field.closest('tr')?.querySelector('.updated-cell');
+          if(updatedCell && data.updated_at){
+            updatedCell.textContent = data.updated_at;
+            updatedCell.setAttribute('title', data.updated_at);
+          }
+        }catch(_){
+          field.value = previousValue;
+          alert('Error de red al actualizar las anotaciones.');
+        }finally{
+          field.disabled = false;
+          field.classList.remove('is-saving');
+        }
+      });
+    });
+
+    document.querySelectorAll('.reminder-control').forEach(control=>{
+      if(control.dataset.bound) return;
+      control.dataset.bound = '1';
+      const atInput = control.querySelector('.reminder-at');
+      const noteInput = control.querySelector('.reminder-note');
+      const clearBtn = control.querySelector('.reminder-clear');
+      const id = control.getAttribute('data-id');
+      if(!id || !atInput || !noteInput) return;
+
+      async function saveReminder(){
+        control.classList.add('is-saving');
+        atInput.disabled = true;
+        noteInput.disabled = true;
+        if(clearBtn) clearBtn.disabled = true;
+
+        try{
+          const fd = new FormData();
+          fd.append('id', id);
+          fd.append('reminder_at', atInput.value || '');
+          fd.append('reminder_note', noteInput.value || '');
+          fd.append('csrf', csrf);
+
+          const res = await fetch('update_lead_reminder.php', { method:'POST', body: fd });
+          const data = await res.json().catch(()=>({ ok:false }));
+
+          if(!res.ok || !data.ok){
+            alert(data.error || 'No se pudo actualizar el recordatorio.');
+            return;
+          }
+
+          const updatedCell = control.closest('tr')?.querySelector('.updated-cell');
+          if(updatedCell && data.updated_at){
+            updatedCell.textContent = data.updated_at;
+            updatedCell.setAttribute('title', data.updated_at);
+          }
+        }catch(_){
+          alert('Error de red al actualizar el recordatorio.');
+        }finally{
+          atInput.disabled = false;
+          noteInput.disabled = false;
+          if(clearBtn) clearBtn.disabled = false;
+          control.classList.remove('is-saving');
+        }
+      }
+
+      atInput.addEventListener('change', saveReminder);
+      noteInput.addEventListener('change', saveReminder);
+      if(clearBtn){
+        clearBtn.addEventListener('click', ()=>{
+          atInput.value = '';
+          noteInput.value = '';
+          saveReminder();
+        });
+      }
     });
   }
 
-  document.querySelectorAll('.filters-form select').forEach(select=>{
-    select.addEventListener('change', ()=>{
-      const form = select.closest('form');
-      if(!form) return;
-      if(typeof form.requestSubmit === 'function') form.requestSubmit();
-      else form.submit();
-    });
-  });
+  function dashboardShouldPauseUpdate(){
+    if(document.hidden) return true;
+    if(document.querySelector('.is-saving')) return true;
+    const active = document.activeElement;
+    if(!active) return false;
+    const editableSelector = 'input, textarea, select, [contenteditable="true"]';
+    return Boolean(active.closest?.('[data-funnel-wrap]') && active.matches?.(editableSelector));
+  }
 
-  document.querySelectorAll('.sales-status-select').forEach(select=>{
-    let previousValue = select.value;
+  let dashboardPolling = false;
+  async function pollDashboard(force){
+    const root = document.querySelector('[data-dashboard-auto-update]');
+    if(!root || dashboardPolling) return;
+    if(!force && dashboardShouldPauseUpdate()) return;
 
-    select.addEventListener('focus', ()=>{
-      previousValue = select.value;
-    });
-
-    select.addEventListener('change', async (e)=>{
-      const input = e.currentTarget;
-      const tr = input.closest('tr');
-      const id = input.getAttribute('data-id') || tr?.getAttribute('data-id');
-      const nextValue = input.value;
-      if(!id) return;
-
-      input.disabled = true;
-      input.classList.add('is-saving');
-
-      try{
-        const fd = new FormData();
-        fd.append('id', id);
-        fd.append('sales_status', nextValue);
-        fd.append('csrf', csrf);
-
-        const res = await fetch('update_sales_status.php', { method:'POST', body: fd });
-        const data = await res.json().catch(()=>({ ok:false }));
-
-        if(!res.ok || !data.ok){
-          input.value = previousValue;
-          alert(data.error || 'No se pudo actualizar el status comercial. Intenta de nuevo.');
-          return;
-        }
-
-        previousValue = nextValue;
-        input.dataset.status = nextValue;
-        const updatedCell = input.closest('tr')?.querySelector('.updated-cell');
-        if(updatedCell && data.updated_at){
-          updatedCell.textContent = data.updated_at;
-          updatedCell.setAttribute('title', data.updated_at);
-        }
-        if(input.closest('.funnel-card')){
-          window.location.reload();
-        }
-      }catch(_){
-        input.value = previousValue;
-        alert('Error de red al actualizar el status comercial.');
-      }finally{
-        input.disabled = false;
-        input.classList.remove('is-saving');
-      }
-    });
-  });
-
-  document.querySelectorAll('.notes-input').forEach(input=>{
-    let previousValue = input.value;
-
-    input.addEventListener('focus', ()=>{
-      previousValue = input.value;
-    });
-
-    input.addEventListener('change', async (e)=>{
-      const field = e.currentTarget;
-      const id = field.getAttribute('data-id');
-      const notes = field.value;
-      if(!id) return;
-
-      field.disabled = true;
-      field.classList.add('is-saving');
-
-      try{
-        const fd = new FormData();
-        fd.append('id', id);
-        fd.append('notes', notes);
-        fd.append('csrf', csrf);
-
-        const res = await fetch('update_lead_notes.php', { method:'POST', body: fd });
-        const data = await res.json().catch(()=>({ ok:false }));
-
-        if(!res.ok || !data.ok){
-          field.value = previousValue;
-          alert(data.error || 'No se pudieron actualizar las anotaciones. Intenta de nuevo.');
-          return;
-        }
-
-        previousValue = notes;
-        const updatedCell = field.closest('tr')?.querySelector('.updated-cell');
-        if(updatedCell && data.updated_at){
-          updatedCell.textContent = data.updated_at;
-          updatedCell.setAttribute('title', data.updated_at);
-        }
-        if(field.closest('.funnel-card')){
-          window.location.reload();
-        }
-      }catch(_){
-        field.value = previousValue;
-        alert('Error de red al actualizar las anotaciones.');
-      }finally{
-        field.disabled = false;
-        field.classList.remove('is-saving');
-      }
-    });
-  });
-
-  document.querySelectorAll('.reminder-control').forEach(control=>{
-    const atInput = control.querySelector('.reminder-at');
-    const noteInput = control.querySelector('.reminder-note');
-    const clearBtn = control.querySelector('.reminder-clear');
-    const id = control.getAttribute('data-id');
-    if(!id || !atInput || !noteInput) return;
-
-    async function saveReminder(){
-      control.classList.add('is-saving');
-      atInput.disabled = true;
-      noteInput.disabled = true;
-      if(clearBtn) clearBtn.disabled = true;
-
-      try{
-        const fd = new FormData();
-        fd.append('id', id);
-        fd.append('reminder_at', atInput.value || '');
-        fd.append('reminder_note', noteInput.value || '');
-        fd.append('csrf', csrf);
-
-        const res = await fetch('update_lead_reminder.php', { method:'POST', body: fd });
-        const data = await res.json().catch(()=>({ ok:false }));
-
-        if(!res.ok || !data.ok){
-          alert(data.error || 'No se pudo actualizar el recordatorio.');
-          return;
-        }
-
-        const updatedCell = control.closest('tr')?.querySelector('.updated-cell');
-        if(updatedCell && data.updated_at){
-          updatedCell.textContent = data.updated_at;
-          updatedCell.setAttribute('title', data.updated_at);
-        }
-        if(control.closest('.funnel-card')){
-          window.location.reload();
-        }
-      }catch(_){
-        alert('Error de red al actualizar el recordatorio.');
-      }finally{
-        atInput.disabled = false;
-        noteInput.disabled = false;
-        if(clearBtn) clearBtn.disabled = false;
-        control.classList.remove('is-saving');
-      }
-    }
-
-    atInput.addEventListener('change', saveReminder);
-    noteInput.addEventListener('change', saveReminder);
-    if(clearBtn){
-      clearBtn.addEventListener('click', ()=>{
-        atInput.value = '';
-        noteInput.value = '';
-        saveReminder();
+    dashboardPolling = true;
+    try{
+      const url = new URL(window.location.href);
+      url.searchParams.set('_dashboard_auto', Date.now().toString());
+      const res = await fetch(url.toString(), {
+        headers: { 'Accept': 'text/html', 'X-Requested-With': 'fetch' },
+        cache: 'no-store'
       });
+      if(!res.ok) return;
+      const html = await res.text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const nextSummary = doc.querySelector('[data-summary-grid]');
+      const nextFunnel = doc.querySelector('[data-funnel-wrap]');
+      const currentSummary = document.querySelector('[data-summary-grid]');
+      const currentFunnel = document.querySelector('[data-funnel-wrap]');
+      if(nextSummary && currentSummary) currentSummary.replaceWith(nextSummary);
+      if(nextFunnel && currentFunnel) currentFunnel.replaceWith(nextFunnel);
+      bindDashboardControls();
+    }catch(_){
+      // El dashboard se intentará actualizar de nuevo en el siguiente ciclo.
+    }finally{
+      dashboardPolling = false;
     }
-  });
+  }
+
+  bindDashboardControls();
+
+  if(document.querySelector('[data-dashboard-auto-update]')){
+    window.setInterval(()=>pollDashboard(false), 5000);
+  }
 
 })();

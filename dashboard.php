@@ -270,7 +270,13 @@ foreach ($salesStatusOptions as $statusValue => $statusLabel) {
     'active' => $filterSalesStatus === $statusValue,
   ];
 }
-$funnelLimit = 300;
+$displayTotal = $filterSalesStatus !== '' ? ($statusCounts[$filterSalesStatus] ?? 0) : $total;
+$filteredPageSize = 50;
+$funnelPage = $filterSalesStatus !== '' ? max(1, (int) ($_GET['page'] ?? 1)) : 1;
+$funnelLimit = $filterSalesStatus !== '' ? $filteredPageSize : 300;
+$funnelTotalPages = $filterSalesStatus !== '' ? max(1, (int) ceil($displayTotal / $filteredPageSize)) : 1;
+if ($funnelPage > $funnelTotalPages) $funnelPage = $funnelTotalPages;
+$funnelOffset = $filterSalesStatus !== '' ? (($funnelPage - 1) * $filteredPageSize) : 0;
 $funnelLeadsByStatus = [];
 foreach ($salesStatusOptions as $statusValue => $statusLabel) {
   $funnelLeadsByStatus[(string) $statusValue] = [];
@@ -325,16 +331,17 @@ SELECT
 %WHERE%
 ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
 LIMIT :limit
+OFFSET :offset
 SQL;
 $funnelSql = str_replace('%WHERE%', $funnelWhereSql, $funnelSql);
 $funnelStmt = $pdo->prepare($funnelSql);
 $funnelStmt->bindValue(':default_sales_status_select', $defaultSalesStatus);
 foreach ($funnelWhereParams as $key => $value) $funnelStmt->bindValue($key, $value);
 $funnelStmt->bindValue(':limit', $funnelLimit, PDO::PARAM_INT);
+$funnelStmt->bindValue(':offset', $funnelOffset, PDO::PARAM_INT);
 $funnelStmt->execute();
 $funnelLeads = $funnelStmt->fetchAll();
-$displayTotal = $filterSalesStatus !== '' ? ($statusCounts[$filterSalesStatus] ?? 0) : $total;
-$funnelOverflow = $displayTotal > $funnelLimit && count($funnelLeads) >= $funnelLimit;
+$funnelOverflow = $filterSalesStatus === '' && $displayTotal > $funnelLimit && count($funnelLeads) >= $funnelLimit;
 
 foreach ($funnelLeads as $lead) {
   $statusValue = (string) ($lead['sales_status'] ?? '');
@@ -553,6 +560,12 @@ function dash_channel_label(array $channel): string {
     .funnel-card .notes-input { width:100%; min-height:74px; font-size:.86rem; }
     .funnel-empty { margin:0; padding:14px; color:var(--brand-muted); font-weight:750; }
     .funnel-limit-note { margin:12px 0 0; color:var(--brand-muted); font-size:.88rem; font-weight:700; }
+    .funnel-pagination { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; margin:16px 0 0; }
+    .funnel-page-link, .funnel-page-current { display:inline-flex; align-items:center; justify-content:center; min-height:38px; min-width:38px; padding:0 12px; border-radius:10px; border:1px solid var(--line); font-size:.86rem; font-weight:850; text-decoration:none; }
+    .funnel-page-link { background:var(--surface-soft); color:#007ea8; }
+    .funnel-page-link:hover { background:#dff6ff; border-color:#8bdfff; }
+    .funnel-page-current { background:#071120; color:#eafaff; border-color:#071120; }
+    .funnel-page-status { width:100%; color:var(--brand-muted); text-align:center; font-size:.84rem; font-weight:750; }
     .modal-backdrop { position:fixed; inset:0; background:rgba(0,8,18,.72); display:none; align-items:center; justify-content:center; z-index:9999; }
     .modal-backdrop.is-open { display:flex; }
     .modal { width:min(92vw, 520px); border-radius:22px; border:1px solid rgba(255,255,255,.32); background:rgba(7,17,32,.96); backdrop-filter:blur(18px) saturate(120%); box-shadow:0 20px 60px rgba(0,0,0,.45); padding:24px; color:#eafaff; }
@@ -585,7 +598,7 @@ function dash_channel_label(array $channel): string {
 <body class="dashboard-page">
   <main class="dashboard-shell">
     <section class="form-card dashboard-card">
-      <div class="panel">
+      <div class="panel" data-dashboard-auto-update>
         <div class="topbar">
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Marca')) ?></p>
@@ -620,7 +633,7 @@ function dash_channel_label(array $channel): string {
           <?= h(app_config('ui.dashboard_subtitle', 'Listado de registros')) ?><?= $q !== '' ? " – Búsqueda: <strong>" . h($q) . "</strong>" : '' ?>
         </p>
 
-        <div class="summary-grid" aria-label="Resumen comercial">
+        <div class="summary-grid" aria-label="Resumen comercial" data-summary-grid>
           <?php foreach ($summaryCards as $card): ?>
             <a class="summary-card <?= !empty($card['active']) ? 'is-active' : '' ?>" href="<?= h((string) $card['href']) ?>" data-tone="<?= h($card['tone']) ?>" aria-current="<?= !empty($card['active']) ? 'true' : 'false' ?>">
               <strong><?= (int) $card['value'] ?></strong>
@@ -659,7 +672,7 @@ function dash_channel_label(array $channel): string {
           <?php endif; ?>
         </div>
 
-        <div class="funnel-wrap<?= $filterSalesStatus !== '' ? ' is-filtered' : '' ?>" aria-label="Embudo comercial">
+        <div class="funnel-wrap<?= $filterSalesStatus !== '' ? ' is-filtered' : '' ?>" aria-label="Embudo comercial" data-funnel-wrap>
           <div class="funnel-board<?= $filterSalesStatus !== '' ? ' is-filtered' : '' ?>">
             <?php foreach ($visibleStatusOptions as $statusValue => $statusLabel): ?>
               <?php $cards = $funnelLeadsByStatus[(string) $statusValue] ?? []; ?>
@@ -733,6 +746,29 @@ function dash_channel_label(array $channel): string {
           </div>
           <?php if ($funnelOverflow): ?>
             <p class="funnel-limit-note">Mostrando las <?= (int) $funnelLimit ?> conversaciones más recientes del resultado filtrado.</p>
+          <?php endif; ?>
+          <?php if ($filterSalesStatus !== '' && $funnelTotalPages > 1): ?>
+            <?php
+              $paginationBaseParams = $summaryBaseParams + ['sales_status' => $filterSalesStatus];
+              $paginationWindowStart = max(1, $funnelPage - 2);
+              $paginationWindowEnd = min($funnelTotalPages, $funnelPage + 2);
+            ?>
+            <nav class="funnel-pagination" aria-label="Paginación de conversaciones filtradas">
+              <span class="funnel-page-status">Página <?= (int) $funnelPage ?> de <?= (int) $funnelTotalPages ?> · 50 conversaciones por página</span>
+              <?php if ($funnelPage > 1): ?>
+                <a class="funnel-page-link" href="<?= h(dashboard_query_url($paginationBaseParams + ['page' => $funnelPage - 1])) ?>">Anterior</a>
+              <?php endif; ?>
+              <?php for ($page = $paginationWindowStart; $page <= $paginationWindowEnd; $page++): ?>
+                <?php if ($page === $funnelPage): ?>
+                  <span class="funnel-page-current" aria-current="page"><?= (int) $page ?></span>
+                <?php else: ?>
+                  <a class="funnel-page-link" href="<?= h(dashboard_query_url($paginationBaseParams + ['page' => $page])) ?>"><?= (int) $page ?></a>
+                <?php endif; ?>
+              <?php endfor; ?>
+              <?php if ($funnelPage < $funnelTotalPages): ?>
+                <a class="funnel-page-link" href="<?= h(dashboard_query_url($paginationBaseParams + ['page' => $funnelPage + 1])) ?>">Siguiente</a>
+              <?php endif; ?>
+            </nav>
           <?php endif; ?>
         </div>
       </div>
