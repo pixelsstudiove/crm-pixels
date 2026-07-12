@@ -198,6 +198,11 @@ SQL;
   $detailStmt = $pdo->prepare($detailSql);
   $detailStmt->execute([$selectedId]);
   $selected = $detailStmt->fetch() ?: null;
+  if ($selected && empty($selected['lead_id'])) {
+    conv_ensure_lead_for_conversation($pdo, $TABLE_LEADS, (int) $selected['id']);
+    $detailStmt->execute([$selectedId]);
+    $selected = $detailStmt->fetch() ?: null;
+  }
   if ($selected) conv_mark_read($pdo, (int) $selected['id']);
 }
 

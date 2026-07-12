@@ -482,6 +482,122 @@ function conv_send_instagram_audio(PDO $pdo, array $conversation, string $audioU
   return conv_send_instagram_attachment($pdo, $conversation, $audioUrl, 'audio');
 }
 
+function conv_ensure_lead_for_conversation(PDO $pdo, string $leadsTable, int $conversationId): int {
+  if ($conversationId <= 0) return 0;
+  conv_ensure_schema($pdo);
+
+  $conversationsTable = conv_conversations_table();
+  $contactsTable = conv_contacts_table();
+  $channelsTable = ig_channels_table();
+  $defaultSalesStatus = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) app_config('sales_funnel.default_status', 'nuevo_lead')) ?: 'nuevo_lead';
+
+  $stmt = $pdo->prepare(<<<SQL
+SELECT
+  c.id,
+  c.lead_id,
+  c.channel_id,
+  c.external_source,
+  c.external_thread_id,
+  c.last_message_preview,
+  c.last_message_at,
+  c.created_at,
+  ct.external_contact_id,
+  ct.display_name,
+  ct.username,
+  ch.page_id,
+  ch.instagram_user_id,
+  ch.instagram_username,
+  ch.page_name
+FROM {$conversationsTable} c
+JOIN {$contactsTable} ct ON ct.id = c.contact_id
+LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
+WHERE c.id = ?
+LIMIT 1
+SQL);
+  $stmt->execute([$conversationId]);
+  $conversation = $stmt->fetch();
+  if (!$conversation) return 0;
+
+  $currentLeadId = (int) ($conversation['lead_id'] ?? 0);
+  if ($currentLeadId > 0) return $currentLeadId;
+
+  $senderId = conv_clean($conversation['external_contact_id'] ?? null, 160);
+  if ($senderId === null) return 0;
+
+  $threadId = conv_clean($conversation['external_thread_id'] ?? null, 180);
+  $recipientId = null;
+  if ($threadId !== null && str_contains($threadId, ':')) {
+    $parts = explode(':', $threadId, 2);
+    $recipientId = conv_clean($parts[0] ?? null, 160);
+  }
+  $recipientId = $recipientId
+    ?? conv_clean($conversation['instagram_user_id'] ?? null, 160)
+    ?? conv_clean($conversation['page_id'] ?? null, 160)
+    ?? 'unknown';
+  $contactKey = $recipientId . ':' . $senderId;
+
+  $existing = $pdo->prepare("SELECT id FROM {$leadsTable} WHERE external_source=? AND external_contact_id=? LIMIT 1");
+  $existing->execute(['instagram', $contactKey]);
+  $leadId = (int) ($existing->fetchColumn() ?: 0);
+
+  $displayName = conv_clean($conversation['display_name'] ?? null, 180);
+  $username = conv_clean($conversation['username'] ?? null, 180);
+  $fullname = $displayName ?: ($username ? '@' . ltrim($username, '@') : 'Lead Instagram #' . substr($senderId, -6));
+  $brandInstagram = $username;
+  $messageText = conv_clean($conversation['last_message_preview'] ?? 'Conversacion iniciada desde Instagram.', 5000) ?? 'Conversacion iniciada desde Instagram.';
+  $messageAt = conv_clean($conversation['last_message_at'] ?? $conversation['created_at'] ?? gmdate('Y-m-d H:i:s'), 30) ?? gmdate('Y-m-d H:i:s');
+
+  if ($leadId <= 0) {
+    $insert = $pdo->prepare(<<<SQL
+INSERT INTO {$leadsTable} (
+  fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
+  source_platform, utm_source, utm_medium, sales_status, status, whatsapp_sent, whatsapp_status,
+  external_source, external_contact_id, external_thread_id, first_message_at, last_message_at, last_inbound_message
+) VALUES (
+  ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
+  'Instagram DM', 'instagram', 'dm', ?, 'pending', 0, 'disabled',
+  'instagram', ?, ?, ?, ?, ?
+)
+SQL);
+    $insert->execute([
+      $fullname,
+      $brandInstagram,
+      (string) app_config('instagram.default_business_type', 'Instagram DM'),
+      (string) app_config('instagram.default_service', 'Mensaje directo de Instagram'),
+      (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram'),
+      $messageText,
+      $defaultSalesStatus,
+      $contactKey,
+      $threadId ?: $contactKey,
+      $messageAt,
+      $messageAt,
+      $messageText,
+    ]);
+    $leadId = (int) $pdo->lastInsertId();
+  } else {
+    $update = $pdo->prepare(<<<SQL
+UPDATE {$leadsTable}
+SET
+  fullname = CASE WHEN fullname IS NULL OR fullname = '' OR fullname LIKE 'Lead Instagram #%'
+    THEN ? ELSE fullname END,
+  brand_instagram = COALESCE(brand_instagram, ?),
+  external_thread_id = COALESCE(external_thread_id, ?),
+  last_message_at = COALESCE(?, last_message_at),
+  last_inbound_message = COALESCE(?, last_inbound_message),
+  updated_at = NOW()
+WHERE id = ?
+SQL);
+    $update->execute([$fullname, $brandInstagram, $threadId ?: $contactKey, $messageAt, $messageText, $leadId]);
+  }
+
+  if ($leadId > 0) {
+    $link = $pdo->prepare("UPDATE {$conversationsTable} SET lead_id=?, updated_at=NOW() WHERE id=? AND (lead_id IS NULL OR lead_id=0)");
+    $link->execute([$leadId, $conversationId]);
+  }
+
+  return $leadId;
+}
+
 function conv_backfill_from_leads(PDO $pdo, string $leadsTable): int {
   conv_ensure_schema($pdo);
   $channelsTable = ig_channels_table();

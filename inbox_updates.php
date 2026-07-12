@@ -134,6 +134,11 @@ SQL;
     $detailStmt = $pdo->prepare($detailSql);
     $detailStmt->execute([$selectedId]);
     $selected = $detailStmt->fetch() ?: null;
+    if ($selected && empty($selected['lead_id'])) {
+      conv_ensure_lead_for_conversation($pdo, $TABLE_LEADS, (int) $selected['id']);
+      $detailStmt->execute([$selectedId]);
+      $selected = $detailStmt->fetch() ?: null;
+    }
     if ($selected) {
       conv_mark_read($pdo, (int) $selected['id']);
       $msgStmt = $pdo->prepare("SELECT * FROM (SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at DESC, m.id DESC LIMIT 120) recent_messages ORDER BY sent_at ASC, id ASC");
