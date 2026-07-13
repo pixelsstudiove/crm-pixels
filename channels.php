@@ -18,7 +18,9 @@ $appSecret = (string) app_config('instagram.app_secret', '');
 $graphVersion = (string) app_config('instagram.graph_version', 'v20.0');
 if (preg_match('/^v\d+$/', trim($graphVersion))) $graphVersion = trim($graphVersion) . '.0';
 if (!preg_match('/^v\d+\.\d+$/', trim($graphVersion))) $graphVersion = 'v20.0';
-$callbackUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_oauth_callback.php';
+$configuredCallbackUrl = trim((string) app_config('instagram.oauth_redirect_uri', ''));
+$fallbackCallbackUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_oauth_callback.php';
+$callbackUrl = $configuredCallbackUrl !== '' ? $configuredCallbackUrl : $fallbackCallbackUrl;
 $webhookUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tu-dominio') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_webhook.php';
 $canConnect = $appId !== '' && $appSecret !== '';
 
