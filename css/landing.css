@@ -12,11 +12,13 @@
   --rose:#f36b9a;
   --shadow:0 24px 70px rgba(23,38,79,.13);
   --radius:30px;
-  --inner:min(100%, 1320px);
+  --page-pad:clamp(18px, 4vw, 72px);
+  --inner:min(1500px, calc(100vw - (var(--page-pad) * 2)));
 }
 
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
+html,body{overflow-x:hidden}
 body.landing-page{
   margin:0;
   min-height:100vh;
@@ -41,15 +43,10 @@ body.landing-page::before{
 a{color:inherit;text-decoration:none}
 .landing-shell{
   position:relative;
-  width:min(94vw, 1500px);
-  margin:24px auto;
-  padding:34px 42px 24px;
+  width:100%;
+  margin:0;
+  padding:34px 0 24px;
   overflow:hidden;
-  border:1px solid rgba(220,232,247,.9);
-  border-radius:36px;
-  background:rgba(255,255,255,.82);
-  box-shadow:0 34px 90px rgba(30,45,86,.12);
-  backdrop-filter:blur(18px);
 }
 
 .landing-nav{
@@ -130,20 +127,23 @@ a{color:inherit;text-decoration:none}
   min-height:680px;
   margin:0 auto;
   display:grid;
-  grid-template-columns:minmax(360px, 520px) 1fr;
-  gap:42px;
+  grid-template-columns:minmax(390px, .92fr) minmax(560px, 1.08fr);
+  gap:clamp(32px, 4vw, 76px);
   align-items:center;
-  padding:64px 10px 70px;
+  padding:64px 0 70px;
 }
 
 .hero::before{
   content:"";
   position:absolute;
-  inset:18px 0 30px;
+  top:18px;
+  bottom:30px;
+  left:50%;
+  width:100vw;
+  transform:translateX(-50%);
   z-index:-1;
-  border-radius:32px;
   background:
-    linear-gradient(120deg, rgba(255,255,255,.94), rgba(245,249,255,.86)),
+    linear-gradient(120deg, rgba(255,255,255,.7), rgba(245,249,255,.48)),
     linear-gradient(135deg, rgba(0,200,244,.12), rgba(123,92,255,.12));
 }
 
@@ -176,7 +176,7 @@ a{color:inherit;text-decoration:none}
 .hero h1{
   max-width:650px;
   margin:0;
-  font-size:clamp(3.25rem, 7vw, 6.8rem);
+  font-size:clamp(3.2rem, 5.7vw, 6rem);
   line-height:.93;
   letter-spacing:0;
   font-weight:950;
@@ -217,7 +217,7 @@ a{color:inherit;text-decoration:none}
   position:relative;
   min-height:520px;
   display:grid;
-  place-items:center;
+  place-items:center end;
   perspective:1200px;
 }
 .dashboard-preview{
@@ -307,7 +307,7 @@ a{color:inherit;text-decoration:none}
 
 .side-rail{
   position:absolute;
-  left:34px;
+  left:0;
   top:108px;
   width:74px;
   min-height:362px;
@@ -356,9 +356,9 @@ a{color:inherit;text-decoration:none}
 .metric-card strong{display:block;font-size:2.4rem;color:var(--indigo)}
 
 .logo-strip{
-  width:calc(var(--inner) + 84px);
+  width:var(--inner);
   margin:2px auto 62px;
-  padding:28px 44px;
+  padding:28px 0;
   display:flex;
   justify-content:space-between;
   gap:22px;
@@ -589,24 +589,45 @@ a{color:inherit;text-decoration:none}
 }
 
 @media (max-width:1180px){
-  .landing-shell{width:min(96vw, 1100px);padding:28px 26px 22px}
+  :root{--page-pad:clamp(18px, 5vw, 46px)}
+  .landing-shell{padding:28px 0 22px}
   .landing-nav{grid-template-columns:1fr auto}
   .nav-links{display:none}
   .hero{grid-template-columns:1fr;min-height:auto;padding-top:48px}
-  .product-stage{min-height:560px}
+  .product-stage{min-height:560px;place-items:center}
   .feature-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}
   .workflow{grid-template-columns:1fr}
   .plans{grid-template-columns:1fr 1fr}
   .plans .section-heading{grid-column:1 / -1}
+  .side-rail{left:clamp(0px, 4vw, 34px)}
+}
+
+@media (max-width:1320px) and (min-width:1181px){
+  .hero{
+    grid-template-columns:minmax(360px, .95fr) minmax(520px, 1.05fr);
+    gap:34px;
+  }
+  .dashboard-preview{
+    transform:none;
+    animation:rise .75s ease both, softFloatFlat 7s ease-in-out 1.2s infinite;
+  }
+  .assistant-card,.metric-card,.side-rail{display:none}
+  .product-stage{place-items:center}
+}
+
+@keyframes softFloatFlat{
+  0%,100%{transform:translateY(0)}
+  50%{transform:translateY(-8px)}
 }
 
 @media (max-width:760px){
-  .landing-shell{width:100%;min-height:100vh;margin:0;padding:18px 14px 22px;border-radius:0}
+  :root{--page-pad:16px}
+  .landing-shell{min-height:100vh;padding:18px 0 22px}
   .landing-nav{grid-template-columns:1fr;gap:16px}
   .nav-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
   .nav-actions .btn{padding:0 12px}
   .hero{padding:34px 0 42px}
-  .hero::before{inset:8px -2px 20px;border-radius:26px}
+  .hero::before{top:8px;bottom:20px}
   .hero h1{font-size:clamp(2.8rem, 15vw, 4.6rem)}
   .hero-copy{font-size:1rem}
   .product-stage{min-height:470px;place-items:start center}
