@@ -27,8 +27,10 @@ CREATE TABLE IF NOT EXISTS {$table} (
   last_event_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uniq_page_id (page_id),
-  UNIQUE KEY uniq_instagram_user_id (instagram_user_id),
+  UNIQUE KEY uniq_account_page_id (account_id, page_id),
+  UNIQUE KEY uniq_account_instagram_user_id (account_id, instagram_user_id),
+  KEY idx_page_id (page_id),
+  KEY idx_instagram_user_id (instagram_user_id),
   KEY idx_account_id (account_id),
   KEY idx_is_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -37,6 +39,20 @@ SQL);
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN connection_type VARCHAR(40) NOT NULL DEFAULT 'facebook' AFTER account_id"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN token_expires_at DATETIME NULL AFTER page_access_token"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN scopes TEXT NULL AFTER token_expires_at"); } catch (Throwable $e) { /* no-op */ }
+  try { accounts_drop_index_if_exists($pdo, (string) ($DB_NAME ?? ''), $table, 'uniq_page_id'); } catch (Throwable $e) { /* no-op */ }
+  try { accounts_drop_index_if_exists($pdo, (string) ($DB_NAME ?? ''), $table, 'uniq_instagram_user_id'); } catch (Throwable $e) { /* no-op */ }
+  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $table, 'uniq_account_page_id')) {
+    try { $pdo->exec("ALTER TABLE {$table} ADD UNIQUE KEY uniq_account_page_id (account_id, page_id)"); } catch (Throwable $e) { /* no-op */ }
+  }
+  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $table, 'uniq_account_instagram_user_id')) {
+    try { $pdo->exec("ALTER TABLE {$table} ADD UNIQUE KEY uniq_account_instagram_user_id (account_id, instagram_user_id)"); } catch (Throwable $e) { /* no-op */ }
+  }
+  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $table, 'idx_page_id')) {
+    try { $pdo->exec("ALTER TABLE {$table} ADD KEY idx_page_id (page_id)"); } catch (Throwable $e) { /* no-op */ }
+  }
+  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $table, 'idx_instagram_user_id')) {
+    try { $pdo->exec("ALTER TABLE {$table} ADD KEY idx_instagram_user_id (instagram_user_id)"); } catch (Throwable $e) { /* no-op */ }
+  }
 }
 
 function ig_graph_version(): string {
@@ -96,9 +112,50 @@ function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipien
   }
 }
 
+function ig_channel_active_conflict(PDO $pdo, string $table, int $accountId, string $pageId, string $instagramUserId, int $ignoreChannelId = 0): ?array {
+  $identifiers = array_values(array_unique(array_filter([
+    trim($pageId),
+    trim($instagramUserId),
+  ], static fn($value) => $value !== '')));
+  if (!$identifiers) return null;
+
+  $placeholders = implode(',', array_fill(0, count($identifiers), '?'));
+  $accountsTable = accounts_table();
+  $sql = <<<SQL
+SELECT ch.*, a.name AS account_name, a.slug AS account_slug
+FROM {$table} ch
+LEFT JOIN {$accountsTable} a ON a.id = ch.account_id
+WHERE ch.is_active=1
+  AND ch.account_id<>?
+  AND (ch.page_id IN ({$placeholders}) OR ch.instagram_user_id IN ({$placeholders}))
+SQL;
+  $params = array_merge([$accountId], $identifiers, $identifiers);
+  if ($ignoreChannelId > 0) {
+    $sql .= ' AND ch.id<>?';
+    $params[] = $ignoreChannelId;
+  }
+  $sql .= ' ORDER BY ch.updated_at DESC, ch.id DESC LIMIT 1';
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute($params);
+  $row = $stmt->fetch();
+  return $row ?: null;
+}
+
+function ig_channel_conflict_message(array $conflict): string {
+  $accountName = trim((string) ($conflict['account_name'] ?? 'otra cuenta'));
+  $channelName = trim((string) ($conflict['instagram_username'] ?? $conflict['page_name'] ?? 'este canal'));
+  $channelName = $channelName !== '' ? '@' . ltrim($channelName, '@') : 'este canal';
+  return "No se puede activar {$channelName}: ya está activo en la cuenta {$accountName}. Primero desconéctalo allí o transfiérelo explícitamente.";
+}
+
 function ig_channel_upsert(PDO $pdo, string $table, array $channel): void {
   $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $connectionType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) ($channel['connection_type'] ?? 'facebook')) ?: 'facebook';
+  $pageId = (string) $channel['page_id'];
+  $instagramUserId = (string) $channel['instagram_user_id'];
+  $conflict = ig_channel_active_conflict($pdo, $table, $accountId, $pageId, $instagramUserId);
+  if ($conflict) throw new RuntimeException(ig_channel_conflict_message($conflict));
+
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
   account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, token_expires_at, scopes, connected_by, is_active, updated_at
@@ -106,6 +163,7 @@ INSERT INTO {$table} (
 ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
   connection_type = VALUES(connection_type),
+  page_id = VALUES(page_id),
   page_name = VALUES(page_name),
   instagram_user_id = VALUES(instagram_user_id),
   instagram_username = VALUES(instagram_username),
@@ -119,9 +177,9 @@ SQL);
   $stmt->execute([
     $accountId,
     $connectionType,
-    (string) $channel['page_id'],
+    $pageId,
     $channel['page_name'] ?? null,
-    (string) $channel['instagram_user_id'],
+    $instagramUserId,
     $channel['instagram_username'] ?? null,
     $channel['page_access_token'] ?? null,
     $channel['token_expires_at'] ?? null,

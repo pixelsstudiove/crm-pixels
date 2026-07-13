@@ -97,13 +97,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $notice = 'Canal desconectado.';
     } elseif ($action === 'connect' && $id > 0) {
       if (is_super_admin() && $requestAccountId <= 0) {
-        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
-        $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
+        $find = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? LIMIT 1");
+        $find->execute([$id]);
       } else {
-        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=? AND account_id=?");
-        $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id, $scopeAccountId]);
+        $find = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND account_id=? LIMIT 1");
+        $find->execute([$id, $scopeAccountId]);
       }
-      $notice = 'Canal conectado. Los proximos mensajes entraran al inbox.';
+      $channel = $find->fetch();
+      if (!$channel) {
+        $errors[] = 'No encontramos el canal que intentas conectar.';
+      } else {
+        $conflict = ig_channel_active_conflict($pdo, $channelsTable, (int) $channel['account_id'], (string) $channel['page_id'], (string) $channel['instagram_user_id'], (int) $channel['id']);
+        if ($conflict) {
+          $errors[] = ig_channel_conflict_message($conflict);
+        } else {
+          $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
+          $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
+          $notice = 'Canal conectado. Los proximos mensajes entraran al inbox.';
+        }
+      }
     }
   }
 }
