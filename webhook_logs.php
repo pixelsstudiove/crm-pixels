@@ -148,6 +148,7 @@ function log_badge_class(string $status): string {
             <h1 class="title">Eventos de Instagram</h1>
             <p class="subtitle">Monitoreo tecnico de mensajes recibidos por el webhook.</p>
           </div>
+          <?php nav_render_config_top_nav($pdo, 'webhook_logs.php', $filterAccountId, ['status' => $status], ['status' => $status]); ?>
         </header>
 
         <div class="admin-layout">
@@ -230,5 +231,6 @@ function log_badge_class(string $status): string {
       </div>
     </section>
   </main>
+  <script src="js/navigation.js?v=<?= (int) @filemtime(__DIR__ . '/js/navigation.js') ?>" defer></script>
 </body>
 </html>

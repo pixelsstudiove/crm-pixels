@@ -168,6 +168,7 @@ try {
             <h1 class="title">Usuarios y roles</h1>
             <p class="subtitle">Administra el acceso del equipo al CRM.</p>
           </div>
+          <?php nav_render_config_top_nav($pdo, 'dashboard.php'); ?>
         </header>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
@@ -280,5 +281,6 @@ try {
     </section>
     <div class="credit">Desarrollado por <strong><?= h(app_config('brand.developer', 'Pixels Studio')) ?></strong></div>
   </main>
+  <script src="js/navigation.js?v=<?= (int) @filemtime(__DIR__ . '/js/navigation.js') ?>" defer></script>
 </body>
 </html>

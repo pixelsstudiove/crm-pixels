@@ -164,6 +164,7 @@ try {
             <h1 class="title">Canales conectados</h1>
             <p class="subtitle">Conecta canales por Facebook/Fanpage o por Login directo de Instagram para capturar DMs como leads.</p>
           </div>
+          <?php nav_render_config_top_nav($pdo, 'channels.php', is_super_admin() ? $requestAccountId : 0); ?>
         </header>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
@@ -230,5 +231,6 @@ try {
       </div>
     </section>
   </main>
+  <script src="js/navigation.js?v=<?= (int) @filemtime(__DIR__ . '/js/navigation.js') ?>" defer></script>
 </body>
 </html>

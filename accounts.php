@@ -197,6 +197,7 @@ SQL);
             <h1 class="title">Cuentas</h1>
             <p class="subtitle">Crea las cuentas cliente que luego tendrán sus propios usuarios, canales e inbox.</p>
           </div>
+          <?php nav_render_config_top_nav($pdo, 'dashboard.php'); ?>
         </header>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
@@ -288,5 +289,6 @@ SQL);
     </section>
     <div class="credit">Desarrollado por <strong><?= h(app_config('brand.developer', 'Pixels Studio')) ?></strong></div>
   </main>
+  <script src="js/navigation.js?v=<?= (int) @filemtime(__DIR__ . '/js/navigation.js') ?>" defer></script>
 </body>
 </html>

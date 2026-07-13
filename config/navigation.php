@@ -36,14 +36,47 @@ function nav_render_view_button(string $activeView): void {
   }
 }
 
+function nav_render_view_dropdown(): void {
+  if (!can('view_dashboard') && !can('view_conversations')) return;
+  ?>
+  <div class="menu-dropdown" data-menu>
+    <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
+    <div class="menu-panel" role="menu">
+      <?php if (can('view_dashboard')): ?><a class="menu-item" href="<?= h(account_url('dashboard.php')) ?>">Embudo</a><?php endif; ?>
+      <?php if (can('view_conversations')): ?><a class="menu-item" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
+    </div>
+  </div>
+  <?php
+}
+
+function nav_fetch_account_options(PDO $pdo): array {
+  if (!is_super_admin()) return [];
+  try {
+    $stmt = $pdo->query("SELECT id, name, slug FROM " . accounts_table() . " ORDER BY name ASC");
+    return $stmt ? $stmt->fetchAll() : [];
+  } catch (Throwable $e) {
+    return [];
+  }
+}
+
+function nav_render_config_top_nav(PDO $pdo, string $accountTargetScript = 'dashboard.php', int $selectedAccountId = 0, array $allParams = [], array $accountParams = []): void {
+  ?>
+  <div class="app-nav-actions">
+    <?php nav_render_account_switch($pdo, nav_fetch_account_options($pdo), $selectedAccountId, $accountTargetScript, $allParams, $accountParams); ?>
+    <?php nav_render_view_dropdown(); ?>
+    <?php nav_render_user_menu(false); ?>
+  </div>
+  <?php
+}
+
 function nav_render_user_menu(bool $includeProfileModal = true): void {
   ?>
   <div class="menu-dropdown" data-menu>
     <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false"><?= h(nav_user_label()) ?></button>
     <div class="menu-panel menu-panel-wide" role="menu">
       <span class="menu-meta"><?= h(nav_role_label()) ?></span>
-      <span class="menu-section-title">Perfil</span>
       <?php if ($includeProfileModal): ?>
+        <span class="menu-section-title">Perfil</span>
         <button type="button" class="menu-item menu-item-nested" data-modal-open="profileModal">Cambiar contraseña</button>
       <?php endif; ?>
       <span class="menu-section-title">Configuración</span>
