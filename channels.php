@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/instagram_channels.php';
+require_once __DIR__ . '/config/navigation.php';
 require_permission('manage_integrations');
 
 $channelsTable = ig_channels_table();
@@ -163,18 +164,16 @@ try {
             <h1 class="title">Canales conectados</h1>
             <p class="subtitle">Conecta canales por Facebook/Fanpage o por Login directo de Instagram para capturar DMs como leads.</p>
           </div>
-          <div class="channel-actions">
-            <a class="channel-link" href="<?= h(account_url('dashboard.php')) ?>">Dashboard</a>
-            <?php if (can('view_conversations')): ?><a class="channel-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
-            <a class="channel-link" href="<?= h(account_url('webhook_logs.php')) ?>">Eventos</a>
-          </div>
         </header>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
         <?php foreach ($errors as $error): ?><div class="form-alert alert-error notice"><?= h($error) ?></div><?php endforeach; ?>
-        <?php if (!$canConnect): ?>
-          <div class="form-alert alert-error notice">Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.</div>
-        <?php endif; ?>
+        <div class="admin-layout">
+          <?php nav_render_admin_side_nav('channels'); ?>
+          <div class="admin-content">
+            <?php if (!$canConnect): ?>
+              <div class="form-alert alert-error notice">Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.</div>
+            <?php endif; ?>
 
         <div class="connect-panel">
           <article class="connect-card">
@@ -207,7 +206,7 @@ try {
               <p><strong>Instagram ID:</strong> <?= h((string) $channel['instagram_user_id']) ?></p>
               <?php if (!empty($channel['token_expires_at'])): ?><p><strong>Token vence:</strong> <?= h(app_datetime($channel['token_expires_at'])) ?></p><?php endif; ?>
               <p><strong>Ultimo evento:</strong> <?= h((string) ($channel['last_event_at'] ?: 'Sin eventos')) ?></p>
-              <form method="post" action="channels.php">
+              <form method="post" action="<?= h(account_url('channels.php')) ?>">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="id" value="<?= (int) $channel['id'] ?>">
                 <?php if ((int) $channel['is_active'] === 1): ?>
@@ -225,6 +224,8 @@ try {
               <p>Conecta Instagram para que los mensajes entrantes se creen como leads dentro del CRM.</p>
             </article>
           <?php endif; ?>
+        </div>
+          </div>
         </div>
       </div>
     </section>

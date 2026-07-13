@@ -2,6 +2,7 @@
 // users.php
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
+require_once __DIR__ . '/config/navigation.php';
 require_permission('manage_users');
 
 $roleProfiles = role_profiles();
@@ -167,19 +168,18 @@ try {
             <h1 class="title">Usuarios y roles</h1>
             <p class="subtitle">Administra el acceso del equipo al CRM.</p>
           </div>
-          <div class="users-actions">
-            <a class="users-link" href="<?= h(account_url('dashboard.php')) ?>">Volver al dashboard</a>
-            <?php if (can('manage_accounts')): ?><a class="users-link" href="/accounts.php">Gestionar cuentas</a><?php endif; ?>
-          </div>
         </header>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
         <?php foreach ($errors as $error): ?><div class="form-alert alert-error notice"><?= h($error) ?></div><?php endforeach; ?>
 
+        <div class="admin-layout">
+          <?php nav_render_admin_side_nav('users'); ?>
+          <div class="admin-content">
         <div class="users-grid">
           <section class="users-box">
             <h2>Crear usuario</h2>
-            <form class="users-form" method="post" action="users.php" autocomplete="off">
+            <form class="users-form" method="post" action="/users.php" autocomplete="off">
               <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
               <input type="hidden" name="action" value="create_user">
               <label class="field">
@@ -242,7 +242,7 @@ try {
                         <div class="role-description"><?= h((string) app_config('roles.profiles.' . $userRole . '.description', '')) ?></div>
                       </td>
                       <td>
-                        <form class="users-form inline-fields" method="post" action="users.php" autocomplete="off">
+                        <form class="users-form inline-fields" method="post" action="/users.php" autocomplete="off">
                           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                           <input type="hidden" name="action" value="update_user">
                           <input type="hidden" name="id" value="<?= (int) $user['id'] ?>">
@@ -273,6 +273,8 @@ try {
               </table>
             </div>
           </section>
+        </div>
+          </div>
         </div>
       </div>
     </section>

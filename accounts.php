@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/instagram_channels.php';
+require_once __DIR__ . '/config/navigation.php';
 require_permission('manage_accounts');
 
 $accountsTable = accounts_table();
@@ -196,15 +197,14 @@ SQL);
             <h1 class="title">Cuentas</h1>
             <p class="subtitle">Crea las cuentas cliente que luego tendrán sus propios usuarios, canales e inbox.</p>
           </div>
-          <div class="accounts-actions">
-            <a class="accounts-link" href="/users.php">Usuarios</a>
-            <a class="accounts-link" href="<?= h(account_url('dashboard.php', [], '')) ?>">Dashboard</a>
-          </div>
         </header>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info notice"><?= h($notice) ?></div><?php endif; ?>
         <?php foreach ($errors as $error): ?><div class="form-alert alert-error notice"><?= h($error) ?></div><?php endforeach; ?>
 
+        <div class="admin-layout">
+          <?php nav_render_admin_side_nav('accounts'); ?>
+          <div class="admin-content">
         <div class="accounts-grid">
           <section class="accounts-box">
             <h2>Nueva cuenta</h2>
@@ -281,6 +281,8 @@ SQL);
               </table>
             </div>
           </section>
+        </div>
+          </div>
         </div>
       </div>
     </section>

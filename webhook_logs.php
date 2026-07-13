@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/navigation.php';
 require_permission('manage_integrations');
 
 conv_ensure_schema($pdo);
@@ -147,14 +148,12 @@ function log_badge_class(string $status): string {
             <h1 class="title">Eventos de Instagram</h1>
             <p class="subtitle">Monitoreo tecnico de mensajes recibidos por el webhook.</p>
           </div>
-          <div class="logs-actions">
-            <a class="logs-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a>
-            <a class="logs-link" href="<?= h(account_url('channels.php')) ?>">Canales</a>
-            <a class="logs-link" href="<?= h(account_url('dashboard.php')) ?>">Dashboard</a>
-          </div>
         </header>
 
-        <form class="logs-filter" method="get" action="webhook_logs.php">
+        <div class="admin-layout">
+          <?php nav_render_admin_side_nav('events'); ?>
+          <div class="admin-content">
+        <form class="logs-filter" method="get" action="<?= h(account_url('webhook_logs.php')) ?>">
           <?php if (is_super_admin()): ?>
             <select name="account_id" onchange="this.form.submit()" aria-label="Filtrar por cuenta">
               <option value="">Todas las cuentas</option>
@@ -171,7 +170,7 @@ function log_badge_class(string $status): string {
         </form>
 
         <?php if ($notice !== ''): ?><div class="form-alert alert-info" style="margin-bottom:14px"><?= h($notice) ?></div><?php endif; ?>
-        <form method="post" action="webhook_logs.php" style="margin-bottom:14px">
+        <form method="post" action="<?= h(account_url('webhook_logs.php')) ?>" style="margin-bottom:14px">
           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
           <input type="hidden" name="action" value="repair_missing_messages">
           <?php if ($filterAccountId > 0): ?><input type="hidden" name="account_id" value="<?= (int) $filterAccountId ?>"><?php endif; ?>
@@ -225,6 +224,8 @@ function log_badge_class(string $status): string {
               <?php endif; ?>
             </tbody>
           </table>
+        </div>
+          </div>
         </div>
       </div>
     </section>

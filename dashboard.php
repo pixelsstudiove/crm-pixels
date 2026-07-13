@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/navigation.php';
 
 function column_exists_dash(PDO $pdo, string $dbName, string $table, string $column): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?");
@@ -666,41 +667,10 @@ function dash_channel_label(array $channel): string {
             <p class="eyebrow"><?= h(app_config('brand.name', 'Marca')) ?></p>
             <h1 class="title"><?= h(app_config('ui.dashboard_heading', 'Dashboard')) ?></h1>
           </div>
-          <div class="topbar-right">
-            <?php if (is_super_admin()): ?>
-              <label class="account-switch" aria-label="Cambiar cuenta">
-                <select onchange="if (this.value) window.location.href = this.value">
-                  <option value="<?= h(account_url('dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'sales_status' => $filterSalesStatus], '')) ?>" <?= $filterAccountId <= 0 ? 'selected' : '' ?>>Todas las cuentas</option>
-                  <?php foreach ($accountOptions as $account): ?>
-                    <?php $accountSlug = trim((string) ($account['slug'] ?? '')); ?>
-                    <option value="<?= h(account_url('dashboard.php', ['q' => $q, 'channel_id' => null, 'sales_status' => $filterSalesStatus], $accountSlug !== '' ? $accountSlug : null)) ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </label>
-            <?php endif; ?>
-            <?php if (can('view_conversations') || $canManageIntegrations): ?>
-              <div class="menu-dropdown" data-menu>
-                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
-                <div class="menu-panel" role="menu">
-                  <?php if (can('view_conversations')): ?><a class="menu-item" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="<?= h(account_url('channels.php')) ?>">Ver canales</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="<?= h(account_url('webhook_logs.php')) ?>">Ver eventos</a><?php endif; ?>
-                </div>
-              </div>
-            <?php endif; ?>
-            <div class="menu-dropdown" data-menu>
-              <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false"><?= h((string) ($_SESSION['username'] ?? 'Usuario')) ?></button>
-              <div class="menu-panel" role="menu">
-                <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
-                <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
-                <?php if (can('manage_accounts')): ?><a class="menu-item" href="/accounts.php">Gestión de cuentas</a><?php endif; ?>
-                <?php if ($canManageUsers): ?><a class="menu-item" href="/users.php">Gestión de usuarios</a><?php endif; ?>
-                <form class="menu-form" action="/logout.php" method="post">
-                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                  <button class="menu-item" type="submit">Cerrar sesión</button>
-                </form>
-              </div>
-            </div>
+          <div class="topbar-right app-nav-actions">
+            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'sales_status' => $filterSalesStatus], ['q' => $q, 'sales_status' => $filterSalesStatus]); ?>
+            <?php nav_render_view_menu('dashboard'); ?>
+            <?php nav_render_user_menu(true); ?>
           </div>
         </div>
 

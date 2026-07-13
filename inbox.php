@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/lead_status_history.php';
+require_once __DIR__ . '/config/navigation.php';
 require_permission('view_conversations');
 
 conv_ensure_schema($pdo);
@@ -529,41 +530,10 @@ function inbox_visible_message_text($value, array $attachments): string {
             <h1 class="title">Inbox conversacional</h1>
             <p class="subtitle">Gestiona conversaciones de Instagram y su avance comercial desde el CRM.</p>
           </div>
-          <div class="inbox-actions">
-            <?php if (is_super_admin()): ?>
-              <label class="account-switch" aria-label="Cambiar cuenta">
-                <select onchange="if (this.value) window.location.href = this.value">
-                  <option value="<?= h(account_url('inbox.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus], '')) ?>" <?= $filterAccountId <= 0 ? 'selected' : '' ?>>Todas las cuentas</option>
-                  <?php foreach ($accountOptions as $account): ?>
-                    <?php $accountSlug = trim((string) ($account['slug'] ?? '')); ?>
-                    <option value="<?= h(account_url('inbox.php', ['q' => $q, 'status' => $filterStatus], $accountSlug !== '' ? $accountSlug : null)) ?>" <?= $filterAccountId === (int) $account['id'] ? 'selected' : '' ?>><?= h((string) $account['name']) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </label>
-            <?php endif; ?>
-            <?php if ($canViewDashboard || $canManageIntegrations): ?>
-              <div class="menu-dropdown" data-menu>
-                <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
-                <div class="menu-panel" role="menu">
-                  <?php if ($canViewDashboard): ?><a class="menu-item" href="<?= h(account_url('dashboard.php')) ?>">Embudo comercial</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="<?= h(account_url('channels.php')) ?>">Ver canales</a><?php endif; ?>
-                  <?php if ($canManageIntegrations): ?><a class="menu-item" href="<?= h(account_url('webhook_logs.php')) ?>">Ver eventos</a><?php endif; ?>
-                </div>
-              </div>
-            <?php endif; ?>
-            <div class="menu-dropdown" data-menu>
-              <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false"><?= h((string) ($_SESSION['username'] ?? 'Usuario')) ?></button>
-              <div class="menu-panel" role="menu">
-                <span class="menu-meta"><?= h($currentRoleLabel) ?></span>
-                <button type="button" class="menu-item" data-modal-open="profileModal">Seguridad</button>
-                <?php if (can('manage_accounts')): ?><a class="menu-item" href="/accounts.php">Gestión de cuentas</a><?php endif; ?>
-                <?php if ($canManageUsers): ?><a class="menu-item" href="/users.php">Gestión de usuarios</a><?php endif; ?>
-                <form class="menu-form" action="/logout.php" method="post">
-                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                  <button class="menu-item" type="submit">Cerrar sesión</button>
-                </form>
-              </div>
-            </div>
+          <div class="inbox-actions app-nav-actions">
+            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'inbox.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus], ['q' => $q, 'status' => $filterStatus]); ?>
+            <?php nav_render_view_menu('inbox'); ?>
+            <?php nav_render_user_menu(true); ?>
           </div>
         </header>
 
