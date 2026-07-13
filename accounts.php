@@ -168,22 +168,30 @@ SQL);
     :root { --container-w:min(98vw, 1320px); }
     .accounts-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
     .accounts-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .accounts-link { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; }
+    .accounts-link { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font:inherit; font-weight:850; text-decoration:none; cursor:pointer; }
     .accounts-grid { display:grid; grid-template-columns:minmax(260px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
     .accounts-box { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .accounts-box h2 { margin:0 0 12px; color:var(--brand-ink); font-size:1.1rem; }
     .accounts-form { display:grid; gap:12px; }
     .accounts-form input, .accounts-form select { width:100%; min-width:0; height:42px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; }
-    .accounts-inline { display:grid; grid-template-columns:minmax(170px, 1.1fr) minmax(150px, .9fr) minmax(120px, 150px) auto; gap:8px; align-items:start; min-width:0; }
+    .accounts-current { min-width:0; }
+    .accounts-list { display:grid; gap:12px; }
+    .account-row { display:grid; gap:12px; padding:14px; border:1px solid rgba(0,212,255,.14); border-radius:14px; background:#fbfdff; }
+    .account-summary { display:grid; grid-template-columns:auto minmax(160px, 1fr) minmax(130px, auto) minmax(150px, auto); gap:12px; align-items:center; }
+    .account-id { display:inline-flex; align-items:center; justify-content:center; min-width:42px; min-height:42px; padding:0 10px; border-radius:12px; background:#071120; color:#eafaff; font-weight:900; }
+    .account-name { min-width:0; }
+    .account-name strong { display:block; color:var(--brand-ink); font-size:1.05rem; line-height:1.2; overflow-wrap:anywhere; }
+    .account-name span { display:block; margin-top:4px; color:var(--brand-muted); font-size:.86rem; font-weight:800; overflow-wrap:anywhere; }
+    .account-pill { display:inline-flex; align-items:center; justify-content:center; min-height:30px; padding:0 10px; border:1px solid #a8e0ba; border-radius:999px; background:#eef9f0; color:#217a43; font-size:.8rem; font-weight:900; white-space:nowrap; }
+    .account-pill.off { border-color:#cbd5e1; background:#f1f5f9; color:#64748b; }
+    .account-usage { color:var(--brand-muted); font-size:.9rem; font-weight:850; text-align:right; white-space:nowrap; }
+    .accounts-inline { display:grid; grid-template-columns:minmax(180px, 1.1fr) minmax(160px, .9fr) minmax(130px, 150px) auto; gap:8px; align-items:start; min-width:0; }
     .accounts-row-actions { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; min-width:0; }
     .accounts-delete-form { margin:0; }
     .accounts-delete-form .accounts-link { min-height:42px; white-space:nowrap; }
     .accounts-link.danger { border-color:#f1c2c6; background:#fff1f2; color:#9f2631; }
     .accounts-link.danger:hover { background:#ffe4e6; border-color:#e998a1; }
-    .accounts-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
-    .accounts-table { width:100%; min-width:0; border-collapse:collapse; font-size:.94rem; table-layout:auto; }
-    .accounts-table th { background:#071120; color:#eafaff; text-align:left; padding:12px; white-space:nowrap; }
-    .accounts-table td { padding:12px; border-bottom:1px solid rgba(0,68,99,.10); background:#fbfdff; overflow-wrap:anywhere; }
+    .accounts-empty { margin:0; padding:16px; border:1px dashed rgba(0,212,255,.28); border-radius:14px; color:var(--brand-muted); font-weight:850; }
     .notice { display:block; margin-bottom:14px; }
     .admin-content { container-type:inline-size; }
     @container (max-width: 1180px) {
@@ -195,20 +203,16 @@ SQL);
       .accounts-grid > .accounts-box:first-child { max-width:420px; }
       .accounts-inline { grid-template-columns:minmax(160px, 1fr) minmax(140px, 1fr) minmax(120px, 150px) auto; }
     }
-    @media (max-width: 900px) {
-      .accounts-table-wrap { overflow:visible; border:0; border-radius:0; }
-      .accounts-table,
-      .accounts-table tbody,
-      .accounts-table tr,
-      .accounts-table td { display:block; width:100%; min-width:0; }
-      .accounts-table { border-collapse:separate; border-spacing:0; font-size:.95rem; }
-      .accounts-table thead { display:none; }
-      .accounts-table tr { margin-bottom:12px; border:1px solid rgba(0,212,255,.14); border-radius:14px; background:#fff; box-shadow:0 8px 20px rgba(0,76,110,.06); overflow:hidden; }
-      .accounts-table td { display:grid; grid-template-columns:minmax(92px, 32%) minmax(0, 1fr); gap:10px; align-items:start; padding:10px 12px; border-bottom:1px solid rgba(0,68,99,.08); background:#fff; overflow-wrap:anywhere; }
-      .accounts-table td::before { content:attr(data-label); color:var(--brand-muted); font-size:.76rem; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
-      .accounts-table td:last-child { border-bottom:0; }
-      .accounts-table td[data-label="Actualizar"] { display:block; }
-      .accounts-table td[data-label="Actualizar"]::before { display:block; margin-bottom:8px; }
+    @media (max-width: 980px) {
+      .account-summary { grid-template-columns:auto minmax(0, 1fr); }
+      .account-pill { justify-self:start; }
+      .account-usage { text-align:left; white-space:normal; }
+      .accounts-row-actions { grid-template-columns:1fr; }
+      .accounts-delete-form .accounts-link { width:100%; }
+    }
+    @media (max-width: 720px) {
+      .account-row { padding:12px; }
+      .account-summary { align-items:start; }
       .accounts-row-actions { min-width:0; grid-template-columns:1fr; }
       .accounts-inline { min-width:0; grid-template-columns:1fr; }
       .accounts-row-actions .accounts-link,
@@ -260,55 +264,47 @@ SQL);
             </form>
           </section>
 
-          <section class="accounts-box">
+          <section class="accounts-box accounts-current">
             <h2>Cuentas actuales</h2>
-            <div class="accounts-table-wrap">
-              <table class="accounts-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Nombre</th>
-                    <th>Slug</th>
-                    <th>Estado</th>
-                    <th>Uso</th>
-                    <th>Actualizar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php if ($accounts): foreach ($accounts as $account): ?>
-                    <tr>
-                      <td data-label="ID">#<?= (int) $account['id'] ?></td>
-                      <td data-label="Nombre"><strong><?= h((string) $account['name']) ?></strong></td>
-                      <td data-label="Slug"><?= h((string) $account['slug']) ?></td>
-                      <td data-label="Estado"><?= h((string) ($statusOptions[(string) ($account['status'] ?? '')] ?? $account['status'])) ?></td>
-                      <td data-label="Uso"><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</td>
-                      <td data-label="Actualizar">
-                        <div class="accounts-row-actions">
-                          <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
-                            <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                            <input type="hidden" name="update_id" value="<?= (int) $account['id'] ?>">
-                            <input type="text" name="update_name" value="<?= h((string) $account['name']) ?>" maxlength="160" aria-label="Nombre" autocomplete="off">
-                            <input type="text" name="update_slug" value="<?= h((string) $account['slug']) ?>" maxlength="80" aria-label="Slug" autocomplete="off">
-                            <select name="update_status" aria-label="Estado">
-                              <?php foreach ($statusOptions as $value => $label): ?>
-                                <option value="<?= h($value) ?>" <?= (string) ($account['status'] ?? '') === $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                              <?php endforeach; ?>
-                            </select>
-                            <button class="accounts-link" type="submit" name="update_account_submit" value="1">Guardar</button>
-                          </form>
-                          <form class="accounts-delete-form" method="post" action="/accounts.php" onsubmit="return confirm('Esta accion eliminara la cuenta y todos sus datos relacionados. ¿Deseas continuar?');">
-                            <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                            <input type="hidden" name="delete_id" value="<?= (int) $account['id'] ?>">
-                            <button class="accounts-link danger" type="submit" name="delete_account_submit" value="1">Eliminar cuenta</button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  <?php endforeach; else: ?>
-                    <tr><td data-label="Estado" colspan="6">Sin cuentas registradas.</td></tr>
-                  <?php endif; ?>
-                </tbody>
-              </table>
+            <div class="accounts-list">
+              <?php if ($accounts): foreach ($accounts as $account): ?>
+                <?php
+                  $accountStatus = (string) ($account['status'] ?? '');
+                  $accountStatusLabel = (string) ($statusOptions[$accountStatus] ?? $accountStatus);
+                ?>
+                <article class="account-row">
+                  <div class="account-summary">
+                    <span class="account-id">#<?= (int) $account['id'] ?></span>
+                    <div class="account-name">
+                      <strong><?= h((string) $account['name']) ?></strong>
+                      <span><?= h((string) $account['slug']) ?></span>
+                    </div>
+                    <span class="account-pill <?= $accountStatus === 'active' ? '' : 'off' ?>"><?= h($accountStatusLabel) ?></span>
+                    <span class="account-usage"><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</span>
+                  </div>
+                  <div class="accounts-row-actions">
+                    <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
+                      <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                      <input type="hidden" name="update_id" value="<?= (int) $account['id'] ?>">
+                      <input type="text" name="update_name" value="<?= h((string) $account['name']) ?>" maxlength="160" aria-label="Nombre" autocomplete="off">
+                      <input type="text" name="update_slug" value="<?= h((string) $account['slug']) ?>" maxlength="80" aria-label="Slug" autocomplete="off">
+                      <select name="update_status" aria-label="Estado">
+                        <?php foreach ($statusOptions as $value => $label): ?>
+                          <option value="<?= h($value) ?>" <?= $accountStatus === $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                        <?php endforeach; ?>
+                      </select>
+                      <button class="accounts-link" type="submit" name="update_account_submit" value="1">Guardar</button>
+                    </form>
+                    <form class="accounts-delete-form" method="post" action="/accounts.php" onsubmit="return confirm('Esta accion eliminara la cuenta y todos sus datos relacionados. ¿Deseas continuar?');">
+                      <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                      <input type="hidden" name="delete_id" value="<?= (int) $account['id'] ?>">
+                      <button class="accounts-link danger" type="submit" name="delete_account_submit" value="1">Eliminar cuenta</button>
+                    </form>
+                  </div>
+                </article>
+              <?php endforeach; else: ?>
+                <p class="accounts-empty">Sin cuentas registradas.</p>
+              <?php endif; ?>
             </div>
           </section>
         </div>
