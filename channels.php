@@ -13,8 +13,10 @@ $scopeAccountId = $requestAccountId > 0 ? $requestAccountId : $currentAccountId;
 
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
-$appId = (string) app_config('instagram.app_id', '');
-$appSecret = (string) app_config('instagram.app_secret', '');
+$instagramAppId = (string) app_config('instagram.app_id', '');
+$instagramAppSecret = (string) app_config('instagram.app_secret', '');
+$facebookAppId = (string) app_config('instagram.facebook_app_id', '');
+$facebookAppSecret = (string) app_config('instagram.facebook_app_secret', '');
 $graphVersion = (string) app_config('instagram.graph_version', 'v20.0');
 if (preg_match('/^v\d+$/', trim($graphVersion))) $graphVersion = trim($graphVersion) . '.0';
 if (!preg_match('/^v\d+\.\d+$/', trim($graphVersion))) $graphVersion = 'v20.0';
@@ -22,12 +24,18 @@ $configuredCallbackUrl = trim((string) app_config('instagram.oauth_redirect_uri'
 $fallbackCallbackUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_oauth_callback.php';
 $callbackUrl = $configuredCallbackUrl !== '' ? $configuredCallbackUrl : $fallbackCallbackUrl;
 $webhookUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tu-dominio') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_webhook.php';
-$canConnect = $appId !== '' && $appSecret !== '';
+$canConnectInstagram = $instagramAppId !== '' && $instagramAppSecret !== '';
+$canConnectFacebook = $facebookAppId !== '' && $facebookAppSecret !== '';
+$canConnect = $canConnectInstagram || $canConnectFacebook;
 
 $connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
 if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
-  if (!$canConnect) {
-    $errors[] = 'Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.';
+  $providerAppId = $connectProvider === 'facebook' ? $facebookAppId : $instagramAppId;
+  $providerAppSecret = $connectProvider === 'facebook' ? $facebookAppSecret : $instagramAppSecret;
+  if ($providerAppId === '' || $providerAppSecret === '') {
+    $errors[] = $connectProvider === 'facebook'
+      ? 'Falta configurar FACEBOOK_APP_ID y/o FACEBOOK_APP_SECRET en config/local.php.'
+      : 'Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.';
   } else {
     $_SESSION['instagram_oauth_state'] = bin2hex(random_bytes(24));
     $_SESSION['instagram_oauth_redirect'] = $callbackUrl;
@@ -37,7 +45,7 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
 
     if ($connectProvider === 'instagram') {
       $authUrl = 'https://www.instagram.com/oauth/authorize?' . http_build_query([
-        'client_id' => $appId,
+        'client_id' => $providerAppId,
         'redirect_uri' => $callbackUrl,
         'state' => $_SESSION['instagram_oauth_state'],
         'scope' => (string) app_config('instagram.direct_oauth_scopes', ''),
@@ -47,7 +55,7 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
       ]);
     } else {
       $authUrl = 'https://www.facebook.com/' . rawurlencode($graphVersion) . '/dialog/oauth?' . http_build_query([
-        'client_id' => $appId,
+        'client_id' => $providerAppId,
         'redirect_uri' => $callbackUrl,
         'state' => $_SESSION['instagram_oauth_state'],
         'scope' => (string) app_config('instagram.oauth_scopes', ''),
@@ -58,7 +66,7 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
     if ((string) ($_GET['debug_oauth'] ?? '') === '1') {
       if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8');
       echo "Proveedor: {$connectProvider}\n";
-      echo "App ID: {$appId}\n";
+      echo "App ID: {$providerAppId}\n";
       echo "Redirect URI: {$callbackUrl}\n";
       echo "Scopes: " . ($connectProvider === 'instagram' ? (string) app_config('instagram.direct_oauth_scopes', '') : (string) app_config('instagram.oauth_scopes', '')) . "\n";
       echo "URL OAuth:\n{$authUrl}\n";
@@ -172,12 +180,12 @@ try {
           <article class="connect-card">
             <h2>Facebook / Fanpage</h2>
             <p>Usa el flujo actual para conectar páginas de Facebook con una cuenta profesional de Instagram vinculada.</p>
-            <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectUrl) ?>">Conectar por Facebook</a>
+            <a class="channel-link primary <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectUrl) ?>">Conectar por Facebook</a>
           </article>
           <article class="connect-card">
             <h2>Instagram Login</h2>
             <p>Conecta directamente una cuenta profesional de Instagram usando los permisos de Instagram Login.</p>
-            <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>">Conectar por Instagram</a>
+            <a class="channel-link primary <?= $canConnectInstagram ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>">Conectar por Instagram</a>
           </article>
         </div>
 

@@ -59,8 +59,12 @@ if ($code === '' || $redirectUri === '') {
   oauth_fail('Meta no envio un codigo de autorizacion valido.');
 }
 
-$appId = (string) app_config('instagram.app_id', '');
-$appSecret = (string) app_config('instagram.app_secret', '');
+$appId = $provider === 'facebook'
+  ? (string) app_config('instagram.facebook_app_id', '')
+  : (string) app_config('instagram.app_id', '');
+$appSecret = $provider === 'facebook'
+  ? (string) app_config('instagram.facebook_app_secret', '')
+  : (string) app_config('instagram.app_secret', '');
 if ($appId === '' || $appSecret === '') {
   oauth_fail('Falta configurar App ID o App Secret de Meta.');
 }

@@ -167,6 +167,8 @@ $app = [
   ],
 
   'instagram' => [
+    'facebook_app_id' => (string) env_value('FACEBOOK_APP_ID', env_value('META_APP_ID', '')),
+    'facebook_app_secret' => (string) env_value('FACEBOOK_APP_SECRET', env_value('META_APP_SECRET', '')),
     'app_id' => (string) env_value('INSTAGRAM_APP_ID', env_value('META_APP_ID', '')),
     'webhook_verify_token' => (string) env_value('INSTAGRAM_WEBHOOK_VERIFY_TOKEN', ''),
     'app_secret' => (string) env_value('INSTAGRAM_APP_SECRET', ''),
