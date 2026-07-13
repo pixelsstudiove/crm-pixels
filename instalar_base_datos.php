@@ -234,11 +234,14 @@ function ensure_instagram_channels_schema(PDO $pdo, string $channelsTable, array
 CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `account_id` INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
+  `connection_type` VARCHAR(40) NOT NULL DEFAULT 'facebook',
   `page_id` VARCHAR(120) NOT NULL,
   `page_name` VARCHAR(180) NULL,
   `instagram_user_id` VARCHAR(120) NOT NULL,
   `instagram_username` VARCHAR(180) NULL,
   `page_access_token` TEXT NULL,
+  `token_expires_at` DATETIME NULL,
+  `scopes` TEXT NULL,
   `connected_by` INT UNSIGNED NULL,
   `is_active` TINYINT(1) NOT NULL DEFAULT 1,
   `last_event_at` DATETIME NULL,
@@ -251,6 +254,9 @@ CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
   try { accounts_add_account_column($pdo, (string) ($DB_NAME ?? ''), $channelsTable, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD COLUMN `connection_type` VARCHAR(40) NOT NULL DEFAULT 'facebook' AFTER `account_id`"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD COLUMN `token_expires_at` DATETIME NULL AFTER `page_access_token`"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD COLUMN `scopes` TEXT NULL AFTER `token_expires_at`"); } catch (Throwable $e) { /* no-op */ }
   $log[] = ['ok', "Tabla {$channelsTable} verificada."];
 }
 

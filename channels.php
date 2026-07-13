@@ -13,6 +13,50 @@ $scopeAccountId = $requestAccountId > 0 ? $requestAccountId : $currentAccountId;
 
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
+$appId = (string) app_config('instagram.app_id', '');
+$appSecret = (string) app_config('instagram.app_secret', '');
+$graphVersion = (string) app_config('instagram.graph_version', 'v20.0');
+if (preg_match('/^v\d+$/', trim($graphVersion))) $graphVersion = trim($graphVersion) . '.0';
+if (!preg_match('/^v\d+\.\d+$/', trim($graphVersion))) $graphVersion = 'v20.0';
+$callbackUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_oauth_callback.php';
+$webhookUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tu-dominio') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_webhook.php';
+$canConnect = $appId !== '' && $appSecret !== '';
+
+$connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
+if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
+  if (!$canConnect) {
+    $errors[] = 'Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.';
+  } else {
+    $_SESSION['instagram_oauth_state'] = bin2hex(random_bytes(24));
+    $_SESSION['instagram_oauth_redirect'] = $callbackUrl;
+    $_SESSION['instagram_oauth_account_id'] = $scopeAccountId;
+    $_SESSION['instagram_oauth_account_slug'] = accounts_slug_for_id($pdo, $scopeAccountId);
+    $_SESSION['instagram_oauth_provider'] = $connectProvider;
+
+    if ($connectProvider === 'instagram') {
+      $authUrl = 'https://www.instagram.com/oauth/authorize?' . http_build_query([
+        'client_id' => $appId,
+        'redirect_uri' => $callbackUrl,
+        'state' => $_SESSION['instagram_oauth_state'],
+        'scope' => (string) app_config('instagram.direct_oauth_scopes', ''),
+        'response_type' => 'code',
+        'enable_fb_login' => '0',
+        'force_authentication' => '1',
+      ]);
+    } else {
+      $authUrl = 'https://www.facebook.com/' . rawurlencode($graphVersion) . '/dialog/oauth?' . http_build_query([
+        'client_id' => $appId,
+        'redirect_uri' => $callbackUrl,
+        'state' => $_SESSION['instagram_oauth_state'],
+        'scope' => (string) app_config('instagram.oauth_scopes', ''),
+        'response_type' => 'code',
+      ]);
+    }
+
+    header('Location: ' . $authUrl);
+    exit;
+  }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = $_POST['csrf'] ?? '';
@@ -43,26 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-$appId = (string) app_config('instagram.app_id', '');
-$appSecret = (string) app_config('instagram.app_secret', '');
-$callbackUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_oauth_callback.php';
-$canConnect = $appId !== '' && $appSecret !== '';
-
-if ($canConnect) {
-  $_SESSION['instagram_oauth_state'] = bin2hex(random_bytes(24));
-  $_SESSION['instagram_oauth_redirect'] = $callbackUrl;
-  $_SESSION['instagram_oauth_account_id'] = $scopeAccountId;
-  $_SESSION['instagram_oauth_account_slug'] = accounts_slug_for_id($pdo, $scopeAccountId);
-  $authUrl = 'https://www.facebook.com/' . rawurlencode((string) app_config('instagram.graph_version', 'v20.0')) . '/dialog/oauth?' . http_build_query([
-    'client_id' => $appId,
-    'redirect_uri' => $callbackUrl,
-    'state' => $_SESSION['instagram_oauth_state'],
-    'scope' => (string) app_config('instagram.oauth_scopes', ''),
-    'response_type' => 'code',
-  ]);
-} else {
-  $authUrl = '#';
-}
+$facebookConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook']) : '#';
+$instagramConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'instagram']) : '#';
 
 $channels = [];
 try {
@@ -93,6 +119,10 @@ try {
     .channel-link.primary, .channel-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
     .channel-link.is-disabled { opacity:.55; pointer-events:none; }
+    .connect-panel { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px; }
+    .connect-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
+    .connect-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
+    .connect-card p { margin:6px 0 12px; color:var(--brand-muted); line-height:1.4; }
     .channel-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; }
     .channel-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .channel-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
@@ -111,13 +141,12 @@ try {
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
             <h1 class="title">Canales conectados</h1>
-            <p class="subtitle">Conecta la fanpage e Instagram del cliente para capturar DMs como leads.</p>
+            <p class="subtitle">Conecta canales por Facebook/Fanpage o por Login directo de Instagram para capturar DMs como leads.</p>
           </div>
           <div class="channel-actions">
             <a class="channel-link" href="<?= h(account_url('dashboard.php')) ?>">Dashboard</a>
             <?php if (can('view_conversations')): ?><a class="channel-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
             <a class="channel-link" href="<?= h(account_url('webhook_logs.php')) ?>">Eventos</a>
-            <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($authUrl) ?>">Conectar Instagram</a>
           </div>
         </header>
 
@@ -127,9 +156,22 @@ try {
           <div class="form-alert alert-error notice">Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.</div>
         <?php endif; ?>
 
+        <div class="connect-panel">
+          <article class="connect-card">
+            <h2>Facebook / Fanpage</h2>
+            <p>Usa el flujo actual para conectar páginas de Facebook con una cuenta profesional de Instagram vinculada.</p>
+            <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectUrl) ?>">Conectar por Facebook</a>
+          </article>
+          <article class="connect-card">
+            <h2>Instagram Login</h2>
+            <p>Conecta directamente una cuenta profesional de Instagram usando los permisos de Instagram Login.</p>
+            <a class="channel-link primary <?= $canConnect ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>">Conectar por Instagram</a>
+          </article>
+        </div>
+
         <div class="channel-card" style="margin-bottom:14px">
           <h2>Webhook de Meta</h2>
-          <p><strong>URL:</strong> <?= h(((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tu-dominio') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_webhook.php') ?></p>
+          <p><strong>URL:</strong> <?= h($webhookUrl) ?></p>
           <p><strong>Redirect OAuth:</strong> <?= h($callbackUrl) ?></p>
         </div>
 
@@ -138,9 +180,12 @@ try {
             <article class="channel-card">
               <span class="channel-status <?= (int) $channel['is_active'] === 1 ? 'on' : 'off' ?>"><?= (int) $channel['is_active'] === 1 ? 'Activo' : 'Inactivo' ?></span>
               <h2><?= h((string) ($channel['instagram_username'] ?: 'Instagram conectado')) ?></h2>
-              <p><strong>Fanpage:</strong> <?= h((string) ($channel['page_name'] ?: $channel['page_id'])) ?></p>
-              <p><strong>Page ID:</strong> <?= h((string) $channel['page_id']) ?></p>
+              <p><strong>Tipo:</strong> <?= h((string) (($channel['connection_type'] ?? 'facebook') === 'instagram_login' ? 'Instagram Login' : 'Facebook / Fanpage')) ?></p>
+              <?php $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login'; ?>
+              <p><strong><?= $isDirectLogin ? 'Cuenta:' : 'Fanpage:' ?></strong> <?= h((string) ($channel['page_name'] ?: $channel['page_id'])) ?></p>
+              <p><strong><?= $isDirectLogin ? 'Cuenta ID:' : 'Page ID:' ?></strong> <?= h((string) $channel['page_id']) ?></p>
               <p><strong>Instagram ID:</strong> <?= h((string) $channel['instagram_user_id']) ?></p>
+              <?php if (!empty($channel['token_expires_at'])): ?><p><strong>Token vence:</strong> <?= h(app_datetime($channel['token_expires_at'])) ?></p><?php endif; ?>
               <p><strong>Ultimo evento:</strong> <?= h((string) ($channel['last_event_at'] ?: 'Sin eventos')) ?></p>
               <form method="post" action="channels.php">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
