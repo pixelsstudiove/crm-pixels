@@ -175,9 +175,10 @@ SQL);
     .accounts-form { display:grid; gap:12px; }
     .accounts-form input, .accounts-form select { width:100%; height:42px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; }
     .accounts-inline { display:grid; grid-template-columns:1.2fr 1fr 150px auto; gap:8px; align-items:start; min-width:760px; }
-    .accounts-row-actions { display:grid; gap:8px; }
+    .accounts-row-actions { display:grid; grid-template-columns:minmax(760px, 1fr) auto; gap:8px; align-items:start; min-width:920px; }
     .accounts-delete-form { margin:0; }
-    .accounts-link.danger { width:100%; border-color:#f1c2c6; background:#fff1f2; color:#9f2631; }
+    .accounts-delete-form .accounts-link { min-height:42px; white-space:nowrap; }
+    .accounts-link.danger { border-color:#f1c2c6; background:#fff1f2; color:#9f2631; }
     .accounts-link.danger:hover { background:#ffe4e6; border-color:#e998a1; }
     .accounts-table-wrap { overflow:auto; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
     .accounts-table { width:100%; border-collapse:collapse; font-size:.94rem; }
