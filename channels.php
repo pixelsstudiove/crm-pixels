@@ -55,6 +55,16 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
       ]);
     }
 
+    if ((string) ($_GET['debug_oauth'] ?? '') === '1') {
+      if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8');
+      echo "Proveedor: {$connectProvider}\n";
+      echo "App ID: {$appId}\n";
+      echo "Redirect URI: {$callbackUrl}\n";
+      echo "Scopes: " . ($connectProvider === 'instagram' ? (string) app_config('instagram.direct_oauth_scopes', '') : (string) app_config('instagram.oauth_scopes', '')) . "\n";
+      echo "URL OAuth:\n{$authUrl}\n";
+      exit;
+    }
+
     header('Location: ' . $authUrl);
     exit;
   }
