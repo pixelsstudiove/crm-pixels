@@ -51,7 +51,7 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
         'scope' => (string) app_config('instagram.direct_oauth_scopes', ''),
         'response_type' => 'code',
         'enable_fb_login' => '0',
-        'force_authentication' => '1',
+        'force_reauth' => 'true',
       ]);
     } else {
       $authUrl = 'https://www.facebook.com/' . rawurlencode($graphVersion) . '/dialog/oauth?' . http_build_query([

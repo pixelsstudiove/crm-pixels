@@ -484,8 +484,8 @@ SQL);
   }
 }
 
-function conv_graph_post_json(string $path, array $payload, string $accessToken): array {
-  $url = rtrim(ig_graph_base(), '/') . '/' . ltrim($path, '/') . '?access_token=' . rawurlencode($accessToken);
+function conv_graph_post_json_base(string $baseUrl, string $path, array $payload, string $accessToken): array {
+  $url = rtrim($baseUrl, '/') . '/' . ltrim($path, '/') . '?access_token=' . rawurlencode($accessToken);
   $ch = curl_init();
   curl_setopt_array($ch, [
     CURLOPT_URL => $url,
@@ -504,6 +504,27 @@ function conv_graph_post_json(string $path, array $payload, string $accessToken)
     return ['ok' => false, 'http' => $http, 'error' => $error !== '' ? $error : ($json['error']['message'] ?? 'Respuesta invalida de Meta'), 'raw' => $raw];
   }
   return ['ok' => true, 'http' => $http, 'data' => $json];
+}
+
+function conv_graph_post_json(string $path, array $payload, string $accessToken): array {
+  return conv_graph_post_json_base(ig_graph_base(), $path, $payload, $accessToken);
+}
+
+function conv_instagram_send_bases(array $channel): array {
+  $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
+  $bases = $isDirectLogin
+    ? [ig_instagram_graph_base(), ig_graph_base()]
+    : [ig_graph_base(), ig_instagram_graph_base()];
+  return array_values(array_unique(array_filter($bases)));
+}
+
+function conv_instagram_send_targets(array $channel): array {
+  $targets = array_values(array_filter([
+    (string) ($channel['instagram_user_id'] ?? ''),
+    (string) ($channel['page_id'] ?? ''),
+    'me',
+  ], static fn($value) => trim($value) !== ''));
+  return array_values(array_unique($targets));
 }
 
 function conv_instagram_channel_for_conversation(PDO $pdo, array $conversation): ?array {
@@ -559,19 +580,15 @@ function conv_send_instagram_message(PDO $pdo, array $conversation, string $mess
     'messaging_type' => 'RESPONSE',
   ];
 
-  $targets = array_values(array_filter([
-    (string) ($channel['instagram_user_id'] ?? ''),
-    (string) ($channel['page_id'] ?? ''),
-    'me',
-  ], static fn($value) => trim($value) !== ''));
-
   $lastError = 'No se pudo enviar el mensaje.';
-  foreach (array_unique($targets) as $target) {
-    $response = conv_graph_post_json($target . '/messages', $payload, $token);
-    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
-      return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+  foreach (conv_instagram_send_bases($channel) as $baseUrl) {
+    foreach (conv_instagram_send_targets($channel) as $target) {
+      $response = conv_graph_post_json_base($baseUrl, $target . '/messages', $payload, $token);
+      if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+        return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+      }
+      $lastError = (string) ($response['error'] ?? $lastError);
     }
-    $lastError = (string) ($response['error'] ?? $lastError);
   }
 
   return ['ok' => false, 'error' => $lastError];
@@ -604,19 +621,15 @@ function conv_send_instagram_attachment(PDO $pdo, array $conversation, string $m
     'messaging_type' => 'RESPONSE',
   ];
 
-  $targets = array_values(array_filter([
-    (string) ($channel['instagram_user_id'] ?? ''),
-    (string) ($channel['page_id'] ?? ''),
-    'me',
-  ], static fn($value) => trim($value) !== ''));
-
   $lastError = 'No se pudo enviar el adjunto.';
-  foreach (array_unique($targets) as $target) {
-    $response = conv_graph_post_json($target . '/messages', $payload, $token);
-    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
-      return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+  foreach (conv_instagram_send_bases($channel) as $baseUrl) {
+    foreach (conv_instagram_send_targets($channel) as $target) {
+      $response = conv_graph_post_json_base($baseUrl, $target . '/messages', $payload, $token);
+      if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+        return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+      }
+      $lastError = (string) ($response['error'] ?? $lastError);
     }
-    $lastError = (string) ($response['error'] ?? $lastError);
   }
 
   return ['ok' => false, 'error' => $lastError];

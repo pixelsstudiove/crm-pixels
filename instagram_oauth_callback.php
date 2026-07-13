@@ -40,6 +40,24 @@ function oauth_http_request(string $method, string $url, array $params = []): ar
   return ['ok' => true, 'http' => $http, 'data' => $json];
 }
 
+function oauth_instagram_profile(string $accessToken): array {
+  $bases = [ig_instagram_graph_base(), 'https://graph.instagram.com'];
+  $fieldSets = [
+    'user_id,username,name,account_type,profile_picture_url',
+    'id,user_id,username,name',
+  ];
+  foreach ($bases as $baseUrl) {
+    foreach ($fieldSets as $fields) {
+      $response = ig_graph_request_base($baseUrl, 'GET', 'me', [
+        'fields' => $fields,
+        'access_token' => $accessToken,
+      ]);
+      if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) return $response;
+    }
+  }
+  return ['ok' => false, 'error' => 'No se pudo leer el perfil de Instagram.'];
+}
+
 $state = (string) ($_GET['state'] ?? '');
 $code = (string) ($_GET['code'] ?? '');
 $expectedState = (string) ($_SESSION['instagram_oauth_state'] ?? '');
@@ -85,29 +103,32 @@ if ($provider === 'instagram') {
 
   $accessToken = $shortToken;
   $expiresAt = null;
+  $tokenCandidates = [
+    ['token' => $shortToken, 'expires_at' => null],
+  ];
   $longTokenResp = oauth_http_request('GET', 'https://graph.instagram.com/access_token', [
     'grant_type' => 'ig_exchange_token',
     'client_secret' => $appSecret,
     'access_token' => $shortToken,
   ]);
   if ($longTokenResp['ok']) {
-    $accessToken = (string) ($longTokenResp['data']['access_token'] ?? $accessToken);
+    $longToken = (string) ($longTokenResp['data']['access_token'] ?? '');
     $expiresIn = (int) ($longTokenResp['data']['expires_in'] ?? 0);
-    if ($expiresIn > 0) $expiresAt = gmdate('Y-m-d H:i:s', time() + $expiresIn);
+    $longExpiresAt = $expiresIn > 0 ? gmdate('Y-m-d H:i:s', time() + $expiresIn) : null;
+    if ($longToken !== '') array_unshift($tokenCandidates, ['token' => $longToken, 'expires_at' => $longExpiresAt]);
   }
 
-  $graphVersion = trim((string) app_config('instagram.graph_version', 'v20.0'));
-  if (preg_match('/^v\d+$/', $graphVersion)) $graphVersion .= '.0';
-  if (!preg_match('/^v\d+\.\d+$/', $graphVersion)) $graphVersion = 'v20.0';
-  $profileResp = oauth_http_request('GET', 'https://graph.instagram.com/' . $graphVersion . '/me', [
-    'fields' => 'user_id,username,name,account_type,profile_picture_url',
-    'access_token' => $accessToken,
-  ]);
-  if (!$profileResp['ok']) {
-    $profileResp = oauth_http_request('GET', 'https://graph.instagram.com/me', [
-      'fields' => 'id,user_id,username',
-      'access_token' => $accessToken,
-    ]);
+  $profileResp = ['ok' => false, 'error' => 'No se pudo leer el perfil de Instagram.'];
+  foreach ($tokenCandidates as $candidate) {
+    $candidateToken = (string) ($candidate['token'] ?? '');
+    if ($candidateToken === '') continue;
+    $candidateProfile = oauth_instagram_profile($candidateToken);
+    if (($candidateProfile['ok'] ?? false) && isset($candidateProfile['data']) && is_array($candidateProfile['data'])) {
+      $accessToken = $candidateToken;
+      $expiresAt = $candidate['expires_at'] ?? null;
+      $profileResp = $candidateProfile;
+      break;
+    }
   }
   $profile = $profileResp['ok'] ? (array) ($profileResp['data'] ?? []) : [];
   $instagramUserId = (string) ($profile['user_id'] ?? $profile['id'] ?? $instagramUserId);

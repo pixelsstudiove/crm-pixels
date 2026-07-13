@@ -221,11 +221,22 @@ function ig_contact_profile(?array $channel, ?string $senderId): array {
   $token = ig_clean($channel['page_access_token'] ?? null, 2000);
   if ($senderId === null || $token === null) return [];
 
-  $response = ig_graph_request('GET', $senderId, [
-    'fields' => 'name,username',
-    'access_token' => $token,
-  ]);
-  if (!($response['ok'] ?? false) || !isset($response['data']) || !is_array($response['data'])) return [];
+  $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
+  $bases = $isDirectLogin
+    ? [ig_instagram_graph_base(), ig_graph_base()]
+    : [ig_graph_base(), ig_instagram_graph_base()];
+  $response = null;
+  foreach (array_values(array_unique($bases)) as $baseUrl) {
+    $candidate = ig_graph_request_base($baseUrl, 'GET', $senderId, [
+      'fields' => 'name,username',
+      'access_token' => $token,
+    ]);
+    if (($candidate['ok'] ?? false) && isset($candidate['data']) && is_array($candidate['data'])) {
+      $response = $candidate;
+      break;
+    }
+  }
+  if (!$response) return [];
 
   return [
     'name' => ig_clean($response['data']['name'] ?? null, 120),

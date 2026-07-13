@@ -39,16 +39,23 @@ SQL);
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN scopes TEXT NULL AFTER token_expires_at"); } catch (Throwable $e) { /* no-op */ }
 }
 
-function ig_graph_base(): string {
+function ig_graph_version(): string {
   $version = trim((string) app_config('instagram.graph_version', 'v20.0'));
   if (preg_match('/^v\d+$/', $version)) $version .= '.0';
-  $version = preg_match('/^v\d+\.\d+$/', $version) ? $version : 'v20.0';
-  return 'https://graph.facebook.com/' . $version;
+  return preg_match('/^v\d+\.\d+$/', $version) ? $version : 'v20.0';
 }
 
-function ig_graph_request(string $method, string $path, array $params = []): array {
+function ig_graph_base(): string {
+  return 'https://graph.facebook.com/' . ig_graph_version();
+}
+
+function ig_instagram_graph_base(): string {
+  return 'https://graph.instagram.com/' . ig_graph_version();
+}
+
+function ig_graph_request_base(string $baseUrl, string $method, string $path, array $params = []): array {
   $method = strtoupper($method);
-  $url = rtrim(ig_graph_base(), '/') . '/' . ltrim($path, '/');
+  $url = rtrim($baseUrl, '/') . '/' . ltrim($path, '/');
   $ch = curl_init();
   if ($method === 'GET') {
     if ($params) $url .= (str_contains($url, '?') ? '&' : '?') . http_build_query($params);
@@ -70,6 +77,10 @@ function ig_graph_request(string $method, string $path, array $params = []): arr
     return ['ok' => false, 'http' => $http, 'error' => $error !== '' ? $error : ($json['error']['message'] ?? 'Respuesta invalida de Meta'), 'raw' => $raw];
   }
   return ['ok' => true, 'http' => $http, 'data' => $json];
+}
+
+function ig_graph_request(string $method, string $path, array $params = []): array {
+  return ig_graph_request_base(ig_graph_base(), $method, $path, $params);
 }
 
 function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipientId): ?array {
