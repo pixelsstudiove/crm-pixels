@@ -125,7 +125,7 @@ function log_badge_class(string $status): string {
     .logs-link:hover, .logs-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .logs-filter { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
     .logs-filter select { min-height:40px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:#071120; background:#fff; font:inherit; font-weight:800; }
-    .logs-table-wrap { overflow:auto; border:1px solid rgba(0,212,255,.14); border-radius:16px; background:#fff; }
+    .logs-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid rgba(0,212,255,.14); border-radius:16px; background:#fff; }
     .logs-table { width:100%; border-collapse:collapse; font-size:.88rem; min-width:1120px; }
     .logs-table th { background:#071120; color:#eafaff; text-align:left; padding:11px; white-space:nowrap; }
     .logs-table td { padding:10px 11px; border-bottom:1px solid rgba(0,68,99,.10); vertical-align:top; color:#24324a; }

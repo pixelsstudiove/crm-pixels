@@ -64,7 +64,7 @@ if ($conversationId > 0) {
     .debug-actions { display:flex; gap:10px; flex-wrap:wrap; }
     .debug-link { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; }
     .debug-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; }
-    .debug-box { border:1px solid rgba(0,212,255,.14); border-radius:16px; background:#fff; padding:16px; overflow:auto; }
+    .debug-box { max-width:100%; border:1px solid rgba(0,212,255,.14); border-radius:16px; background:#fff; padding:16px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
     .debug-box h2 { margin:0 0 12px; color:#071120; font-size:1.05rem; }
     table { width:100%; border-collapse:collapse; font-size:.86rem; min-width:720px; }
     th { background:#071120; color:#eafaff; text-align:left; padding:10px; white-space:nowrap; }

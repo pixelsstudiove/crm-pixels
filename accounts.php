@@ -180,12 +180,31 @@ SQL);
     .accounts-delete-form .accounts-link { min-height:42px; white-space:nowrap; }
     .accounts-link.danger { border-color:#f1c2c6; background:#fff1f2; color:#9f2631; }
     .accounts-link.danger:hover { background:#ffe4e6; border-color:#e998a1; }
-    .accounts-table-wrap { overflow:auto; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
-    .accounts-table { width:100%; border-collapse:collapse; font-size:.94rem; }
+    .accounts-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
+    .accounts-table { width:100%; min-width:1060px; border-collapse:collapse; font-size:.94rem; }
     .accounts-table th { background:#071120; color:#eafaff; text-align:left; padding:12px; white-space:nowrap; }
     .accounts-table td { padding:12px; border-bottom:1px solid rgba(0,68,99,.10); background:#fbfdff; }
     .notice { display:block; margin-bottom:14px; }
     @media (max-width: 860px) { .accounts-grid { grid-template-columns:1fr; } }
+    @media (max-width: 760px) {
+      .accounts-table-wrap { overflow:visible; border:0; border-radius:0; }
+      .accounts-table,
+      .accounts-table tbody,
+      .accounts-table tr,
+      .accounts-table td { display:block; width:100%; min-width:0; }
+      .accounts-table { border-collapse:separate; border-spacing:0; font-size:.95rem; }
+      .accounts-table thead { display:none; }
+      .accounts-table tr { margin-bottom:12px; border:1px solid rgba(0,212,255,.14); border-radius:14px; background:#fff; box-shadow:0 8px 20px rgba(0,76,110,.06); overflow:hidden; }
+      .accounts-table td { display:grid; grid-template-columns:minmax(92px, 32%) minmax(0, 1fr); gap:10px; align-items:start; padding:10px 12px; border-bottom:1px solid rgba(0,68,99,.08); background:#fff; overflow-wrap:anywhere; }
+      .accounts-table td::before { content:attr(data-label); color:var(--brand-muted); font-size:.76rem; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
+      .accounts-table td:last-child { border-bottom:0; }
+      .accounts-table td[data-label="Actualizar"] { display:block; }
+      .accounts-table td[data-label="Actualizar"]::before { display:block; margin-bottom:8px; }
+      .accounts-row-actions { min-width:0; grid-template-columns:1fr; }
+      .accounts-inline { min-width:0; grid-template-columns:1fr; }
+      .accounts-row-actions .accounts-link,
+      .accounts-delete-form .accounts-link { width:100%; }
+    }
   </style>
 </head>
 <body class="dashboard-page">
@@ -249,12 +268,12 @@ SQL);
                 <tbody>
                   <?php if ($accounts): foreach ($accounts as $account): ?>
                     <tr>
-                      <td>#<?= (int) $account['id'] ?></td>
-                      <td><strong><?= h((string) $account['name']) ?></strong></td>
-                      <td><?= h((string) $account['slug']) ?></td>
-                      <td><?= h((string) ($statusOptions[(string) ($account['status'] ?? '')] ?? $account['status'])) ?></td>
-                      <td><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</td>
-                      <td>
+                      <td data-label="ID">#<?= (int) $account['id'] ?></td>
+                      <td data-label="Nombre"><strong><?= h((string) $account['name']) ?></strong></td>
+                      <td data-label="Slug"><?= h((string) $account['slug']) ?></td>
+                      <td data-label="Estado"><?= h((string) ($statusOptions[(string) ($account['status'] ?? '')] ?? $account['status'])) ?></td>
+                      <td data-label="Uso"><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</td>
+                      <td data-label="Actualizar">
                         <div class="accounts-row-actions">
                           <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
                             <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
@@ -277,7 +296,7 @@ SQL);
                       </td>
                     </tr>
                   <?php endforeach; else: ?>
-                    <tr><td colspan="6">Sin cuentas registradas.</td></tr>
+                    <tr><td data-label="Estado" colspan="6">Sin cuentas registradas.</td></tr>
                   <?php endif; ?>
                 </tbody>
               </table>

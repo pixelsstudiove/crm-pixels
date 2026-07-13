@@ -148,14 +148,32 @@ try {
     .users-form input, .users-form select { width:100%; height:40px; padding:0 10px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; }
     .users-form input:focus, .users-form select:focus { border-color:var(--brand-primary); box-shadow:0 0 0 3px rgba(0,212,255,.16); }
     .users-form small { color:var(--brand-muted); line-height:1.35; }
-    .users-table-wrap { overflow:auto; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
-    .users-table { width:100%; border-collapse:collapse; font-size:.94rem; }
+    .users-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
+    .users-table { width:100%; min-width:940px; border-collapse:collapse; font-size:.94rem; }
     .users-table th { background:#071120; color:#eafaff; text-align:left; padding:12px; white-space:nowrap; }
     .users-table td { padding:12px; border-bottom:1px solid rgba(0,68,99,.10); vertical-align:top; background:#fbfdff; }
     .role-description { color:var(--brand-muted); font-size:.82rem; line-height:1.35; max-width:280px; }
     .inline-fields { display:grid; grid-template-columns:repeat(4, minmax(150px, 1fr)) auto; gap:8px; align-items:start; min-width:860px; }
     .notice { display:block; margin-bottom:14px; }
     @media (max-width: 920px) { .users-grid { grid-template-columns:1fr; } .inline-fields { min-width:680px; } }
+    @media (max-width: 760px) {
+      .users-table-wrap { overflow:visible; border:0; border-radius:0; }
+      .users-table,
+      .users-table tbody,
+      .users-table tr,
+      .users-table td { display:block; width:100%; min-width:0; }
+      .users-table { border-collapse:separate; border-spacing:0; font-size:.95rem; }
+      .users-table thead { display:none; }
+      .users-table tr { margin-bottom:12px; border:1px solid rgba(0,212,255,.14); border-radius:14px; background:#fff; box-shadow:0 8px 20px rgba(0,76,110,.06); overflow:hidden; }
+      .users-table td { display:grid; grid-template-columns:minmax(108px, 34%) minmax(0, 1fr); gap:10px; align-items:start; padding:10px 12px; border-bottom:1px solid rgba(0,68,99,.08); background:#fff; overflow-wrap:anywhere; }
+      .users-table td::before { content:attr(data-label); color:var(--brand-muted); font-size:.76rem; font-weight:900; letter-spacing:.03em; text-transform:uppercase; }
+      .users-table td:last-child { border-bottom:0; }
+      .users-table td[data-label="Actualizar"] { display:block; }
+      .users-table td[data-label="Actualizar"]::before { display:block; margin-bottom:8px; }
+      .inline-fields { min-width:0; grid-template-columns:1fr; }
+      .inline-fields .users-link { width:100%; }
+      .role-description { max-width:none; }
+    }
   </style>
 </head>
 <body class="dashboard-page">
@@ -233,16 +251,16 @@ try {
                   <?php if ($users): foreach ($users as $user): ?>
                     <?php $userRole = normalize_role($user['role'] ?? ''); ?>
                     <tr>
-                      <td>
+                      <td data-label="Usuario">
                         <strong><?= h($user['username'] ?? '') ?></strong><br>
                         <small>ID #<?= (int) $user['id'] ?> · <?= h((string) ($user['created_at'] ?? '')) ?></small>
                         <?php if (is_super_admin()): ?><br><small>Cuenta: <?= h((string) ($user['account_name'] ?? 'Cuenta por defecto')) ?></small><?php endif; ?>
                       </td>
-                      <td>
+                      <td data-label="Rol">
                         <strong><?= h(role_label($userRole)) ?></strong>
                         <div class="role-description"><?= h((string) app_config('roles.profiles.' . $userRole . '.description', '')) ?></div>
                       </td>
-                      <td>
+                      <td data-label="Actualizar">
                         <form class="users-form inline-fields" method="post" action="/users.php" autocomplete="off">
                           <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                           <input type="hidden" name="action" value="update_user">
@@ -268,7 +286,7 @@ try {
                       </td>
                     </tr>
                   <?php endforeach; else: ?>
-                    <tr><td colspan="3">Sin usuarios registrados.</td></tr>
+                    <tr><td data-label="Estado" colspan="3">Sin usuarios registrados.</td></tr>
                   <?php endif; ?>
                 </tbody>
               </table>
