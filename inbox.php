@@ -532,7 +532,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           </div>
           <div class="inbox-actions app-nav-actions">
             <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'inbox.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus], ['q' => $q, 'status' => $filterStatus]); ?>
-            <?php nav_render_view_menu('inbox'); ?>
+            <?php nav_render_view_button('inbox'); ?>
             <?php nav_render_user_menu(true); ?>
           </div>
         </header>

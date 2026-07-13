@@ -246,6 +246,12 @@ body{
 .menu-panel-wide{
   min-width:260px;
 }
+.nav-direct-button{
+  text-decoration:none;
+}
+.nav-direct-button::after{
+  display:none;
+}
 .menu-section-title{
   display:block;
   margin:8px 10px 4px;

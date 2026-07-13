@@ -28,24 +28,12 @@ function nav_render_account_switch(PDO $pdo, array $accountOptions, int $selecte
   <?php
 }
 
-function nav_render_view_menu(string $activeView): void {
-  $items = [];
+function nav_render_view_button(string $activeView): void {
   if ($activeView === 'dashboard' && can('view_conversations')) {
-    $items[] = ['label' => 'Ir al Inbox', 'href' => account_url('inbox.php')];
+    echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('inbox.php')) . '">Inbox</a>';
   } elseif ($activeView === 'inbox' && can('view_dashboard')) {
-    $items[] = ['label' => 'Ir al embudo', 'href' => account_url('dashboard.php')];
+    echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('dashboard.php')) . '">Embudo</a>';
   }
-  if (!$items) return;
-  ?>
-  <div class="menu-dropdown" data-menu>
-    <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
-    <div class="menu-panel" role="menu">
-      <?php foreach ($items as $item): ?>
-        <a class="menu-item" href="<?= h($item['href']) ?>"><?= h($item['label']) ?></a>
-      <?php endforeach; ?>
-    </div>
-  </div>
-  <?php
 }
 
 function nav_render_user_menu(bool $includeProfileModal = true): void {
@@ -78,8 +66,6 @@ function nav_admin_items(): array {
   if (can('manage_users')) $items[] = ['key' => 'users', 'label' => 'Gestión de usuarios', 'href' => '/users.php'];
   if (can('manage_integrations')) $items[] = ['key' => 'channels', 'label' => 'Gestión de canales', 'href' => account_url('channels.php')];
   if (can('manage_integrations')) $items[] = ['key' => 'events', 'label' => 'Ver eventos', 'href' => account_url('webhook_logs.php')];
-  if (can('view_dashboard')) $items[] = ['key' => 'dashboard', 'label' => 'Embudo comercial', 'href' => account_url('dashboard.php')];
-  if (can('view_conversations')) $items[] = ['key' => 'inbox', 'label' => 'Inbox', 'href' => account_url('inbox.php')];
   return $items;
 }
 
