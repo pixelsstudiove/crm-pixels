@@ -135,18 +135,22 @@ if ($provider === 'instagram') {
   $username = (string) ($profile['username'] ?? '');
   $name = (string) ($profile['name'] ?? 'Instagram Login');
 
-  ig_channel_upsert($pdo, $channelsTable, [
-    'account_id' => $targetAccountId,
-    'connection_type' => 'instagram_login',
-    'page_id' => $instagramUserId,
-    'page_name' => $name !== '' ? $name : 'Instagram Login',
-    'instagram_user_id' => $instagramUserId,
-    'instagram_username' => $username,
-    'page_access_token' => $accessToken,
-    'token_expires_at' => $expiresAt,
-    'scopes' => (string) app_config('instagram.direct_oauth_scopes', ''),
-    'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
-  ]);
+  try {
+    ig_channel_upsert($pdo, $channelsTable, [
+      'account_id' => $targetAccountId,
+      'connection_type' => 'instagram_login',
+      'page_id' => $instagramUserId,
+      'page_name' => $name !== '' ? $name : 'Instagram Login',
+      'instagram_user_id' => $instagramUserId,
+      'instagram_username' => $username,
+      'page_access_token' => $accessToken,
+      'token_expires_at' => $expiresAt,
+      'scopes' => (string) app_config('instagram.direct_oauth_scopes', ''),
+      'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+    ]);
+  } catch (RuntimeException $e) {
+    oauth_fail($e->getMessage());
+  }
 
   header('Location: ' . account_url('channels.php', ['notice' => 'Instagram conectado correctamente.'], $targetAccountSlug !== '' ? $targetAccountSlug : null));
   exit;
@@ -169,6 +173,7 @@ $pagesResp = ig_graph_request('GET', 'me/accounts', [
 if (!$pagesResp['ok']) oauth_fail('No se pudieron leer las paginas conectadas.');
 
 $saved = 0;
+$blocked = [];
 foreach (($pagesResp['data']['data'] ?? []) as $page) {
   if (!is_array($page)) continue;
   $ig = $page['instagram_business_account'] ?? null;
@@ -184,23 +189,30 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
     'access_token' => $pageToken,
   ]);
 
-  ig_channel_upsert($pdo, $channelsTable, [
-    'account_id' => $targetAccountId,
-    'connection_type' => 'facebook',
-    'page_id' => $pageId,
-    'page_name' => (string) ($page['name'] ?? ''),
-    'instagram_user_id' => (string) $ig['id'],
-    'instagram_username' => (string) ($ig['username'] ?? $ig['name'] ?? ''),
-    'page_access_token' => $pageToken,
-    'scopes' => (string) app_config('instagram.oauth_scopes', ''),
-    'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
-  ]);
-  $saved++;
+  try {
+    ig_channel_upsert($pdo, $channelsTable, [
+      'account_id' => $targetAccountId,
+      'connection_type' => 'facebook',
+      'page_id' => $pageId,
+      'page_name' => (string) ($page['name'] ?? ''),
+      'instagram_user_id' => (string) $ig['id'],
+      'instagram_username' => (string) ($ig['username'] ?? $ig['name'] ?? ''),
+      'page_access_token' => $pageToken,
+      'scopes' => (string) app_config('instagram.oauth_scopes', ''),
+      'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+    ]);
+    $saved++;
+  } catch (RuntimeException $e) {
+    $blocked[] = $e->getMessage();
+  }
 }
 
 if ($saved <= 0) {
+  if ($blocked) oauth_fail((string) $blocked[0]);
   oauth_fail('No encontramos una cuenta de Instagram profesional conectada a tus paginas.');
 }
 
-header('Location: ' . account_url('channels.php', ['notice' => 'Instagram conectado correctamente.'], $targetAccountSlug !== '' ? $targetAccountSlug : null));
+$notice = 'Instagram conectado correctamente.';
+if ($blocked) $notice .= ' Algunos canales no se integraron porque ya pertenecen a otra cuenta.';
+header('Location: ' . account_url('channels.php', ['notice' => $notice], $targetAccountSlug !== '' ? $targetAccountSlug : null));
 exit;

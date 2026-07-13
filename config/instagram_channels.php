@@ -96,9 +96,51 @@ function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipien
   }
 }
 
+function ig_channel_active_in_other_account(PDO $pdo, string $table, int $accountId, string $pageId, string $instagramUserId, int $ignoreChannelId = 0): ?array {
+  $identifiers = array_values(array_unique(array_filter([
+    trim($pageId),
+    trim($instagramUserId),
+  ], static fn($value) => $value !== '')));
+  if (!$identifiers) return null;
+
+  $placeholders = implode(',', array_fill(0, count($identifiers), '?'));
+  $accountsTable = accounts_table();
+  $sql = <<<SQL
+SELECT ch.*, a.name AS account_name
+FROM {$table} ch
+LEFT JOIN {$accountsTable} a ON a.id = ch.account_id
+WHERE ch.is_active=1
+  AND ch.account_id<>?
+  AND (ch.page_id IN ({$placeholders}) OR ch.instagram_user_id IN ({$placeholders}))
+SQL;
+  $params = array_merge([$accountId], $identifiers, $identifiers);
+  if ($ignoreChannelId > 0) {
+    $sql .= ' AND ch.id<>?';
+    $params[] = $ignoreChannelId;
+  }
+  $sql .= ' ORDER BY ch.updated_at DESC, ch.id DESC LIMIT 1';
+
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute($params);
+  $row = $stmt->fetch();
+  return $row ?: null;
+}
+
+function ig_channel_existing_account_message(array $channel): string {
+  $accountName = trim((string) ($channel['account_name'] ?? 'otra cuenta'));
+  $channelName = trim((string) ($channel['instagram_username'] ?? $channel['page_name'] ?? 'este canal'));
+  $channelLabel = $channelName !== '' ? '@' . ltrim($channelName, '@') : 'Este canal';
+  return "{$channelLabel} ya está integrado en la cuenta {$accountName}. Para integrarlo en esta cuenta, primero debes desvincularlo de la otra cuenta.";
+}
+
 function ig_channel_upsert(PDO $pdo, string $table, array $channel): void {
   $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $connectionType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) ($channel['connection_type'] ?? 'facebook')) ?: 'facebook';
+  $pageId = (string) $channel['page_id'];
+  $instagramUserId = (string) $channel['instagram_user_id'];
+  $existingInOtherAccount = ig_channel_active_in_other_account($pdo, $table, $accountId, $pageId, $instagramUserId);
+  if ($existingInOtherAccount) throw new RuntimeException(ig_channel_existing_account_message($existingInOtherAccount));
+
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
   account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, token_expires_at, scopes, connected_by, is_active, updated_at
@@ -119,9 +161,9 @@ SQL);
   $stmt->execute([
     $accountId,
     $connectionType,
-    (string) $channel['page_id'],
+    $pageId,
     $channel['page_name'] ?? null,
-    (string) $channel['instagram_user_id'],
+    $instagramUserId,
     $channel['instagram_username'] ?? null,
     $channel['page_access_token'] ?? null,
     $channel['token_expires_at'] ?? null,
