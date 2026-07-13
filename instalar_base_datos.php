@@ -247,10 +247,8 @@ CREATE TABLE IF NOT EXISTS `{$channelsTable}` (
   `last_event_at` DATETIME NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY `uniq_account_page_id` (`account_id`, `page_id`),
-  UNIQUE KEY `uniq_account_instagram_user_id` (`account_id`, `instagram_user_id`),
-  KEY `idx_page_id` (`page_id`),
-  KEY `idx_instagram_user_id` (`instagram_user_id`),
+  UNIQUE KEY `uniq_page_id` (`page_id`),
+  UNIQUE KEY `uniq_instagram_user_id` (`instagram_user_id`),
   KEY `idx_account_id` (`account_id`),
   KEY `idx_is_active` (`is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -259,20 +257,6 @@ SQL);
   try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD COLUMN `connection_type` VARCHAR(40) NOT NULL DEFAULT 'facebook' AFTER `account_id`"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD COLUMN `token_expires_at` DATETIME NULL AFTER `page_access_token`"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD COLUMN `scopes` TEXT NULL AFTER `token_expires_at`"); } catch (Throwable $e) { /* no-op */ }
-  try { accounts_drop_index_if_exists($pdo, (string) ($DB_NAME ?? ''), $channelsTable, 'uniq_page_id'); } catch (Throwable $e) { /* no-op */ }
-  try { accounts_drop_index_if_exists($pdo, (string) ($DB_NAME ?? ''), $channelsTable, 'uniq_instagram_user_id'); } catch (Throwable $e) { /* no-op */ }
-  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $channelsTable, 'uniq_account_page_id')) {
-    try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD UNIQUE KEY `uniq_account_page_id` (`account_id`, `page_id`)"); } catch (Throwable $e) { /* no-op */ }
-  }
-  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $channelsTable, 'uniq_account_instagram_user_id')) {
-    try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD UNIQUE KEY `uniq_account_instagram_user_id` (`account_id`, `instagram_user_id`)"); } catch (Throwable $e) { /* no-op */ }
-  }
-  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $channelsTable, 'idx_page_id')) {
-    try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD KEY `idx_page_id` (`page_id`)"); } catch (Throwable $e) { /* no-op */ }
-  }
-  if (!account_index_exists($pdo, (string) ($DB_NAME ?? ''), $channelsTable, 'idx_instagram_user_id')) {
-    try { $pdo->exec("ALTER TABLE `{$channelsTable}` ADD KEY `idx_instagram_user_id` (`instagram_user_id`)"); } catch (Throwable $e) { /* no-op */ }
-  }
   $log[] = ['ok', "Tabla {$channelsTable} verificada."];
 }
 
