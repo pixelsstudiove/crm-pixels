@@ -165,28 +165,37 @@ SQL);
   <title>Cuentas - Pixels Studio</title>
   <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <style>
-    :root { --container-w:min(96vw, 1080px); }
+    :root { --container-w:min(98vw, 1320px); }
     .accounts-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
     .accounts-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .accounts-link { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; }
-    .accounts-grid { display:grid; grid-template-columns:minmax(260px, 340px) 1fr; gap:16px; align-items:start; }
+    .accounts-grid { display:grid; grid-template-columns:minmax(260px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
     .accounts-box { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .accounts-box h2 { margin:0 0 12px; color:var(--brand-ink); font-size:1.1rem; }
     .accounts-form { display:grid; gap:12px; }
-    .accounts-form input, .accounts-form select { width:100%; height:42px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; }
-    .accounts-inline { display:grid; grid-template-columns:1.2fr 1fr 150px auto; gap:8px; align-items:start; min-width:760px; }
-    .accounts-row-actions { display:grid; grid-template-columns:minmax(760px, 1fr) auto; gap:8px; align-items:start; min-width:920px; }
+    .accounts-form input, .accounts-form select { width:100%; min-width:0; height:42px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; }
+    .accounts-inline { display:grid; grid-template-columns:minmax(170px, 1.1fr) minmax(150px, .9fr) minmax(120px, 150px) auto; gap:8px; align-items:start; min-width:0; }
+    .accounts-row-actions { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; min-width:0; }
     .accounts-delete-form { margin:0; }
     .accounts-delete-form .accounts-link { min-height:42px; white-space:nowrap; }
     .accounts-link.danger { border-color:#f1c2c6; background:#fff1f2; color:#9f2631; }
     .accounts-link.danger:hover { background:#ffe4e6; border-color:#e998a1; }
     .accounts-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid rgba(0,212,255,.14); border-radius:16px; }
-    .accounts-table { width:100%; min-width:1060px; border-collapse:collapse; font-size:.94rem; }
+    .accounts-table { width:100%; min-width:0; border-collapse:collapse; font-size:.94rem; table-layout:auto; }
     .accounts-table th { background:#071120; color:#eafaff; text-align:left; padding:12px; white-space:nowrap; }
-    .accounts-table td { padding:12px; border-bottom:1px solid rgba(0,68,99,.10); background:#fbfdff; }
+    .accounts-table td { padding:12px; border-bottom:1px solid rgba(0,68,99,.10); background:#fbfdff; overflow-wrap:anywhere; }
     .notice { display:block; margin-bottom:14px; }
-    @media (max-width: 860px) { .accounts-grid { grid-template-columns:1fr; } }
-    @media (max-width: 760px) {
+    .admin-content { container-type:inline-size; }
+    @container (max-width: 1180px) {
+      .accounts-grid { grid-template-columns:1fr; }
+      .accounts-grid > .accounts-box:first-child { max-width:420px; }
+    }
+    @media (max-width: 1180px) {
+      .accounts-grid { grid-template-columns:1fr; }
+      .accounts-grid > .accounts-box:first-child { max-width:420px; }
+      .accounts-inline { grid-template-columns:minmax(160px, 1fr) minmax(140px, 1fr) minmax(120px, 150px) auto; }
+    }
+    @media (max-width: 900px) {
       .accounts-table-wrap { overflow:visible; border:0; border-radius:0; }
       .accounts-table,
       .accounts-table tbody,
