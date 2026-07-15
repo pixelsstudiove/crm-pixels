@@ -2,6 +2,18 @@
   const form = document.querySelector('form.form');
   if(!form) return;
   const alertBox = document.getElementById('formAlert');
+  const passwordToggle = form.querySelector('[data-toggle-password]');
+  const passwordInput = form.querySelector('#login-password');
+
+  if(passwordToggle && passwordInput){
+    passwordToggle.addEventListener('click', ()=>{
+      const isVisible = passwordInput.type === 'text';
+      passwordInput.type = isVisible ? 'password' : 'text';
+      passwordToggle.textContent = isVisible ? 'Mostrar' : 'Ocultar';
+      passwordToggle.setAttribute('aria-pressed', isVisible ? 'false' : 'true');
+      passwordInput.focus();
+    });
+  }
 
   const fields = {
     username: {

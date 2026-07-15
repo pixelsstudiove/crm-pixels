@@ -103,6 +103,7 @@ function login_clear_failures(string $username): void {
 }
 
 $error = '';
+$postedUsername = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $csrf = $_POST['csrf'] ?? '';
   if (!$csrf || !hash_equals($_SESSION['csrf'], (string) $csrf)) {
@@ -110,6 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     $username = trim((string) ($_POST['username'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
+    $postedUsername = $username;
+    $rememberSession = (string) ($_POST['remember_session'] ?? '') === '1';
 
     if ($username === '' || $password === '') {
       $error = 'Usuario y clave son obligatorios.';
@@ -134,6 +137,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['account_id'] = (int) ($row['account_id'] ?? $defaultAccountId);
         $_SESSION['username'] = (string) $row['username'];
         $_SESSION['role'] = normalize_role($row['role'] ?? null);
+        $rememberCookieOptions = [
+          'expires' => $rememberSession ? time() + 2592000 : time() - 3600,
+          'path' => '/',
+          'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+          'httponly' => true,
+          'samesite' => 'Lax',
+        ];
+        setcookie('pixels_remember_session', $rememberSession ? '1' : '', $rememberCookieOptions);
+        setcookie(session_name(), session_id(), [
+          'expires' => $rememberSession ? time() + 2592000 : 0,
+          'path' => '/',
+          'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+          'httponly' => true,
+          'samesite' => 'Lax',
+        ]);
 
         if (empty($_SESSION['csrf'])) {
           $_SESSION['csrf'] = bin2hex(random_bytes(32));
@@ -145,6 +163,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
   }
 }
+
+$brandName = (string) app_config('brand.name', 'Pixels Studio');
+$logoPath = ltrim((string) app_config('brand.logo_path', 'images/logo.png'), '/');
+$logoFile = __DIR__ . '/' . $logoPath;
+$logoExists = $logoPath !== '' && is_file($logoFile);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -156,11 +179,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="login-page">
   <main class="login-shell">
+    <section class="login-visual" aria-label="CRM Pixels">
+      <a class="login-brand" href="index.php" aria-label="<?= h($brandName) ?>">
+        <?php if ($logoExists): ?>
+          <img src="<?= h($logoPath) ?>" alt="<?= h(app_config('brand.logo_alt', $brandName)) ?>">
+        <?php else: ?>
+          <span class="login-brand-symbol">P</span>
+        <?php endif; ?>
+        <strong><?= h($brandName) ?></strong>
+      </a>
+      <div>
+        <p class="login-eyebrow">CRM conversacional</p>
+        <h2>Vuelve al inbox donde cada mensaje puede convertirse en venta.</h2>
+        <p>Gestiona conversaciones, embudo comercial, notas y archivos multimedia desde una sesión segura.</p>
+      </div>
+      <div class="login-preview" aria-hidden="true">
+        <div class="login-preview-top">
+          <span>Inbox activo</span>
+          <strong>24h</strong>
+        </div>
+        <div class="login-preview-chat inbound">Hola, vengo del anuncio.</div>
+        <div class="login-preview-chat outbound">Perfecto, ya tengo tu ficha comercial.</div>
+        <div class="login-preview-status">Status: Interesado</div>
+      </div>
+    </section>
+
     <section class="form-card login-card" aria-labelledby="login-title">
       <div class="panel login-panel">
         <header class="login-header">
-          <h1 class="title" id="login-title">Acceso al Dashboard</h1>
-          <p class="subtitle">Ingresa tus credenciales</p>
+          <p class="login-eyebrow">Acceso seguro</p>
+          <h1 class="title" id="login-title">Iniciar sesión</h1>
+          <p class="subtitle">Ingresa al panel de CRM Pixels.</p>
         </header>
 
         <?php if ($seed_notice !== ''): ?>
@@ -177,16 +226,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="login-fields" aria-label="Credenciales de acceso">
             <label class="field" id="f-username">
               <span class="field-label">Usuario</span>
-              <input type="text" name="username" placeholder="Ingresa tu usuario" required autocomplete="username" autofocus>
+              <input type="text" name="username" placeholder="Ingresa tu usuario" value="<?= h($postedUsername) ?>" required autocomplete="username" autofocus>
               <small class="err" data-for="username">Usuario obligatorio.</small>
             </label>
 
             <label class="field" id="f-password">
               <span class="field-label">Contraseña</span>
-              <input type="password" name="password" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
+              <span class="password-control">
+                <input id="login-password" type="password" name="password" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
+                <button class="password-toggle" type="button" data-toggle-password aria-controls="login-password" aria-pressed="false">Mostrar</button>
+              </span>
               <small class="err" data-for="password">Contraseña obligatoria.</small>
             </label>
           </div>
+
+          <label class="login-option">
+            <input type="checkbox" name="remember_session" value="1" <?= (($_POST['remember_session'] ?? '') === '1') ? 'checked' : '' ?>>
+            <span>Recordar la sesión en este dispositivo</span>
+          </label>
 
           <div id="formAlert" class="form-alert" aria-live="polite" style="display:none"></div>
           <button class="btn" type="submit">Ingresar</button>

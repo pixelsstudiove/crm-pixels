@@ -13,7 +13,11 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_save_path($sessionDir);
   }
 
-  ini_set('session.gc_maxlifetime', '14400');
+  $rememberCookieName = 'pixels_remember_session';
+  $rememberSession = ((string) ($_POST['remember_session'] ?? '') === '1') || ((string) ($_COOKIE[$rememberCookieName] ?? '') === '1');
+  $sessionLifetime = $rememberSession ? 2592000 : 14400;
+
+  ini_set('session.gc_maxlifetime', (string) $sessionLifetime);
   ini_set('session.cookie_httponly', '1');
   ini_set('session.use_strict_mode', '1');
   $isHttps = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
@@ -23,7 +27,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
   session_name((string) app_config('session.name', 'pixels_lead_capture_sess'));
   session_set_cookie_params([
-    'lifetime' => 0,
+    'lifetime' => $rememberSession ? $sessionLifetime : 0,
     'path' => '/',
     'secure' => $isHttps,
     'httponly' => true,
