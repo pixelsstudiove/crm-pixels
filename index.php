@@ -13,7 +13,7 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>CRM conversacional para equipos de venta | <?= h($brandName) ?></title>
+  <title>CRM Pixels - Gestión de clientes de manera profesional</title>
   <meta name="description" content="Atiende Instagram DM, organiza conversaciones en un embudo comercial y prepara tu operación para WhatsApp desde CRM Pixels." />
   <link rel="stylesheet" href="css/landing.css?v=<?= (int) @filemtime(__DIR__ . '/css/landing.css') ?>">
 </head>
@@ -28,12 +28,6 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         <?php endif; ?>
         <strong><?= h($brandName) ?></strong>
       </a>
-      <div class="nav-links" aria-label="Secciones">
-        <a href="#producto">Producto</a>
-        <a href="#canales">Canales</a>
-        <a href="#flujo">Proceso</a>
-        <a href="#saas">SaaS</a>
-      </div>
       <div class="nav-actions">
         <a class="btn ghost" href="login.php">Iniciar sesión</a>
         <a class="btn primary" href="#demo">Solicitar una demo</a>
@@ -43,7 +37,7 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
     <section class="hero" id="producto" aria-labelledby="hero-title">
       <div class="hero-content">
         <p class="eyebrow"><span>CRM conversacional</span> Instagram hoy, WhatsApp en la ruta</p>
-        <h1 id="hero-title">Convierte conversaciones de Instagram y WhatsApp en <span>ventas</span></h1>
+        <h1 id="hero-title">Convierte conversaciones de <span class="channel-highlight">Instagram</span> y <span class="channel-highlight">WhatsApp</span> en <span class="sales-highlight">ventas</span></h1>
         <p class="hero-copy">CRM Pixels organiza cada DM como una oportunidad: responde desde el inbox, mueve el contacto por el embudo y conserva notas, audios, imágenes e historial comercial en una sola pantalla.</p>
         <div class="hero-actions">
           <a class="btn primary lift" href="#demo">Agendar demo</a>
@@ -111,12 +105,23 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
       </div>
     </section>
 
-    <section class="logo-strip" id="canales" aria-label="Integraciones principales">
-      <span>Instagram</span>
-      <span>Meta Ads</span>
-      <span>Cloudflare R2</span>
-      <span>WhatsApp API</span>
-      <span>Multi cuenta</span>
+    <section class="logo-strip" id="canales" aria-label="Clientes activos">
+      <div class="logo-marquee" aria-hidden="true">
+        <div class="logo-track">
+          <span>Pixels Studio</span>
+          <span>FerreFerreira</span>
+          <span>Wynwood Park</span>
+          <span>Multichat Pixels</span>
+          <span>Tiendas Maiso</span>
+          <span>CRM Pixels</span>
+          <span>Pixels Studio</span>
+          <span>FerreFerreira</span>
+          <span>Wynwood Park</span>
+          <span>Multichat Pixels</span>
+          <span>Tiendas Maiso</span>
+          <span>CRM Pixels</span>
+        </div>
+      </div>
     </section>
 
     <section class="feature-section" id="beneficios">
@@ -217,12 +222,41 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
       </article>
     </section>
 
-    <section class="final-cta" id="demo">
-      <div>
-        <h2>Ordena tu inbox antes de que se pierda otra oportunidad.</h2>
-        <p>CRM Pixels está pensado para equipos que venden conversando: menos pestañas, más contexto y un embudo que se mueve con cada mensaje.</p>
+    <section class="demo-section" id="demo" aria-labelledby="demo-title">
+      <div class="demo-copy">
+        <p class="section-kicker">Agendar demo</p>
+        <h2 id="demo-title">Veamos cómo CRM Pixels encaja en tu operación comercial.</h2>
+        <p>Déjanos tus datos y revisamos contigo cómo conectar tus conversaciones, vendedores y embudo en una sola plataforma.</p>
       </div>
-      <a class="btn light" href="mailto:pixelstudiove@gmail.com?subject=Demo%20CRM%20Pixels">Agendar demo</a>
+      <form class="demo-form" action="mailto:pixelstudiove@gmail.com" method="post" enctype="text/plain">
+        <label>
+          <span>Nombre y apellido</span>
+          <input type="text" name="nombre" autocomplete="name" placeholder="Ej. Jeferson Herrera" required>
+        </label>
+        <label>
+          <span>Teléfono Venezuela</span>
+          <input id="demo-phone" type="tel" name="telefono" inputmode="numeric" autocomplete="tel" placeholder="+58 412-1234567" maxlength="16" required>
+        </label>
+        <label>
+          <span>Correo electrónico</span>
+          <input type="email" name="correo" autocomplete="email" placeholder="correo@empresa.com" required>
+        </label>
+        <label>
+          <span>Área de negocio</span>
+          <select name="area_negocio" required>
+            <option value="">Selecciona una opción</option>
+            <option value="ecommerce">E-commerce</option>
+            <option value="servicios-profesionales">Servicios profesionales</option>
+            <option value="educacion">Educación o formación</option>
+            <option value="inmobiliaria">Inmobiliaria</option>
+            <option value="salud-bienestar">Salud y bienestar</option>
+            <option value="retail-restaurantes">Retail o restaurantes</option>
+            <option value="agencia-marketing">Agencia o marketing</option>
+            <option value="otro">Otro</option>
+          </select>
+        </label>
+        <button class="btn primary" type="submit">Solicitar demo</button>
+      </form>
     </section>
 
     <footer class="landing-footer">
@@ -234,11 +268,31 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         <p>CRM conversacional para equipos que venden desde Instagram y preparan su operación para WhatsApp.</p>
       </div>
       <div class="footer-links">
-        <a href="#producto">Producto</a>
-        <a href="#canales">Canales</a>
+        <a href="#demo">Demo</a>
         <a href="login.php">Acceso</a>
       </div>
     </footer>
   </main>
+  <script>
+    (() => {
+      const phone = document.getElementById('demo-phone');
+      if (!phone) return;
+
+      phone.addEventListener('input', () => {
+        let digits = phone.value.replace(/\D/g, '');
+        if (digits.startsWith('58')) digits = digits.slice(2);
+        digits = digits.slice(0, 10);
+
+        const carrier = digits.slice(0, 3);
+        const first = digits.slice(3, 6);
+        const second = digits.slice(6, 10);
+        let value = '+58';
+        if (carrier) value += ` ${carrier}`;
+        if (first) value += `-${first}`;
+        if (second) value += second;
+        phone.value = value;
+      });
+    })();
+  </script>
 </body>
 </html>
