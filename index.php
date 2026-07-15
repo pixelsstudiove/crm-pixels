@@ -153,8 +153,8 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
       <div class="workflow-visual" aria-hidden="true">
         <div class="phone-frame">
           <div class="phone-header"></div>
-        <div class="phone-message left">Hola, ¿me das precio?</div>
-        <div class="phone-message right">Sí, ya abrí tu ficha.</div>
+          <div class="phone-message left">Hola, ¿me das precio?</div>
+          <div class="phone-message right">Sí, ya abrí tu ficha.</div>
           <div class="phone-chart">
             <span style="height:42%"></span>
             <span style="height:68%"></span>
