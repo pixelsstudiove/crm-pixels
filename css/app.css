@@ -348,12 +348,6 @@ body{
   max-height:min(62vh, 420px);
   overflow:auto;
 }
-.account-switch .menu-trigger:hover,
-.account-switch.menu-dropdown.is-open .menu-trigger{
-  background:#dff6ff;
-  border-color:#8bdfff;
-  outline:none;
-}
 .nav-control-label{
   position:absolute;
   width:1px;
