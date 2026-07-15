@@ -2,18 +2,22 @@
   const form = document.querySelector('form.form');
   if(!form) return;
   const alertBox = document.getElementById('formAlert');
-  const passwordToggle = form.querySelector('[data-toggle-password]');
-  const passwordInput = form.querySelector('#login-password');
 
-  if(passwordToggle && passwordInput){
-    passwordToggle.addEventListener('click', ()=>{
-      const isVisible = passwordInput.type === 'text';
-      passwordInput.type = isVisible ? 'password' : 'text';
-      passwordToggle.textContent = isVisible ? 'Mostrar' : 'Ocultar';
-      passwordToggle.setAttribute('aria-pressed', isVisible ? 'false' : 'true');
-      passwordInput.focus();
-    });
-  }
+  document.addEventListener('click', (event)=>{
+    const passwordToggle = event.target.closest('[data-toggle-password]');
+    if(!passwordToggle) return;
+    event.preventDefault();
+
+    const targetId = passwordToggle.getAttribute('aria-controls');
+    const passwordInput = targetId ? document.getElementById(targetId) : form.querySelector('input[name="password"]');
+    if(!passwordInput) return;
+
+    const isVisible = passwordInput.type === 'text';
+    passwordInput.type = isVisible ? 'password' : 'text';
+    passwordToggle.textContent = isVisible ? 'Mostrar' : 'Ocultar';
+    passwordToggle.setAttribute('aria-pressed', isVisible ? 'false' : 'true');
+    passwordInput.focus();
+  });
 
   const fields = {
     username: {

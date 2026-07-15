@@ -113,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = (string) ($_POST['password'] ?? '');
     $postedUsername = $username;
     $rememberSession = (string) ($_POST['remember_session'] ?? '') === '1';
+    $rememberSessionLifetime = max(172800, (int) app_config('session.remember_lifetime', 2592000));
 
     if ($username === '' || $password === '') {
       $error = 'Usuario y clave son obligatorios.';
@@ -138,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['username'] = (string) $row['username'];
         $_SESSION['role'] = normalize_role($row['role'] ?? null);
         $rememberCookieOptions = [
-          'expires' => $rememberSession ? time() + 2592000 : time() - 3600,
+          'expires' => $rememberSession ? time() + $rememberSessionLifetime : time() - 3600,
           'path' => '/',
           'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
           'httponly' => true,
@@ -146,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
         setcookie('pixels_remember_session', $rememberSession ? '1' : '', $rememberCookieOptions);
         setcookie(session_name(), session_id(), [
-          'expires' => $rememberSession ? time() + 2592000 : 0,
+          'expires' => $rememberSession ? time() + $rememberSessionLifetime : 0,
           'path' => '/',
           'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
           'httponly' => true,
@@ -197,18 +198,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <div class="login-fields" aria-label="Credenciales de acceso">
             <label class="field" id="f-username">
               <span class="field-label">Usuario</span>
-              <input type="text" name="username" placeholder="Ingresa tu usuario" value="<?= h($postedUsername) ?>" required autocomplete="username" autofocus>
+              <input id="login-username" type="text" name="username" placeholder="Ingresa tu usuario" value="<?= h($postedUsername) ?>" required autocomplete="username" autofocus>
               <small class="err" data-for="username">Usuario obligatorio.</small>
             </label>
 
-            <label class="field" id="f-password">
-              <span class="field-label">Contraseña</span>
+            <div class="field" id="f-password">
+              <label class="field-label" for="login-password">Contraseña</label>
               <span class="password-control">
                 <input id="login-password" type="password" name="password" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
                 <button class="password-toggle" type="button" data-toggle-password aria-controls="login-password" aria-pressed="false">Mostrar</button>
               </span>
               <small class="err" data-for="password">Contraseña obligatoria.</small>
-            </label>
+            </div>
           </div>
 
           <label class="login-option">
@@ -222,6 +223,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </section>
   </main>
-  <script src="js/login.js" defer></script>
+  <script src="js/login.js?v=<?= (int) @filemtime(__DIR__ . '/js/login.js') ?>" defer></script>
 </body>
 </html>

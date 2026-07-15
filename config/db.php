@@ -14,8 +14,9 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
   }
 
   $rememberCookieName = 'pixels_remember_session';
+  $rememberSessionLifetime = max(172800, (int) app_config('session.remember_lifetime', 2592000));
   $rememberSession = ((string) ($_POST['remember_session'] ?? '') === '1') || ((string) ($_COOKIE[$rememberCookieName] ?? '') === '1');
-  $sessionLifetime = $rememberSession ? 2592000 : 14400;
+  $sessionLifetime = $rememberSession ? $rememberSessionLifetime : 14400;
 
   ini_set('session.gc_maxlifetime', (string) $sessionLifetime);
   ini_set('session.cookie_httponly', '1');
