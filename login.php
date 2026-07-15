@@ -164,10 +164,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-$brandName = (string) app_config('brand.name', 'Pixels Studio');
-$logoPath = ltrim((string) app_config('brand.logo_path', 'images/logo.png'), '/');
-$logoFile = __DIR__ . '/' . $logoPath;
-$logoExists = $logoPath !== '' && is_file($logoFile);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -179,31 +175,6 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
 </head>
 <body class="login-page">
   <main class="login-shell">
-    <section class="login-visual" aria-label="CRM Pixels">
-      <a class="login-brand" href="index.php" aria-label="<?= h($brandName) ?>">
-        <?php if ($logoExists): ?>
-          <img src="<?= h($logoPath) ?>" alt="<?= h(app_config('brand.logo_alt', $brandName)) ?>">
-        <?php else: ?>
-          <span class="login-brand-symbol">P</span>
-        <?php endif; ?>
-        <strong><?= h($brandName) ?></strong>
-      </a>
-      <div>
-        <p class="login-eyebrow">CRM conversacional</p>
-        <h2>Vuelve al inbox donde cada mensaje puede convertirse en venta.</h2>
-        <p>Gestiona conversaciones, embudo comercial, notas y archivos multimedia desde una sesión segura.</p>
-      </div>
-      <div class="login-preview" aria-hidden="true">
-        <div class="login-preview-top">
-          <span>Inbox activo</span>
-          <strong>24h</strong>
-        </div>
-        <div class="login-preview-chat inbound">Hola, vengo del anuncio.</div>
-        <div class="login-preview-chat outbound">Perfecto, ya tengo tu ficha comercial.</div>
-        <div class="login-preview-status">Status: Interesado</div>
-      </div>
-    </section>
-
     <section class="form-card login-card" aria-labelledby="login-title">
       <div class="panel login-panel">
         <header class="login-header">
@@ -250,8 +221,6 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         </form>
       </div>
     </section>
-
-    <div class="credit">Desarrollado por <strong><?= h(app_config('brand.developer', 'Pixels Studio')) ?></strong></div>
   </main>
   <script src="js/login.js" defer></script>
 </body>

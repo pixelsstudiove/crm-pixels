@@ -121,56 +121,20 @@ body{
 
 /* Login: contenedor visual independiente para el formulario de acceso. */
 .login-page{
-  display:block;
+  display:grid;
+  place-items:center;
   min-height:100vh;
   color:#fff;
   background:#050717;
 }
 .login-shell{
-  width:min(1180px, calc(100vw - 48px));
+  width:min(520px, calc(100vw - 48px));
   min-height:100vh;
-  display:grid;
-  grid-template-columns:minmax(320px, .95fr) minmax(360px, 480px);
-  gap:34px;
+  display:flex;
   align-items:center;
+  justify-content:center;
   padding:42px 0;
   margin:0 auto;
-}
-.login-visual{
-  min-height:620px;
-  display:flex;
-  flex-direction:column;
-  justify-content:space-between;
-  gap:34px;
-  padding:34px;
-  overflow:hidden;
-  border:1px solid #232846;
-  border-radius:32px;
-  background:#0b1025;
-  box-shadow:0 24px 70px rgba(0,0,0,.28);
-}
-.login-brand{
-  display:inline-flex;
-  align-items:center;
-  gap:12px;
-  color:#fff;
-  font-size:1.08rem;
-  font-weight:950;
-  letter-spacing:-.03em;
-}
-.login-brand img{
-  width:40px;
-  height:40px;
-  object-fit:contain;
-}
-.login-brand-symbol{
-  width:40px;
-  height:40px;
-  display:grid;
-  place-items:center;
-  border-radius:13px;
-  background:#7b36ff;
-  color:#fff;
 }
 .login-eyebrow{
   display:inline-flex;
@@ -187,80 +151,6 @@ body{
   font-weight:950;
   letter-spacing:.05em;
   text-transform:uppercase;
-}
-.login-visual h2{
-  max-width:620px;
-  margin:0;
-  color:#fff;
-  font-size:clamp(2.2rem, 4.4vw, 4rem);
-  line-height:1;
-  letter-spacing:-.055em;
-  font-weight:950;
-  text-wrap:balance;
-}
-.login-visual p{
-  max-width:520px;
-  margin:18px 0 0;
-  color:#d6d8eb;
-  font-size:1rem;
-  line-height:1.65;
-  font-weight:650;
-}
-.login-preview{
-  width:min(100%, 520px);
-  display:grid;
-  gap:14px;
-  padding:20px;
-  border:1px solid #232846;
-  border-radius:26px;
-  background:#050717;
-}
-.login-preview-top{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:18px;
-  color:#fff;
-}
-.login-preview-top span,
-.login-preview-status{
-  color:#c8c9d9;
-  font-size:.8rem;
-  font-weight:900;
-}
-.login-preview-top strong{
-  color:transparent;
-  background:linear-gradient(90deg, #a548ff 0%, #7b36ff 42%, #3267ff 100%);
-  -webkit-background-clip:text;
-  background-clip:text;
-  font-size:2rem;
-  line-height:1;
-}
-.login-preview-chat{
-  width:max-content;
-  max-width:82%;
-  padding:12px 14px;
-  border-radius:16px;
-  font-size:.9rem;
-  font-weight:850;
-}
-.login-preview-chat.inbound{
-  color:#090b1f;
-  background:#fff;
-  border-bottom-left-radius:5px;
-}
-.login-preview-chat.outbound{
-  justify-self:end;
-  color:#fff;
-  background:#7b36ff;
-  border-bottom-right-radius:5px;
-}
-.login-preview-status{
-  width:max-content;
-  padding:9px 12px;
-  border:1px solid #232846;
-  border-radius:999px;
-  background:#0b1025;
 }
 .login-card{
   width:100%;
@@ -389,19 +279,6 @@ body{
   .login-header .title{font-size:1.85rem}
   .password-control input{padding-right:86px}
   .password-toggle{min-width:72px;font-size:.72rem}
-}
-@media (max-width:900px){
-  .login-shell{
-    width:min(100vw - 28px, 540px);
-    grid-template-columns:1fr;
-    padding:22px 0;
-  }
-  .login-visual{
-    min-height:auto;
-    padding:24px;
-  }
-  .login-visual h2{font-size:clamp(2rem, 10vw, 3rem)}
-  .login-preview{display:none}
 }
 
 
