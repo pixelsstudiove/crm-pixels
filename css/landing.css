@@ -237,14 +237,18 @@ a{color:inherit;text-decoration:none}
   text-wrap:balance;
 }
 .channel-highlight{
-  display:inline-block;
-  color:#fff;
-  text-shadow:0 0 28px rgba(123,54,255,.8);
-  background:var(--violet);
-  border-radius:.18em;
-  padding:0 .08em .04em;
+  color:transparent;
+  background:linear-gradient(90deg, #a548ff 0%, var(--violet) 42%, var(--blue) 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  text-shadow:0 0 30px rgba(123,54,255,.24);
 }
-.sales-highlight{color:#8f57ff}
+.sales-highlight{
+  color:transparent;
+  background:linear-gradient(90deg, var(--violet) 0%, var(--blue) 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+}
 .hero-copy{
   max-width:560px;
   margin:24px 0 28px;
