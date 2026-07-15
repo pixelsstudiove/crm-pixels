@@ -517,30 +517,101 @@ function dash_channel_label(array $channel): string {
       display:block;
       min-height:100vh;
       color:var(--dash-ink);
-      background:
-        linear-gradient(90deg, rgba(7,11,24,.04) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(7,11,24,.04) 1px, transparent 1px),
-        var(--dash-bg);
-      background-size:32px 32px;
+      background:#c7c1dc;
     }
     .dashboard-shell {
-      --dashboard-pad:clamp(12px, 1.6vw, 28px);
+      --dashboard-pad:0px;
       width:100%;
       max-width:none;
       margin:0;
       padding:var(--dashboard-pad);
     }
     .dashboard-card {
+      display:grid;
+      grid-template-columns:240px minmax(0, 1fr);
       width:100%;
-      min-height:calc(100vh - (var(--dashboard-pad) * 2));
-      border:1px solid rgba(16,21,36,.10);
-      border-radius:24px;
-      background:rgba(255,255,255,.88);
-      box-shadow:var(--dash-shadow);
-      backdrop-filter:blur(18px);
+      min-height:100vh;
+      border:0;
+      border-radius:0;
+      background:#fff;
+      box-shadow:none;
+      backdrop-filter:none;
     }
     .dashboard-card .panel {
+      min-width:0;
       padding:clamp(18px, 2vw, 34px);
+      background:#f6f7fb;
+    }
+    .dashboard-sidebar {
+      display:flex;
+      flex-direction:column;
+      gap:28px;
+      min-height:100vh;
+      padding:30px 20px;
+      border-right:1px solid #eef1f6;
+      background:#fff;
+    }
+    .dashboard-sidebar-brand {
+      display:flex;
+      align-items:center;
+      gap:10px;
+      color:#101524;
+      font-size:1.4rem;
+      font-weight:950;
+      letter-spacing:-.05em;
+      text-decoration:none;
+    }
+    .dashboard-sidebar-mark {
+      width:34px;
+      height:34px;
+      display:grid;
+      place-items:center;
+      border-radius:12px;
+      color:#fff;
+      background:#356dff;
+      font-size:.88rem;
+      font-weight:950;
+    }
+    .dashboard-side-nav {
+      display:grid;
+      gap:8px;
+    }
+    .dashboard-side-link {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      min-height:44px;
+      padding:0 12px;
+      border-radius:10px;
+      color:#6b7280;
+      font-size:.92rem;
+      font-weight:780;
+      text-decoration:none;
+      transition:background .18s ease, color .18s ease;
+    }
+    .dashboard-side-link::after {
+      content:"›";
+      color:#a3a9b7;
+      font-weight:900;
+    }
+    .dashboard-side-link:hover,
+    .dashboard-side-link.is-active {
+      color:#fff;
+      background:#356dff;
+    }
+    .dashboard-side-link:hover::after,
+    .dashboard-side-link.is-active::after {
+      color:#fff;
+    }
+    .dashboard-sidebar-foot {
+      margin-top:auto;
+      padding:12px;
+      border-radius:14px;
+      color:#667085;
+      background:#f6f7fb;
+      font-size:.78rem;
+      font-weight:750;
+      line-height:1.35;
     }
     .topbar {
       display:flex;
@@ -548,11 +619,11 @@ function dash_channel_label(array $channel): string {
       justify-content:space-between;
       gap:18px;
       flex-wrap:wrap;
-      margin-bottom:16px;
-      padding:14px;
-      border:1px solid var(--dash-line);
-      border-radius:20px;
-      background:var(--dash-panel);
+      margin-bottom:22px;
+      padding:0;
+      border:0;
+      border-radius:0;
+      background:transparent;
     }
     .topbar-right,
     .app-nav-actions {
@@ -621,6 +692,11 @@ function dash_channel_label(array $channel): string {
     .account-switch select {
       min-width:210px;
       padding-right:34px;
+      background-color:#fff;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;
+      background-position:right 13px center;
+      background-size:14px;
     }
     .account-switch select:hover,
     .account-switch select:focus,
@@ -631,10 +707,20 @@ function dash_channel_label(array $channel): string {
     .logout-btn:hover,
     .search-btn:hover,
     .clear-filters:hover {
-      border-color:#b7c7d9;
-      background:#f8fbff;
+      border-color:var(--dash-navy);
+      color:#fff;
+      background:var(--dash-navy);
       box-shadow:0 10px 24px rgba(15,23,42,.08);
       outline:none;
+    }
+    .account-switch select:hover,
+    .account-switch select:focus {
+      color:var(--dash-ink);
+      background-color:#fff;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;
+      background-position:right 13px center;
+      background-size:14px;
     }
     .menu-trigger:active,
     .search-btn:active,
@@ -776,9 +862,12 @@ function dash_channel_label(array $channel): string {
     }
     .summary-card:hover {
       transform:translateY(-2px);
-      border-color:#b7c7d9;
-      box-shadow:0 18px 34px rgba(15,23,42,.10);
+      border-color:var(--dash-navy);
+      background:var(--dash-navy);
+      box-shadow:0 18px 34px rgba(15,23,42,.16);
     }
+    .summary-card:hover strong,
+    .summary-card:hover span { color:#fff; }
     .summary-card.is-active {
       border-color:var(--dash-navy);
       box-shadow:0 0 0 3px rgba(7,11,24,.08), 0 18px 34px rgba(15,23,42,.10);
@@ -813,14 +902,14 @@ function dash_channel_label(array $channel): string {
     .summary-card[data-tone="lost"] { --tone:var(--dash-red); }
     .summary-card[data-tone="muted"] { --tone:#667085; }
     .lead-filters {
-      width:fit-content;
+      width:100%;
       max-width:100%;
       margin-top:18px;
-      padding:10px;
-      border:1px solid var(--dash-line);
-      border-radius:18px;
-      background:rgba(255,255,255,.78);
-      box-shadow:0 8px 22px rgba(15,23,42,.05);
+      padding:0;
+      border:0;
+      border-radius:0;
+      background:transparent;
+      box-shadow:none;
     }
     .filters-toggle {
       display:none;
@@ -839,15 +928,29 @@ function dash_channel_label(array $channel): string {
     }
     .filters-form {
       display:grid;
-      grid-template-columns:minmax(260px, 390px) minmax(210px, 280px) auto;
-      gap:10px;
+      grid-template-columns:minmax(260px, 390px) minmax(190px, 240px) auto;
+      gap:12px;
       align-items:end;
       justify-content:start;
     }
     .filter-field {
+      position:relative;
       display:grid;
       gap:7px;
       min-width:0;
+    }
+    .filter-field::after {
+      content:"⌄";
+      position:absolute;
+      right:14px;
+      bottom:13px;
+      color:#667085;
+      font-size:.95rem;
+      font-weight:950;
+      pointer-events:none;
+    }
+    .filter-field:has(input)::after {
+      content:"→";
     }
     .filter-field span {
       color:var(--dash-muted);
@@ -860,7 +963,7 @@ function dash_channel_label(array $channel): string {
     .filter-field select {
       width:100%;
       height:44px;
-      padding:0 13px;
+      padding:0 36px 0 13px;
       border:1px solid var(--dash-line);
       border-radius:14px;
       color:var(--dash-ink);
@@ -869,6 +972,9 @@ function dash_channel_label(array $channel): string {
       font:inherit;
       font-size:.92rem;
       font-weight:760;
+    }
+    .filter-field select {
+      appearance:none;
     }
     .filter-field input::placeholder {
       color:#98a2b3;
@@ -892,6 +998,11 @@ function dash_channel_label(array $channel): string {
       border-color:var(--dash-violet);
       background:var(--dash-violet);
     }
+    .search-btn:hover {
+      color:#fff;
+      border-color:var(--dash-navy);
+      background:var(--dash-navy);
+    }
     .active-filter-note,
     .funnel-limit-note,
     .funnel-page-status {
@@ -904,12 +1015,17 @@ function dash_channel_label(array $channel): string {
       --status-color:#b7c7d9;
       width:185px;
       height:42px;
-      padding:0 12px;
+      padding:0 36px 0 12px;
       border:1px solid var(--dash-line);
       border-left:5px solid var(--status-color);
       border-radius:14px;
       color:var(--dash-ink);
       background:#fff;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat:no-repeat;
+      background-position:right 13px center;
+      background-size:14px;
+      appearance:none;
       outline:none;
       font:inherit;
       font-size:.86rem;
@@ -992,15 +1108,15 @@ function dash_channel_label(array $channel): string {
     .funnel-column {
       --status-color:var(--dash-cyan);
       --status-bg:#f8fafc;
-      width:clamp(285px, 19vw, 360px);
+      width:clamp(245px, 18vw, 305px);
       max-height:72vh;
       display:flex;
       flex-direction:column;
       overflow:hidden;
       border:1px solid var(--dash-line);
-      border-radius:20px;
-      background:var(--status-bg);
-      box-shadow:0 12px 30px rgba(15,23,42,.07);
+      border-radius:8px;
+      background:transparent;
+      box-shadow:none;
     }
     .funnel-wrap.is-filtered {
       overflow:visible;
@@ -1044,10 +1160,11 @@ function dash_channel_label(array $channel): string {
       justify-content:space-between;
       gap:10px;
       padding:14px 15px;
-      border-bottom:1px solid var(--dash-line);
+      border-bottom:0;
+      border-radius:8px 8px 0 0;
       color:var(--dash-ink);
-      background:rgba(255,255,255,.86);
-      backdrop-filter:blur(10px);
+      background:#fff;
+      backdrop-filter:none;
     }
     .funnel-column-header::before {
       content:"";
@@ -1086,17 +1203,17 @@ function dash_channel_label(array $channel): string {
     .funnel-card {
       display:grid;
       gap:10px;
-      padding:13px;
+      padding:14px;
       border:1px solid rgba(16,21,36,.10);
-      border-radius:16px;
+      border-radius:6px;
       background:#fff;
-      box-shadow:0 10px 24px rgba(15,23,42,.07);
+      box-shadow:0 6px 18px rgba(15,23,42,.05);
       transition:transform .16s ease, box-shadow .18s ease, border-color .18s ease;
     }
     .funnel-card:hover {
       transform:translateY(-2px);
-      border-color:#c7d4e2;
-      box-shadow:0 18px 34px rgba(15,23,42,.11);
+      border-color:#b8c4d6;
+      box-shadow:0 14px 28px rgba(15,23,42,.09);
     }
     .funnel-card-title {
       display:flex;
@@ -1111,10 +1228,7 @@ function dash_channel_label(array $channel): string {
       letter-spacing:-.02em;
     }
     .funnel-id {
-      flex:0 0 auto;
-      color:var(--dash-violet);
-      font-size:.75rem;
-      font-weight:950;
+      display:none;
     }
     .funnel-meta {
       display:grid;
@@ -1180,7 +1294,7 @@ function dash_channel_label(array $channel): string {
     }
     .funnel-actions {
       display:grid;
-      grid-template-columns:1fr 1fr;
+      grid-template-columns:1fr;
       gap:8px;
       align-items:center;
       margin-top:2px;
@@ -1209,8 +1323,10 @@ function dash_channel_label(array $channel): string {
       background:var(--dash-navy);
     }
     .funnel-action-link:hover {
-      border-color:#b7c7d9;
-      box-shadow:0 10px 22px rgba(15,23,42,.08);
+      color:#fff;
+      border-color:#356dff;
+      background:#356dff;
+      box-shadow:0 10px 22px rgba(53,109,255,.18);
     }
     .funnel-empty {
       margin:0;
@@ -1366,10 +1482,32 @@ function dash_channel_label(array $channel): string {
         --dashboard-pad:0;
       }
       .dashboard-card {
+        grid-template-columns:1fr;
         min-height:100vh;
         border-left:0;
         border-right:0;
         border-radius:0;
+      }
+      .dashboard-sidebar {
+        min-height:auto;
+        gap:12px;
+        padding:14px 12px;
+        border-right:0;
+        border-bottom:1px solid #eef1f6;
+      }
+      .dashboard-side-nav {
+        display:flex;
+        gap:8px;
+        overflow-x:auto;
+        padding-bottom:2px;
+      }
+      .dashboard-side-link {
+        flex:0 0 auto;
+        min-height:40px;
+        white-space:nowrap;
+      }
+      .dashboard-sidebar-foot {
+        display:none;
       }
       .dashboard-card .panel {
         padding:16px 12px 18px;
@@ -1457,6 +1595,22 @@ function dash_channel_label(array $channel): string {
 <body class="dashboard-page">
   <main class="dashboard-shell">
     <section class="form-card dashboard-card">
+      <aside class="dashboard-sidebar" aria-label="Navegación del CRM">
+        <a class="dashboard-sidebar-brand" href="<?= h(account_url('dashboard.php')) ?>">
+          <span class="dashboard-sidebar-mark">C</span>
+          <span>CRM</span>
+        </a>
+        <nav class="dashboard-side-nav">
+          <a class="dashboard-side-link is-active" href="<?= h(account_url('dashboard.php')) ?>">Embudo</a>
+          <?php if (can('view_conversations')): ?><a class="dashboard-side-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
+          <?php if (can('manage_integrations')): ?><a class="dashboard-side-link" href="<?= h(account_url('channels.php')) ?>">Canales</a><?php endif; ?>
+          <?php if (can('manage_integrations')): ?><a class="dashboard-side-link" href="<?= h(account_url('webhook_logs.php')) ?>">Eventos</a><?php endif; ?>
+          <?php if (can('manage_users')): ?><a class="dashboard-side-link" href="/users.php">Usuarios</a><?php endif; ?>
+        </nav>
+        <div class="dashboard-sidebar-foot">
+          Conversaciones, status comercial y seguimiento en una sola vista.
+        </div>
+      </aside>
       <div class="panel" data-dashboard-auto-update>
         <div class="topbar">
           <div>
@@ -1542,7 +1696,6 @@ function dash_channel_label(array $channel): string {
                     <article class="funnel-card" data-id="<?= $leadId ?>" data-conversation-id="<?= $conversationPublicId ?>">
                       <div class="funnel-card-title">
                         <strong><?= h(short_value($lead['fullname'] ?? null, 34)) ?></strong>
-                        <span class="funnel-id">Conv #<?= $conversationPublicId ?></span>
                       </div>
                       <div class="funnel-meta">
                         <span class="funnel-meta-line">
