@@ -42,8 +42,8 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
 
     <section class="hero" id="producto" aria-labelledby="hero-title">
       <div class="hero-content">
-        <p class="eyebrow"><span>Nuevo</span> CRM conversacional para equipos de venta</p>
-        <h1 id="hero-title">Convierte mensajes en ventas organizadas.</h1>
+        <p class="eyebrow"><span>Instagram activo</span> WhatsApp en ruta para equipos de venta</p>
+        <h1 id="hero-title">Convierte tus conversaciones de WhatsApp e Instagram en ventas</h1>
         <p class="hero-copy">CRM Pixels une inbox, embudo comercial, seguimiento y archivos multimedia para que cada conversación avance con contexto, velocidad y control.</p>
         <div class="hero-actions">
           <a class="btn primary lift" href="login.php">Entrar al CRM</a>
@@ -57,8 +57,13 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
       </div>
 
       <div class="product-stage" aria-label="Vista previa del CRM Pixels">
-        <div class="side-rail" aria-hidden="true">
-          <span></span><span></span><span></span><span></span>
+        <div class="signal-board" aria-hidden="true">
+          <span class="signal-node node-ig">Instagram DM</span>
+          <span class="signal-node node-wa">WhatsApp API</span>
+          <span class="signal-node node-sales">Ventas</span>
+          <span class="signal-line line-one"></span>
+          <span class="signal-line line-two"></span>
+          <span class="signal-line line-three"></span>
         </div>
         <div class="dashboard-preview">
           <div class="preview-topbar">
@@ -189,7 +194,7 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         <strong>CRM Pixels</strong>
       </article>
       <article class="plan-card highlighted">
-        <small>Más popular</small>
+        <small>Disponible</small>
         <h3>Conversacional</h3>
         <p>Para equipos que venden desde Instagram y necesitan control del embudo.</p>
         <ul>
@@ -200,12 +205,12 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         <a class="btn primary" href="login.php">Entrar al panel</a>
       </article>
       <article class="plan-card">
-        <small>Próximo</small>
+        <small>En ruta</small>
         <h3>Omnicanal</h3>
         <p>La siguiente fase para conectar WhatsApp y ampliar el flujo de atención.</p>
         <ul>
           <li>WhatsApp API</li>
-          <li>Más automatizaciones</li>
+          <li>Automatizaciones por conversación</li>
           <li>Reportes por canal</li>
         </ul>
         <a class="btn ghost dark" href="#demo">Solicitar demo</a>
