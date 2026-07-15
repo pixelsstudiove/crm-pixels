@@ -12,19 +12,27 @@ function nav_role_label(): string {
 
 function nav_render_account_switch(PDO $pdo, array $accountOptions, int $selectedAccountId, string $script, array $allParams = [], array $accountParams = []): void {
   if (!is_super_admin()) return;
+  $selectedLabel = 'Todas las cuentas';
+  foreach ($accountOptions as $account) {
+    if ($selectedAccountId === (int) ($account['id'] ?? 0)) {
+      $selectedLabel = (string) ($account['name'] ?? 'Cuenta');
+      break;
+    }
+  }
   ?>
-  <label class="account-switch app-account-switch" aria-label="Cuentas">
+  <div class="account-switch app-account-switch menu-dropdown" data-menu>
     <span class="nav-control-label">Cuentas</span>
-    <select onchange="if (this.value) window.location.href = this.value">
-      <option value="<?= h(account_url($script, $allParams, '')) ?>" <?= $selectedAccountId <= 0 ? 'selected' : '' ?>>Todas las cuentas</option>
+    <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false"><?= h($selectedLabel) ?></button>
+    <div class="menu-panel menu-panel-wide" role="menu">
+      <a class="menu-item <?= $selectedAccountId <= 0 ? 'is-active' : '' ?>" href="<?= h(account_url($script, $allParams, '')) ?>" <?= $selectedAccountId <= 0 ? 'aria-current="true"' : '' ?>>Todas las cuentas</a>
       <?php foreach ($accountOptions as $account): ?>
         <?php $accountSlug = trim((string) ($account['slug'] ?? accounts_slug_for_id($pdo, (int) ($account['id'] ?? 0)))); ?>
-        <option value="<?= h(account_url($script, $accountParams, $accountSlug !== '' ? $accountSlug : null)) ?>" <?= $selectedAccountId === (int) ($account['id'] ?? 0) ? 'selected' : '' ?>>
+        <a class="menu-item <?= $selectedAccountId === (int) ($account['id'] ?? 0) ? 'is-active' : '' ?>" href="<?= h(account_url($script, $accountParams, $accountSlug !== '' ? $accountSlug : null)) ?>" <?= $selectedAccountId === (int) ($account['id'] ?? 0) ? 'aria-current="true"' : '' ?>>
           <?= h((string) ($account['name'] ?? 'Cuenta')) ?>
-        </option>
+        </a>
       <?php endforeach; ?>
-    </select>
-  </label>
+    </div>
+  </div>
   <?php
 }
 

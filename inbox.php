@@ -379,8 +379,8 @@ function inbox_visible_message_text($value, array $attachments): string {
     .inbox-link.primary, .inbox-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .inbox-link:hover, .inbox-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .account-switch { display:inline-flex; align-items:center; height:40px; }
-    .account-switch select { appearance:none; min-width:190px; height:40px; padding:0 34px 0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font:inherit; font-size:.95rem; font-weight:850; cursor:pointer; }
-    .account-switch select:hover, .account-switch select:focus { background:#dff6ff; border-color:#8bdfff; outline:none; }
+    .account-switch .menu-trigger { min-width:190px; justify-content:space-between; }
+    .account-switch .menu-panel { max-height:min(62vh, 420px); overflow:auto; }
     .menu-dropdown { position:relative; }
     .menu-trigger { appearance:none; display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--surface-soft); color:#007ea8; font:inherit; font-size:.95rem; font-weight:850; cursor:pointer; user-select:none; transition:background .2s ease, border-color .2s ease, transform .06s ease; }
     .menu-trigger::after { content:"⌄"; color:#007ea8; font-size:.95rem; line-height:1; transform:translateY(-1px); }

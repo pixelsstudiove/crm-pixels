@@ -340,22 +340,16 @@ body{
   align-items:center;
   height:40px;
 }
-.account-switch select{
-  appearance:none;
+.account-switch .menu-trigger{
   min-width:190px;
-  height:40px;
-  padding:0 34px 0 14px;
-  border:1px solid var(--line);
-  border-radius:10px;
-  background:var(--surface-soft);
-  color:#007ea8;
-  font:inherit;
-  font-size:.95rem;
-  font-weight:850;
-  cursor:pointer;
+  justify-content:space-between;
 }
-.account-switch select:hover,
-.account-switch select:focus{
+.account-switch .menu-panel{
+  max-height:min(62vh, 420px);
+  overflow:auto;
+}
+.account-switch .menu-trigger:hover,
+.account-switch.menu-dropdown.is-open .menu-trigger{
   background:#dff6ff;
   border-color:#8bdfff;
   outline:none;
@@ -438,6 +432,10 @@ body{
   cursor:pointer;
 }
 .menu-item:hover{
+  background:var(--surface-soft);
+  color:#007ea8;
+}
+.menu-item.is-active{
   background:var(--surface-soft);
   color:#007ea8;
 }
@@ -540,7 +538,7 @@ body{
   .app-nav-actions{width:100%; justify-content:stretch;}
   .app-nav-actions .account-switch,
   .app-nav-actions .menu-dropdown{flex:1 1 100%;}
-  .app-nav-actions .account-switch select,
+  .app-nav-actions .account-switch .menu-trigger,
   .app-nav-actions .menu-trigger{width:100%;}
   .admin-layout{grid-template-columns:1fr;}
   .admin-side-nav{

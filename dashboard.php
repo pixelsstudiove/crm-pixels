@@ -527,8 +527,6 @@ function dash_channel_label(array $channel): string {
       padding:var(--dashboard-pad);
     }
     .dashboard-card {
-      display:grid;
-      grid-template-columns:240px minmax(0, 1fr);
       width:100%;
       min-height:100vh;
       border:0;
@@ -541,77 +539,6 @@ function dash_channel_label(array $channel): string {
       min-width:0;
       padding:clamp(18px, 2vw, 34px);
       background:#f6f7fb;
-    }
-    .dashboard-sidebar {
-      display:flex;
-      flex-direction:column;
-      gap:28px;
-      min-height:100vh;
-      padding:30px 20px;
-      border-right:1px solid #eef1f6;
-      background:#fff;
-    }
-    .dashboard-sidebar-brand {
-      display:flex;
-      align-items:center;
-      gap:10px;
-      color:#101524;
-      font-size:1.4rem;
-      font-weight:950;
-      letter-spacing:-.05em;
-      text-decoration:none;
-    }
-    .dashboard-sidebar-mark {
-      width:34px;
-      height:34px;
-      display:grid;
-      place-items:center;
-      border-radius:12px;
-      color:#fff;
-      background:#356dff;
-      font-size:.88rem;
-      font-weight:950;
-    }
-    .dashboard-side-nav {
-      display:grid;
-      gap:8px;
-    }
-    .dashboard-side-link {
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      min-height:44px;
-      padding:0 12px;
-      border-radius:10px;
-      color:#6b7280;
-      font-size:.92rem;
-      font-weight:780;
-      text-decoration:none;
-      transition:background .18s ease, color .18s ease;
-    }
-    .dashboard-side-link::after {
-      content:"›";
-      color:#a3a9b7;
-      font-weight:900;
-    }
-    .dashboard-side-link:hover,
-    .dashboard-side-link.is-active {
-      color:#fff;
-      background:#356dff;
-    }
-    .dashboard-side-link:hover::after,
-    .dashboard-side-link.is-active::after {
-      color:#fff;
-    }
-    .dashboard-sidebar-foot {
-      margin-top:auto;
-      padding:12px;
-      border-radius:14px;
-      color:#667085;
-      background:#f6f7fb;
-      font-size:.78rem;
-      font-weight:750;
-      line-height:1.35;
     }
     .topbar {
       display:flex;
@@ -664,7 +591,6 @@ function dash_channel_label(array $channel): string {
       align-items:center;
       height:44px;
     }
-    .account-switch select,
     .menu-trigger,
     .wa-btn,
     .user-btn,
@@ -689,17 +615,14 @@ function dash_channel_label(array $channel): string {
       cursor:pointer;
       transition:transform .12s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
     }
-    .account-switch select {
+    .account-switch .menu-trigger {
       min-width:210px;
-      padding-right:34px;
-      background-color:#fff;
-      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat:no-repeat;
-      background-position:right 13px center;
-      background-size:14px;
+      justify-content:space-between;
     }
-    .account-switch select:hover,
-    .account-switch select:focus,
+    .account-switch .menu-panel {
+      max-height:min(62vh, 420px);
+      overflow:auto;
+    }
     .menu-trigger:hover,
     .menu-dropdown.is-open .menu-trigger,
     .wa-btn:hover,
@@ -712,15 +635,6 @@ function dash_channel_label(array $channel): string {
       background:var(--dash-navy);
       box-shadow:0 10px 24px rgba(15,23,42,.08);
       outline:none;
-    }
-    .account-switch select:hover,
-    .account-switch select:focus {
-      color:var(--dash-ink);
-      background-color:#fff;
-      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-      background-repeat:no-repeat;
-      background-position:right 13px center;
-      background-size:14px;
     }
     .menu-trigger:active,
     .search-btn:active,
@@ -793,6 +707,10 @@ function dash_channel_label(array $channel): string {
     .menu-item:hover {
       color:#06101f;
       background:#f2f6fb;
+    }
+    .menu-item.is-active {
+      color:#fff;
+      background:var(--dash-navy);
     }
     .menu-meta {
       display:block;
@@ -1482,32 +1400,10 @@ function dash_channel_label(array $channel): string {
         --dashboard-pad:0;
       }
       .dashboard-card {
-        grid-template-columns:1fr;
         min-height:100vh;
         border-left:0;
         border-right:0;
         border-radius:0;
-      }
-      .dashboard-sidebar {
-        min-height:auto;
-        gap:12px;
-        padding:14px 12px;
-        border-right:0;
-        border-bottom:1px solid #eef1f6;
-      }
-      .dashboard-side-nav {
-        display:flex;
-        gap:8px;
-        overflow-x:auto;
-        padding-bottom:2px;
-      }
-      .dashboard-side-link {
-        flex:0 0 auto;
-        min-height:40px;
-        white-space:nowrap;
-      }
-      .dashboard-sidebar-foot {
-        display:none;
       }
       .dashboard-card .panel {
         padding:16px 12px 18px;
@@ -1525,7 +1421,7 @@ function dash_channel_label(array $channel): string {
       .app-nav-actions .menu-dropdown {
         flex:1 1 100%;
       }
-      .app-nav-actions .account-switch select,
+      .app-nav-actions .account-switch .menu-trigger,
       .app-nav-actions .menu-trigger {
         width:100%;
       }
@@ -1595,22 +1491,6 @@ function dash_channel_label(array $channel): string {
 <body class="dashboard-page">
   <main class="dashboard-shell">
     <section class="form-card dashboard-card">
-      <aside class="dashboard-sidebar" aria-label="Navegación del CRM">
-        <a class="dashboard-sidebar-brand" href="<?= h(account_url('dashboard.php')) ?>">
-          <span class="dashboard-sidebar-mark">C</span>
-          <span>CRM</span>
-        </a>
-        <nav class="dashboard-side-nav">
-          <a class="dashboard-side-link is-active" href="<?= h(account_url('dashboard.php')) ?>">Embudo</a>
-          <?php if (can('view_conversations')): ?><a class="dashboard-side-link" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
-          <?php if (can('manage_integrations')): ?><a class="dashboard-side-link" href="<?= h(account_url('channels.php')) ?>">Canales</a><?php endif; ?>
-          <?php if (can('manage_integrations')): ?><a class="dashboard-side-link" href="<?= h(account_url('webhook_logs.php')) ?>">Eventos</a><?php endif; ?>
-          <?php if (can('manage_users')): ?><a class="dashboard-side-link" href="/users.php">Usuarios</a><?php endif; ?>
-        </nav>
-        <div class="dashboard-sidebar-foot">
-          Conversaciones, status comercial y seguimiento en una sola vista.
-        </div>
-      </aside>
       <div class="panel" data-dashboard-auto-update>
         <div class="topbar">
           <div>
