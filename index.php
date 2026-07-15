@@ -13,8 +13,8 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>CRM conversacional para Instagram y WhatsApp | <?= h($brandName) ?></title>
-  <meta name="description" content="Centraliza conversaciones de Instagram, gestiona leads por embudo y prepara tu operación comercial para WhatsApp desde un CRM moderno." />
+  <title>CRM conversacional para equipos de venta | <?= h($brandName) ?></title>
+  <meta name="description" content="Atiende Instagram DM, organiza conversaciones en un embudo comercial y prepara tu operación para WhatsApp desde CRM Pixels." />
   <link rel="stylesheet" href="css/landing.css?v=<?= (int) @filemtime(__DIR__ . '/css/landing.css') ?>">
 </head>
 <body class="landing-page">
@@ -30,37 +30,37 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
       </a>
       <div class="nav-links" aria-label="Secciones">
         <a href="#producto">Producto</a>
-        <a href="#flujo">Flujo</a>
-        <a href="#beneficios">Beneficios</a>
-        <a href="#planes">Planes</a>
+        <a href="#canales">Canales</a>
+        <a href="#flujo">Proceso</a>
+        <a href="#saas">SaaS</a>
       </div>
       <div class="nav-actions">
         <a class="btn ghost" href="login.php">Iniciar sesión</a>
-        <a class="btn primary" href="#demo">Solicitar demo</a>
+        <a class="btn primary" href="#demo">Solicitar una demo</a>
       </div>
     </nav>
 
     <section class="hero" id="producto" aria-labelledby="hero-title">
       <div class="hero-content">
-        <p class="eyebrow"><span>Instagram activo</span> WhatsApp en ruta para equipos de venta</p>
-        <h1 id="hero-title">Convierte tus conversaciones de WhatsApp e Instagram en ventas</h1>
-        <p class="hero-copy">CRM Pixels une inbox, embudo comercial, seguimiento y archivos multimedia para que cada conversación avance con contexto, velocidad y control.</p>
+        <p class="eyebrow"><span>CRM conversacional</span> Instagram hoy, WhatsApp en la ruta</p>
+        <h1 id="hero-title">Convierte conversaciones de Instagram y WhatsApp en <span>ventas</span></h1>
+        <p class="hero-copy">CRM Pixels organiza cada DM como una oportunidad: responde desde el inbox, mueve el contacto por el embudo y conserva notas, audios, imágenes e historial comercial en una sola pantalla.</p>
         <div class="hero-actions">
-          <a class="btn primary lift" href="login.php">Entrar al CRM</a>
-          <a class="btn play" href="#flujo"><span aria-hidden="true">▶</span> Ver cómo funciona</a>
+          <a class="btn primary lift" href="#demo">Agendar demo</a>
+          <a class="btn play" href="login.php"><span aria-hidden="true">↗</span> Entrar al CRM</a>
         </div>
         <div class="trust-row" aria-label="Canales compatibles">
-          <span>Instagram DM</span>
+          <span>Instagram Direct</span>
           <span>Meta Ads</span>
-          <span>WhatsApp próximamente</span>
+          <span>WhatsApp API en ruta</span>
         </div>
       </div>
 
       <div class="product-stage" aria-label="Vista previa del CRM Pixels">
         <div class="signal-board" aria-hidden="true">
-          <span class="signal-node node-ig">Instagram DM</span>
-          <span class="signal-node node-wa">WhatsApp API</span>
-          <span class="signal-node node-sales">Ventas</span>
+          <span class="signal-node node-ig">Nuevo DM</span>
+          <span class="signal-node node-wa">Multimedia</span>
+          <span class="signal-node node-sales">Venta</span>
           <span class="signal-line line-one"></span>
           <span class="signal-line line-two"></span>
           <span class="signal-line line-three"></span>
@@ -68,50 +68,50 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         <div class="dashboard-preview">
           <div class="preview-topbar">
             <div>
-              <strong>Inbox conversacional</strong>
-              <small>Instagram · Activo</small>
+              <strong>Inbox de ventas</strong>
+              <small>Instagram · Conversación abierta</small>
             </div>
-            <span class="live-pill">En vivo</span>
+            <span class="live-pill">Activo</span>
           </div>
           <div class="preview-grid">
             <aside class="preview-list">
               <article class="conversation active">
-                <strong>Jeferson Herrera</strong>
-                <span>Quiero cotizar una campaña</span>
+                <strong>Cliente desde anuncio</strong>
+                <span>Quiero saber precios</span>
               </article>
               <article class="conversation">
-                <strong>Wynwood Park</strong>
-                <span>Adjunto recibido: imagen</span>
+                <strong>Lead calificado</strong>
+                <span>Audio recibido</span>
               </article>
               <article class="conversation">
-                <strong>Contacto nuevo</strong>
-                <span>¿Tienen disponibilidad?</span>
+                <strong>Seguimiento</strong>
+                <span>Propuesta enviada</span>
               </article>
             </aside>
             <section class="preview-chat">
-              <div class="bubble inbound">Hola, quiero información del servicio.</div>
-              <div class="bubble outbound">¡Claro! Te comparto opciones y presupuesto.</div>
+              <div class="bubble inbound">Hola, vengo del anuncio.</div>
+              <div class="bubble outbound">Perfecto, te atiendo desde aquí y guardo el avance.</div>
               <div class="bubble media">
                 <span></span>
-                <p>Imagen enviada</p>
+                <p>Imagen y audio listos</p>
               </div>
             </section>
           </div>
         </div>
         <aside class="assistant-card">
-          <span>Embudo</span>
-          <strong>Nuevo lead</strong>
+          <span>Status comercial</span>
+          <strong>Interesado</strong>
           <div class="mini-progress"><i></i></div>
-          <small>Seguimiento automático</small>
+          <small>Historial guardado</small>
         </aside>
         <aside class="metric-card">
           <strong>24h</strong>
-          <span>Control de ventana Meta</span>
+          <span>Ventana Meta visible</span>
         </aside>
       </div>
     </section>
 
-    <section class="logo-strip" aria-label="Integraciones principales">
+    <section class="logo-strip" id="canales" aria-label="Integraciones principales">
       <span>Instagram</span>
       <span>Meta Ads</span>
       <span>Cloudflare R2</span>
@@ -121,30 +121,30 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
 
     <section class="feature-section" id="beneficios">
       <div class="section-heading">
-        <p class="section-kicker">Funciones</p>
-        <h2>Todo lo necesario para vender desde conversaciones.</h2>
-        <a class="btn ghost dark" href="login.php">Explorar CRM</a>
+        <p class="section-kicker">Lo que resuelve</p>
+        <h2>Una operación comercial conectada al inbox.</h2>
+        <a class="btn ghost dark" href="login.php">Ver plataforma</a>
       </div>
       <div class="feature-grid">
         <article class="feature-card blue">
           <span class="feature-icon">✦</span>
-          <h3>Inbox centralizado</h3>
-          <p>Gestiona conversaciones, respuestas, imágenes y audios sin salir del CRM.</p>
+          <h3>Responder sin cambiar de app</h3>
+          <p>El equipo atiende mensajes, imágenes y audios desde un inbox creado para ventas.</p>
         </article>
         <article class="feature-card amber">
           <span class="feature-icon">◎</span>
-          <h3>Embudo comercial</h3>
-          <p>Cada chat se convierte en oportunidad y avanza por status comerciales claros.</p>
+          <h3>Embudo nacido del chat</h3>
+          <p>Cada conversación entra al pipeline con status comercial, notas y responsable.</p>
         </article>
         <article class="feature-card green">
           <span class="feature-icon">↗</span>
-          <h3>Seguimiento real</h3>
-          <p>Notas, historial de cambios y alertas de ventana Meta para cuidar cada contacto.</p>
+          <h3>Menos contactos perdidos</h3>
+          <p>Alertas de ventana Meta y última actividad ayudan a responder antes de que venza el chat.</p>
         </article>
         <article class="feature-card rose">
           <span class="feature-icon">▣</span>
-          <h3>SaaS multi cuenta</h3>
-          <p>Crea cuentas, canales y equipos separados para operar clientes distintos.</p>
+          <h3>Cuentas separadas</h3>
+          <p>Administra clientes, canales y vendedores sin mezclar bandejas ni permisos.</p>
         </article>
       </div>
     </section>
@@ -153,8 +153,8 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
       <div class="workflow-visual" aria-hidden="true">
         <div class="phone-frame">
           <div class="phone-header"></div>
-          <div class="phone-message left">Hola, vi el anuncio</div>
-          <div class="phone-message right">Te atiendo por aquí</div>
+        <div class="phone-message left">Hola, ¿me das precio?</div>
+        <div class="phone-message right">Sí, ya abrí tu ficha.</div>
           <div class="phone-chart">
             <span style="height:42%"></span>
             <span style="height:68%"></span>
@@ -164,54 +164,54 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         </div>
       </div>
       <div class="workflow-copy">
-        <p class="section-kicker">Operación comercial</p>
-        <h2>Del DM al cierre, sin perder el hilo.</h2>
+        <p class="section-kicker">Proceso real</p>
+        <h2>Del primer mensaje al próximo seguimiento.</h2>
         <ul class="check-list">
-          <li>Recibe mensajes desde campañas de Meta Ads.</li>
-          <li>Convierte conversaciones en leads del embudo.</li>
-          <li>Responde con texto, imágenes y audios desde el CRM.</li>
-          <li>Prepara el mismo flujo para WhatsApp cuando lo activemos.</li>
+          <li>Conecta una cuenta de Instagram profesional y recibe los DMs en el CRM.</li>
+          <li>Clasifica la intención comercial sin salir de la conversación.</li>
+          <li>Envía texto, imágenes y audios mientras el historial se actualiza solo.</li>
+          <li>Escala el mismo modelo para WhatsApp cuando el canal esté activo.</li>
         </ul>
-        <a class="btn dark-solid" href="#demo">Quiero verlo funcionando</a>
+        <a class="btn dark-solid" href="#demo">Quiero revisar el flujo</a>
       </div>
     </section>
 
     <section class="stats-band" aria-label="Indicadores del CRM">
-      <div><strong>1</strong><span>Inbox por canal</span></div>
-      <div><strong>24h</strong><span>Alertas de ventana Meta</span></div>
-      <div><strong>5</strong><span>Imágenes por envío</span></div>
-      <div><strong>∞</strong><span>Cuentas cliente</span></div>
+      <div><strong>DM</strong><span>Leads desde Instagram</span></div>
+      <div><strong>24h</strong><span>Control de ventana Meta</span></div>
+      <div><strong>5</strong><span>Fotos por mensaje</span></div>
+      <div><strong>R2</strong><span>Archivos servidos desde Cloudflare</span></div>
     </section>
 
-    <section class="plans" id="planes">
+    <section class="plans" id="saas">
       <div class="section-heading compact">
-        <p class="section-kicker">Escala</p>
-        <h2>Diseñado para crecer como SaaS.</h2>
+        <p class="section-kicker">Casos de uso</p>
+        <h2>Construido para vender y para operar cuentas cliente.</h2>
       </div>
       <article class="testimonial-card">
         <span>“</span>
-        <p>Centraliza la operación comercial sin obligar al equipo a perseguir conversaciones en distintas apps.</p>
-        <strong>CRM Pixels</strong>
+        <p>La prioridad no es acumular mensajes: es saber quién escribió, qué necesita, quién lo atiende y cuál es el próximo paso comercial.</p>
+        <strong>Filosofía del producto</strong>
       </article>
       <article class="plan-card highlighted">
         <small>Disponible</small>
-        <h3>Conversacional</h3>
-        <p>Para equipos que venden desde Instagram y necesitan control del embudo.</p>
+        <h3>Instagram Sales Inbox</h3>
+        <p>Para empresas que reciben conversaciones desde campañas, historias o perfil.</p>
         <ul>
-          <li>Inbox Instagram</li>
-          <li>Embudo por status</li>
-          <li>Usuarios y roles</li>
+          <li>DMs convertidos en leads</li>
+          <li>Historial comercial por contacto</li>
+          <li>Respuestas con multimedia</li>
         </ul>
         <a class="btn primary" href="login.php">Entrar al panel</a>
       </article>
       <article class="plan-card">
         <small>En ruta</small>
-        <h3>Omnicanal</h3>
-        <p>La siguiente fase para conectar WhatsApp y ampliar el flujo de atención.</p>
+        <h3>WhatsApp conectado</h3>
+        <p>La siguiente fase para que el CRM atienda el canal donde se cierran muchas ventas.</p>
         <ul>
-          <li>WhatsApp API</li>
-          <li>Automatizaciones por conversación</li>
-          <li>Reportes por canal</li>
+          <li>Un inbox por canal</li>
+          <li>Embudo compartido</li>
+          <li>Roles por cuenta cliente</li>
         </ul>
         <a class="btn ghost dark" href="#demo">Solicitar demo</a>
       </article>
@@ -219,10 +219,10 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
 
     <section class="final-cta" id="demo">
       <div>
-        <h2>Listo para ordenar tus conversaciones comerciales.</h2>
-        <p>Activa un CRM moderno para atender, clasificar y cerrar oportunidades desde Instagram, con WhatsApp en la ruta.</p>
+        <h2>Ordena tu inbox antes de que se pierda otra oportunidad.</h2>
+        <p>CRM Pixels está pensado para equipos que venden conversando: menos pestañas, más contexto y un embudo que se mueve con cada mensaje.</p>
       </div>
-      <a class="btn light" href="mailto:pixelstudiove@gmail.com?subject=Demo%20CRM%20Pixels">Solicitar demo</a>
+      <a class="btn light" href="mailto:pixelstudiove@gmail.com?subject=Demo%20CRM%20Pixels">Agendar demo</a>
     </section>
 
     <footer class="landing-footer">
@@ -231,11 +231,11 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
           <?php if ($logoExists): ?><img src="<?= h($logoPath) ?>" alt="<?= h($brandName) ?>"><?php else: ?><span class="brand-symbol">P</span><?php endif; ?>
           <strong><?= h($brandName) ?></strong>
         </a>
-        <p>CRM conversacional para equipos que venden desde redes sociales.</p>
+        <p>CRM conversacional para equipos que venden desde Instagram y preparan su operación para WhatsApp.</p>
       </div>
       <div class="footer-links">
         <a href="#producto">Producto</a>
-        <a href="#beneficios">Beneficios</a>
+        <a href="#canales">Canales</a>
         <a href="login.php">Acceso</a>
       </div>
     </footer>
