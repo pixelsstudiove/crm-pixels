@@ -502,14 +502,6 @@ function inbox_visible_message_text($value, array $attachments): string {
     .info-row { display:grid; gap:4px; padding:10px 0; border-bottom:1px solid #eef2f7; color:var(--inbox-muted); font-size:.9rem; }
     .info-row span, .field-label { color:var(--inbox-muted); font-size:.72rem; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
     .info-row strong { color:var(--inbox-ink); font-weight:850; overflow-wrap:anywhere; }
-    .side-info-disclosure { border:1px solid rgba(22,199,232,.42); border-radius:12px; background:#ecfbff; overflow:hidden; }
-    .side-info-disclosure summary { min-height:28px; display:flex; align-items:center; justify-content:center; padding:0; color:var(--inbox-cyan); cursor:pointer; user-select:none; list-style:none; transition:background .18s ease; }
-    .side-info-disclosure summary::-webkit-details-marker { display:none; }
-    .side-info-disclosure summary::after { content:"⌄"; color:var(--inbox-cyan); font-size:1.05rem; font-weight:950; line-height:1; transition:transform .18s ease; }
-    .side-info-disclosure[open] summary::after { transform:rotate(180deg); }
-    .side-info-disclosure summary:hover { background:#dff7ff; }
-    .side-info-content { display:grid; padding:0 10px 2px; border-top:1px solid var(--inbox-line); background:#fbfcff; }
-    .side-info-content .info-row:last-child { border-bottom:0; }
     .status-form { display:grid; gap:8px; }
     .status-save-hint { color:var(--inbox-muted); font-size:.78rem; font-weight:750; }
     .side-notes-field { display:grid; gap:7px; }
@@ -760,14 +752,9 @@ function inbox_visible_message_text($value, array $attachments): string {
                 </div>
               <?php endif; ?>
               <div class="info-row"><span>Contacto</span><strong><?= h(inbox_contact_name($selected)) ?></strong></div>
-              <details class="side-info-disclosure" data-persist-disclosure="inbox-side-info" open>
-                <summary aria-label="Mostrar u ocultar información complementaria de la conversación"></summary>
-                <div class="side-info-content">
-                  <div class="info-row"><span>Instagram</span><strong><?= !empty($selected['username']) ? '<a href="' . h((string) ($selected['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $selected['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $selected['username']) . '</a>' : '—' ?></strong></div>
-                  <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
-                  <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
-                </div>
-              </details>
+              <div class="info-row"><span>Instagram</span><strong><?= !empty($selected['username']) ? '<a href="' . h((string) ($selected['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $selected['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $selected['username']) . '</a>' : '—' ?></strong></div>
+              <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
+              <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
 
               <?php if (!empty($selected['lead_id'])): ?>
               <label class="side-notes-field">
@@ -1822,21 +1809,6 @@ function inbox_visible_message_text($value, array $attachments): string {
       button.addEventListener('click', () => {
         const leadId = button.getAttribute('data-lead-id');
         if (leadId) openLeadHistory(leadId);
-      });
-    });
-
-    document.querySelectorAll('[data-persist-disclosure]').forEach(details => {
-      const key = `crm_pixels_${details.getAttribute('data-persist-disclosure') || 'disclosure'}`;
-      try {
-        const stored = window.localStorage.getItem(key);
-        if (stored === 'open') details.open = true;
-        if (stored === 'closed') details.open = false;
-      } catch (error) {}
-
-      details.addEventListener('toggle', () => {
-        try {
-          window.localStorage.setItem(key, details.open ? 'open' : 'closed');
-        } catch (error) {}
       });
     });
 
