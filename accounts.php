@@ -197,6 +197,9 @@ SQL);
     .account-meta-grid { display:grid; grid-template-columns:repeat(5, minmax(120px, 1fr)); gap:10px; }
     .account-metric { min-width:0; padding:12px; border:1px solid rgba(0,68,99,.10); border-radius:14px; background:#fff; color:var(--brand-muted); font-size:.84rem; font-weight:900; }
     .account-metric strong { display:block; margin-bottom:3px; color:var(--brand-ink); font-size:1.02rem; overflow-wrap:anywhere; }
+    .account-metric.channel-metric { display:grid; grid-template-columns:auto minmax(0, 1fr); column-gap:10px; align-items:center; }
+    .account-metric.channel-metric strong { margin:0; }
+    .account-channel-icon { width:26px; height:26px; border-radius:999px; object-fit:cover; flex:0 0 auto; }
     .accounts-form { display:grid; gap:14px; }
     .account-form-grid { display:grid; grid-template-columns:minmax(180px, 1.35fr) minmax(160px, 1fr) minmax(130px, .8fr) repeat(2, minmax(140px, .9fr)); gap:10px; align-items:end; }
     .account-field { display:grid; gap:7px; min-width:0; }
@@ -293,9 +296,9 @@ SQL);
                   <div class="account-meta-grid">
                     <span class="account-metric"><strong><?= h(accounts_limit_label(isset($account['max_operators']) && $account['max_operators'] !== null ? (int) $account['max_operators'] : null)) ?></strong>Agentes permitidos</span>
                     <span class="account-metric"><strong><?= h(accounts_limit_label(isset($account['max_channels']) && $account['max_channels'] !== null ? (int) $account['max_channels'] : null)) ?></strong>Canales máximos</span>
-                    <span class="account-metric"><strong><?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Instagram</span>
-                    <span class="account-metric"><strong><?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Facebook</span>
-                    <span class="account-metric"><strong><?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>WhatsApp</span>
+                    <span class="account-metric channel-metric"><img class="account-channel-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"><span><strong><?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Instagram</span></span>
+                    <span class="account-metric channel-metric"><img class="account-channel-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"><span><strong><?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Facebook</span></span>
+                    <span class="account-metric channel-metric"><img class="account-channel-icon" src="/images/icon_whatwsapp.png" alt="" aria-hidden="true"><span><strong><?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>WhatsApp</span></span>
                   </div>
                   <form id="account-update-<?= (int) $account['id'] ?>" class="accounts-form" method="post" action="/accounts.php" autocomplete="off">
                     <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
@@ -329,9 +332,9 @@ SQL);
                     <div>
                       <span class="account-channel-title">Tipos de canal permitidos</span>
                       <div class="account-channel-options">
-                        <label class="account-toggle"><input type="checkbox" name="update_allow_instagram" value="1" <?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'checked' : '' ?>> Instagram</label>
-                        <label class="account-toggle"><input type="checkbox" name="update_allow_messenger" value="1" <?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'checked' : '' ?>> Facebook</label>
-                        <label class="account-toggle"><input type="checkbox" name="update_allow_whatsapp" value="1" <?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'checked' : '' ?>> WhatsApp</label>
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_instagram" value="1" <?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'checked' : '' ?>><img class="account-channel-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Instagram</label>
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_messenger" value="1" <?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'checked' : '' ?>><img class="account-channel-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Facebook</label>
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_whatsapp" value="1" <?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'checked' : '' ?>><img class="account-channel-icon" src="/images/icon_whatwsapp.png" alt="" aria-hidden="true"> WhatsApp</label>
                       </div>
                     </div>
                   </form>

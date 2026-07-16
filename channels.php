@@ -322,7 +322,7 @@ try {
     :root { --container-w:min(96vw, 1180px); }
     .channels-header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px; }
     .channel-actions { display:flex; gap:10px; flex-wrap:wrap; }
-    .channel-link, .channel-btn { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; cursor:pointer; }
+    .channel-link, .channel-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font-weight:850; text-decoration:none; cursor:pointer; }
     .channel-link:hover, .channel-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .channel-link.primary, .channel-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
@@ -330,6 +330,7 @@ try {
     .channel-link.is-disabled { opacity:.55; pointer-events:none; }
     .connect-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .connect-actions .channel-link { min-height:36px; font-size:.9rem; }
+    .channel-choice-icon { width:22px; height:22px; border-radius:999px; object-fit:cover; flex:0 0 auto; }
     .connect-panel { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px; }
     .connect-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .connect-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
@@ -407,15 +408,15 @@ try {
             <h2>Facebook / Fanpage</h2>
             <p>Conecta páginas de Facebook y elige si quieres recibir Instagram, Messenger o ambos desde esa fanpage.</p>
             <div class="connect-actions">
-              <a class="channel-link primary <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>">Instagram + Messenger</a>
-              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>">Solo Instagram</a>
-              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>">Solo Messenger</a>
+              <a class="channel-link primary <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>"><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"><img class="channel-choice-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Instagram + Messenger</a>
+              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>"><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Solo Instagram</a>
+              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>"><img class="channel-choice-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Solo Messenger</a>
             </div>
           </article>
           <article class="connect-card">
             <h2>Instagram Login</h2>
             <p>Conecta directamente una cuenta profesional de Instagram usando los permisos de Instagram Login.</p>
-            <a class="channel-link primary <?= $canConnectInstagram && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>">Conectar por Instagram</a>
+            <a class="channel-link primary <?= $canConnectInstagram && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>"><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Conectar por Instagram</a>
           </article>
         </div>
 

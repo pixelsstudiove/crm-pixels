@@ -139,6 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       color:var(--brand-ink);
       font-weight:900;
     }
+    .account-channel-icon { width:26px; height:26px; border-radius:999px; object-fit:cover; flex:0 0 auto; }
     .account-channel-option input { width:20px!important; height:20px!important; min-height:20px!important; padding:0!important; accent-color:var(--brand-primary); }
     .account-create-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding-top:4px; }
     .accounts-link { display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:0 16px; border:1px solid var(--line); border-radius:12px; color:#007ea8; background:var(--surface-soft); font:inherit; font-weight:900; text-decoration:none; cursor:pointer; }
@@ -217,9 +218,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div>
                       <span class="field-label">Canales permitidos</span>
                       <div class="account-channel-grid">
-                        <label class="account-channel-option"><input type="checkbox" name="create_allow_instagram" value="1" checked> Instagram</label>
-                        <label class="account-channel-option"><input type="checkbox" name="create_allow_messenger" value="1" checked> Facebook</label>
-                        <label class="account-channel-option"><input type="checkbox" name="create_allow_whatsapp" value="1" checked> WhatsApp</label>
+                        <label class="account-channel-option"><input type="checkbox" name="create_allow_instagram" value="1" checked><img class="account-channel-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Instagram</label>
+                        <label class="account-channel-option"><input type="checkbox" name="create_allow_messenger" value="1" checked><img class="account-channel-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Facebook</label>
+                        <label class="account-channel-option"><input type="checkbox" name="create_allow_whatsapp" value="1" checked><img class="account-channel-icon" src="/images/icon_whatwsapp.png" alt="" aria-hidden="true"> WhatsApp</label>
                       </div>
                     </div>
                   </div>
