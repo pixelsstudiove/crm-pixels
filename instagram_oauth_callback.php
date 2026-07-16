@@ -177,11 +177,11 @@ $blocked = [];
 foreach (($pagesResp['data']['data'] ?? []) as $page) {
   if (!is_array($page)) continue;
   $ig = $page['instagram_business_account'] ?? null;
-  if (!is_array($ig) || empty($ig['id'])) continue;
 
   $pageToken = (string) ($page['access_token'] ?? '');
   $pageId = (string) ($page['id'] ?? '');
   if ($pageId === '' || $pageToken === '') continue;
+  $hasInstagram = is_array($ig) && !empty($ig['id']);
 
   // Intenta suscribir la pagina a la app. Si ya estaba suscrita, Meta responde OK o no bloquea la conexion local.
   ig_graph_request('POST', $pageId . '/subscribed_apps', [
@@ -195,8 +195,8 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
       'connection_type' => 'facebook',
       'page_id' => $pageId,
       'page_name' => (string) ($page['name'] ?? ''),
-      'instagram_user_id' => (string) $ig['id'],
-      'instagram_username' => (string) ($ig['username'] ?? $ig['name'] ?? ''),
+      'instagram_user_id' => $hasInstagram ? (string) $ig['id'] : 'messenger:' . $pageId,
+      'instagram_username' => $hasInstagram ? (string) ($ig['username'] ?? $ig['name'] ?? '') : '',
       'page_access_token' => $pageToken,
       'scopes' => (string) app_config('instagram.oauth_scopes', ''),
       'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
@@ -209,10 +209,10 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
 
 if ($saved <= 0) {
   if ($blocked) oauth_fail((string) $blocked[0]);
-  oauth_fail('No encontramos una cuenta de Instagram profesional conectada a tus paginas.');
+  oauth_fail('No encontramos paginas disponibles para conectar.');
 }
 
-$notice = 'Instagram conectado correctamente.';
+$notice = 'Canales de Meta conectados correctamente.';
 if ($blocked) $notice .= ' Algunos canales no se integraron porque ya pertenecen a otra cuenta.';
 header('Location: ' . account_url('channels.php', ['notice' => $notice], $targetAccountSlug !== '' ? $targetAccountSlug : null));
 exit;

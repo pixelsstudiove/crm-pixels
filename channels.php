@@ -174,7 +174,7 @@ try {
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
             <h1 class="title">Canales conectados</h1>
-            <p class="subtitle">Conecta canales por Facebook/Fanpage o por Login directo de Instagram para capturar DMs como leads.</p>
+            <p class="subtitle">Conecta canales por Facebook/Fanpage o por Login directo de Instagram para capturar mensajes como leads.</p>
           </div>
           <?php nav_render_config_top_nav($pdo, 'channels.php', is_super_admin() ? $requestAccountId : 0); ?>
         </header>
@@ -185,13 +185,13 @@ try {
           <?php nav_render_admin_side_nav('channels'); ?>
           <div class="admin-content">
             <?php if (!$canConnect): ?>
-              <div class="form-alert alert-error notice">Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.</div>
+              <div class="form-alert alert-error notice">Falta configurar credenciales de Meta en config/local.php. Para Messenger usa FACEBOOK_APP_ID y FACEBOOK_APP_SECRET; para Instagram Login usa INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET.</div>
             <?php endif; ?>
 
         <div class="connect-panel">
           <article class="connect-card">
             <h2>Facebook / Fanpage</h2>
-            <p>Usa el flujo actual para conectar páginas de Facebook con una cuenta profesional de Instagram vinculada.</p>
+            <p>Conecta páginas de Facebook para recibir mensajes de Messenger y, si la página tiene Instagram vinculado, también DMs de Instagram.</p>
             <a class="channel-link primary <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectUrl) ?>">Conectar por Facebook</a>
           </article>
           <article class="connect-card">
@@ -203,7 +203,7 @@ try {
 
         <div class="channel-card" style="margin-bottom:14px">
           <h2>Webhook de Meta</h2>
-          <p><strong>URL:</strong> <?= h($webhookUrl) ?></p>
+          <p><strong>URL Instagram/Messenger:</strong> <?= h($webhookUrl) ?></p>
           <p><strong>Redirect OAuth:</strong> <?= h($callbackUrl) ?></p>
         </div>
 
@@ -211,12 +211,14 @@ try {
           <?php if ($channels): foreach ($channels as $channel): ?>
             <article class="channel-card">
               <span class="channel-status <?= (int) $channel['is_active'] === 1 ? 'on' : 'off' ?>"><?= (int) $channel['is_active'] === 1 ? 'Activo' : 'Inactivo' ?></span>
-              <h2><?= h((string) ($channel['instagram_username'] ?: 'Instagram conectado')) ?></h2>
+              <?php $hasInstagramChannel = !str_starts_with((string) ($channel['instagram_user_id'] ?? ''), 'messenger:'); ?>
+              <h2><?= h((string) ($channel['instagram_username'] ?: ($channel['page_name'] ?: 'Canal Meta conectado'))) ?></h2>
               <p><strong>Tipo:</strong> <?= h((string) (($channel['connection_type'] ?? 'facebook') === 'instagram_login' ? 'Instagram Login' : 'Facebook / Fanpage')) ?></p>
               <?php $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login'; ?>
               <p><strong><?= $isDirectLogin ? 'Cuenta:' : 'Fanpage:' ?></strong> <?= h((string) ($channel['page_name'] ?: $channel['page_id'])) ?></p>
               <p><strong><?= $isDirectLogin ? 'Cuenta ID:' : 'Page ID:' ?></strong> <?= h((string) $channel['page_id']) ?></p>
-              <p><strong>Instagram ID:</strong> <?= h((string) $channel['instagram_user_id']) ?></p>
+              <p><strong>Instagram ID:</strong> <?= $hasInstagramChannel ? h((string) $channel['instagram_user_id']) : '—' ?></p>
+              <?php if (!$isDirectLogin): ?><p><strong>Messenger:</strong> Habilitado por fanpage</p><?php endif; ?>
               <?php if (!empty($channel['token_expires_at'])): ?><p><strong>Token vence:</strong> <?= h(app_datetime($channel['token_expires_at'])) ?></p><?php endif; ?>
               <p><strong>Ultimo evento:</strong> <?= h((string) ($channel['last_event_at'] ?: 'Sin eventos')) ?></p>
               <form method="post" action="<?= h(account_url('channels.php')) ?>">
@@ -234,7 +236,7 @@ try {
           <?php endforeach; else: ?>
             <article class="channel-card">
               <h2>Sin canales conectados</h2>
-              <p>Conecta Instagram para que los mensajes entrantes se creen como leads dentro del CRM.</p>
+              <p>Conecta Facebook o Instagram para que los mensajes entrantes se creen como leads dentro del CRM.</p>
             </article>
           <?php endif; ?>
         </div>

@@ -322,14 +322,33 @@ foreach ($messages as $message) $lastMessageId = max($lastMessageId, (int) ($mes
 $replyWindow = $selected ? meta_reply_window_info($selected['last_inbound_at'] ?? '') : null;
 $replyChannel = $selected ? conv_instagram_channel_for_conversation($pdo, $selected) : null;
 $canReplyFromCrm = $canSendMessages && ($replyWindow['can_reply'] ?? true) && (bool) $replyChannel;
-$channelUnavailableMessage = 'No hay un canal de Instagram activo disponible para esta conversación. Revisa Canales o reconecta Instagram antes de responder.';
+$selectedProvider = $selected ? conv_conversation_provider($selected) : 'instagram';
+$channelUnavailableMessage = $selectedProvider === 'messenger'
+  ? 'No hay un canal de Messenger activo disponible para esta conversación. Revisa Canales o reconecta Facebook antes de responder.'
+  : 'No hay un canal de Instagram activo disponible para esta conversación. Revisa Canales o reconecta Instagram antes de responder.';
 
 function inbox_contact_name(array $conversation): string {
   $name = trim((string) ($conversation['display_name'] ?? ''));
   if ($name !== '') return $name;
   $username = trim((string) ($conversation['username'] ?? ''));
   if ($username !== '') return '@' . ltrim($username, '@');
-  return 'Contacto de Instagram';
+  return conv_conversation_provider($conversation) === 'messenger' ? 'Contacto de Messenger' : 'Contacto de Instagram';
+}
+
+function inbox_source_label(array $conversation): string {
+  return conv_conversation_provider($conversation) === 'messenger' ? 'Messenger' : 'Instagram';
+}
+
+function inbox_source_contact_html(array $conversation): string {
+  $provider = conv_conversation_provider($conversation);
+  if ($provider === 'messenger') {
+    return !empty($conversation['profile_url'])
+      ? '<a href="' . h((string) $conversation['profile_url']) . '" target="_blank" rel="noopener">Perfil de Messenger</a>'
+      : '—';
+  }
+  return !empty($conversation['username'])
+    ? '<a href="' . h((string) ($conversation['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $conversation['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $conversation['username']) . '</a>'
+    : '—';
 }
 
 function inbox_short($value, int $max = 70): string {
@@ -347,7 +366,7 @@ function inbox_channel_label(array $channel): string {
   if ($username !== '') return '@' . ltrim($username, '@');
   $pageName = trim((string) ($channel['page_name'] ?? ''));
   if ($pageName !== '') return $pageName;
-  return trim((string) ($channel['page_id'] ?? 'Canal de Instagram'));
+  return trim((string) ($channel['page_id'] ?? 'Canal de Meta'));
 }
 
 function inbox_has_displayable_attachment(array $attachments): bool {
@@ -586,7 +605,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
             <h1 class="title">Inbox conversacional</h1>
-            <p class="subtitle">Gestiona conversaciones de Instagram y su avance comercial desde el CRM.</p>
+            <p class="subtitle">Gestiona conversaciones de Instagram, Messenger y su avance comercial desde el CRM.</p>
           </div>
           <div class="inbox-actions app-nav-actions">
             <?php nav_render_view_button('inbox'); ?>
@@ -641,7 +660,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <div class="conversation-preview"><?= h(inbox_short($conversation['last_message_preview'] ?? '', 92)) ?></div>
                 </a>
               <?php endforeach; else: ?>
-                <div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo DM de Instagram.</div>
+                <div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram o Messenger.</div>
               <?php endif; ?>
             </div>
           </aside>
@@ -655,7 +674,7 @@ function inbox_visible_message_text($value, array $attachments): string {
               <header class="chat-header">
                 <div>
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
-                  <p><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
+                  <p><?= h(inbox_source_label($selected)) ?> · <?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Canal Meta')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
                 </div>
                 <a class="inbox-link" href="<?= h(account_url('dashboard.php', ['q' => $funnelSearch, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null], $requestSlug !== '' ? $requestSlug : null)) ?>">Ver en embudo</a>
               </header>
@@ -709,7 +728,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                 <div class="composer-main">
                   <div class="composer-input">
-                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para Instagram" <?= $canReplyFromCrm ? '' : 'disabled' ?>></textarea>
+                    <textarea name="message" maxlength="1000" placeholder="Escribe una respuesta para <?= h(inbox_source_label($selected)) ?>" <?= $canReplyFromCrm ? '' : 'disabled' ?>></textarea>
                     <div class="recording-surface" id="audioRecordingSurface" hidden>
                       <canvas class="recording-canvas" id="audioWaveCanvas" width="900" height="180" aria-hidden="true"></canvas>
                       <div class="recording-center">
@@ -773,8 +792,8 @@ function inbox_visible_message_text($value, array $attachments): string {
                   </div>
                 <?php endif; ?>
                 <div class="info-row"><span>Contacto</span><strong><?= h(inbox_contact_name($selected)) ?></strong></div>
-                <div class="info-row"><span>Instagram</span><strong><?= !empty($selected['username']) ? '<a href="' . h((string) ($selected['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $selected['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $selected['username']) . '</a>' : '—' ?></strong></div>
-                <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Instagram')) ?></strong></div>
+                <div class="info-row"><span><?= h(inbox_source_label($selected)) ?></span><strong><?= inbox_source_contact_html($selected) ?></strong></div>
+                <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Canal Meta')) ?></strong></div>
                 <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
 
                 <?php if (!empty($selected['lead_id'])): ?>
@@ -1122,7 +1141,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     function renderConversations(items) {
       if (!conversationList || !Array.isArray(items)) return;
       if (!items.length) {
-        conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo DM de Instagram.</div>';
+        conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram o Messenger.</div>';
         return;
       }
       conversationList.innerHTML = items.map(item => {

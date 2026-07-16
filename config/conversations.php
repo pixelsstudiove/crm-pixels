@@ -527,6 +527,15 @@ function conv_instagram_send_targets(array $channel): array {
   return array_values(array_unique($targets));
 }
 
+function conv_conversation_provider(array $conversation): string {
+  $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
+  return $source === 'messenger' ? 'messenger' : 'instagram';
+}
+
+function conv_provider_label(string $provider): string {
+  return $provider === 'messenger' ? 'Facebook Messenger' : 'Instagram';
+}
+
 function conv_instagram_channel_for_conversation(PDO $pdo, array $conversation): ?array {
   $channelsTable = ig_channels_table();
   $channelId = (int) ($conversation['channel_id'] ?? 0);
@@ -563,7 +572,86 @@ SQL);
   return null;
 }
 
+function conv_messenger_send_targets(array $channel): array {
+  $targets = array_values(array_filter([
+    (string) ($channel['page_id'] ?? ''),
+    'me',
+  ], static fn($value) => trim($value) !== ''));
+  return array_values(array_unique($targets));
+}
+
+function conv_send_messenger_message(PDO $pdo, array $conversation, string $message): array {
+  $message = trim($message);
+  if ($message === '') return ['ok' => false, 'error' => 'El mensaje esta vacio.'];
+
+  $channel = conv_instagram_channel_for_conversation($pdo, $conversation);
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de Messenger no disponible o existen varios canales activos para esta cuenta.'];
+
+  $token = (string) ($channel['page_access_token'] ?? '');
+  $recipientId = (string) ($conversation['contact_external_id'] ?? '');
+  if ($token === '' || $recipientId === '') return ['ok' => false, 'error' => 'Faltan credenciales del canal o destinatario.'];
+
+  $payload = [
+    'recipient' => ['id' => $recipientId],
+    'message' => ['text' => $message],
+    'messaging_type' => 'RESPONSE',
+  ];
+
+  $lastError = 'No se pudo enviar el mensaje.';
+  foreach (conv_messenger_send_targets($channel) as $target) {
+    $response = conv_graph_post_json_base(ig_graph_base(), $target . '/messages', $payload, $token);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+    }
+    $lastError = (string) ($response['error'] ?? $lastError);
+  }
+
+  return ['ok' => false, 'error' => $lastError];
+}
+
+function conv_send_messenger_attachment(PDO $pdo, array $conversation, string $mediaUrl, string $mediaType): array {
+  $mediaUrl = trim($mediaUrl);
+  $mediaType = conv_clean($mediaType, 40) ?? 'image';
+  if (!in_array($mediaType, ['image', 'audio'], true)) return ['ok' => false, 'error' => 'Tipo de adjunto no permitido.'];
+  if ($mediaUrl === '') return ['ok' => false, 'error' => 'El adjunto no esta disponible.'];
+
+  $channel = conv_instagram_channel_for_conversation($pdo, $conversation);
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de Messenger no disponible o existen varios canales activos para esta cuenta.'];
+
+  $token = (string) ($channel['page_access_token'] ?? '');
+  $recipientId = (string) ($conversation['contact_external_id'] ?? '');
+  if ($token === '' || $recipientId === '') return ['ok' => false, 'error' => 'Faltan credenciales del canal o destinatario.'];
+
+  $payload = [
+    'recipient' => ['id' => $recipientId],
+    'message' => [
+      'attachment' => [
+        'type' => $mediaType,
+        'payload' => [
+          'url' => $mediaUrl,
+          'is_reusable' => true,
+        ],
+      ],
+    ],
+    'messaging_type' => 'RESPONSE',
+  ];
+
+  $lastError = 'No se pudo enviar el adjunto.';
+  foreach (conv_messenger_send_targets($channel) as $target) {
+    $response = conv_graph_post_json_base(ig_graph_base(), $target . '/messages', $payload, $token);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      return ['ok' => true, 'data' => $response['data'], 'target' => $target];
+    }
+    $lastError = (string) ($response['error'] ?? $lastError);
+  }
+
+  return ['ok' => false, 'error' => $lastError];
+}
+
 function conv_send_instagram_message(PDO $pdo, array $conversation, string $message): array {
+  if (conv_conversation_provider($conversation) === 'messenger') {
+    return conv_send_messenger_message($pdo, $conversation, $message);
+  }
   $message = trim($message);
   if ($message === '') return ['ok' => false, 'error' => 'El mensaje esta vacio.'];
 
@@ -595,6 +683,9 @@ function conv_send_instagram_message(PDO $pdo, array $conversation, string $mess
 }
 
 function conv_send_instagram_attachment(PDO $pdo, array $conversation, string $mediaUrl, string $mediaType): array {
+  if (conv_conversation_provider($conversation) === 'messenger') {
+    return conv_send_messenger_attachment($pdo, $conversation, $mediaUrl, $mediaType);
+  }
   $mediaUrl = trim($mediaUrl);
   $mediaType = conv_clean($mediaType, 40) ?? 'image';
   if (!in_array($mediaType, ['image', 'audio'], true)) return ['ok' => false, 'error' => 'Tipo de adjunto no permitido.'];
@@ -683,6 +774,8 @@ SQL);
   $accountId = (int) (($conversation['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $currentLeadId = (int) ($conversation['lead_id'] ?? 0);
   if ($currentLeadId > 0) return $currentLeadId;
+  $provider = conv_conversation_provider($conversation);
+  $providerLabel = conv_provider_label($provider);
 
   $senderId = conv_clean($conversation['external_contact_id'] ?? null, 160);
   if ($senderId === null) return 0;
@@ -700,15 +793,20 @@ SQL);
   $contactKey = $recipientId . ':' . $senderId;
 
   $existing = $pdo->prepare("SELECT id FROM {$leadsTable} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
-  $existing->execute([$accountId, 'instagram', $contactKey]);
+  $existing->execute([$accountId, $provider, $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
 
   $displayName = conv_clean($conversation['display_name'] ?? null, 180);
   $username = conv_clean($conversation['username'] ?? null, 180);
-  $fullname = $displayName ?: ($username ? '@' . ltrim($username, '@') : 'Lead Instagram #' . substr($senderId, -6));
-  $brandInstagram = $username;
-  $messageText = conv_clean($conversation['last_message_preview'] ?? 'Conversacion iniciada desde Instagram.', 5000) ?? 'Conversacion iniciada desde Instagram.';
+  $fullname = $displayName ?: ($username ? '@' . ltrim($username, '@') : 'Lead ' . $providerLabel . ' #' . substr($senderId, -6));
+  $brandInstagram = $provider === 'instagram' ? $username : null;
+  $messageText = conv_clean($conversation['last_message_preview'] ?? 'Conversacion iniciada desde ' . $providerLabel . '.', 5000) ?? 'Conversacion iniciada desde ' . $providerLabel . '.';
   $messageAt = conv_clean($conversation['last_message_at'] ?? $conversation['created_at'] ?? gmdate('Y-m-d H:i:s'), 30) ?? gmdate('Y-m-d H:i:s');
+  $businessType = $provider === 'messenger' ? 'Messenger' : (string) app_config('instagram.default_business_type', 'Instagram DM');
+  $service = $provider === 'messenger' ? 'Mensaje directo de Facebook Messenger' : (string) app_config('instagram.default_service', 'Mensaje directo de Instagram');
+  $objective = $provider === 'messenger' ? 'Conversación iniciada desde Facebook Messenger' : (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram');
+  $utmSource = $provider === 'messenger' ? 'facebook' : 'instagram';
+  $utmMedium = $provider === 'messenger' ? 'messenger' : 'dm';
 
   if ($leadId <= 0) {
     $insert = $pdo->prepare(<<<SQL
@@ -718,19 +816,23 @@ INSERT INTO {$leadsTable} (
   external_source, external_contact_id, external_thread_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
   ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
-  'Instagram DM', 'instagram', 'dm', ?, 'pending', 0, 'disabled',
-  'instagram', ?, ?, ?, ?, ?
+  ?, ?, ?, ?, 'pending', 0, 'disabled',
+  ?, ?, ?, ?, ?, ?
 )
 SQL);
     $insert->execute([
       $accountId,
       $fullname,
       $brandInstagram,
-      (string) app_config('instagram.default_business_type', 'Instagram DM'),
-      (string) app_config('instagram.default_service', 'Mensaje directo de Instagram'),
-      (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram'),
+      $businessType,
+      $service,
+      $objective,
       $messageText,
+      $providerLabel,
+      $utmSource,
+      $utmMedium,
       $defaultSalesStatus,
+      $provider,
       $contactKey,
       $threadId ?: $contactKey,
       $messageAt,
@@ -743,6 +845,7 @@ SQL);
 UPDATE {$leadsTable}
 SET
   fullname = CASE WHEN fullname IS NULL OR fullname = '' OR fullname LIKE 'Lead Instagram #%'
+      OR fullname LIKE 'Lead Facebook Messenger #%'
     THEN ? ELSE fullname END,
   brand_instagram = COALESCE(brand_instagram, ?),
   external_thread_id = COALESCE(external_thread_id, ?),

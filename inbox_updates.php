@@ -34,7 +34,7 @@ function updates_contact_name(array $conversation): string {
   if ($name !== '') return $name;
   $username = trim((string) ($conversation['username'] ?? ''));
   if ($username !== '') return '@' . ltrim($username, '@');
-  return 'Contacto de Instagram';
+  return conv_conversation_provider($conversation) === 'messenger' ? 'Contacto de Messenger' : 'Contacto de Instagram';
 }
 
 function updates_short($value, int $max = 92): string {

@@ -47,6 +47,11 @@ function send_public_media_text(string $type): string {
   return $type === 'audio' ? 'Audio enviado' : 'Imagen enviada';
 }
 
+function send_conversation_provider(array $conversation): string {
+  $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
+  return $source === 'messenger' ? 'messenger' : 'instagram';
+}
+
 function send_conversation_has_outbound(PDO $pdo, int $conversationId): bool {
   if ($conversationId <= 0) return false;
   $messagesTable = conv_messages_table();
@@ -163,6 +168,7 @@ $conversation = $stmt->fetch();
 if (!$conversation) send_redirect($conversationId, 'No se encontro la conversacion.', $conversationRouteId);
 
 $conversationAccountId = (int) (($conversation['account_id'] ?? $currentAccountId) ?: accounts_default_id($pdo));
+$conversationProvider = send_conversation_provider($conversation);
 $leadId = (int) ($conversation['lead_id'] ?? 0);
 if ($leadId <= 0 && isset($TABLE_LEADS)) {
   $leadId = conv_ensure_lead_for_conversation($pdo, $TABLE_LEADS, $conversationId);
@@ -202,7 +208,7 @@ if ($hasMedia) {
     if ($mediaType === 'audio' && $mime === 'video/webm') $mime = 'audio/webm';
     if ($mediaType === 'audio' && $mime === 'application/ogg') $mime = 'audio/ogg';
 
-    $key = r2_random_key('instagram/outbound/' . $mediaType . '/' . $conversationId, $mime);
+    $key = r2_random_key($conversationProvider . '/outbound/' . $mediaType . '/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);
     if (!($upload['ok'] ?? false)) send_redirect($conversationId, 'No se pudo subir uno de los adjuntos a R2.', $conversationRouteId);
     $signedUrl = r2_presigned_url($key, 3600);
@@ -315,7 +321,7 @@ conv_upsert_conversation($pdo, [
   'channel_id' => $conversation['channel_id'] ?? null,
   'contact_id' => (int) $conversation['contact_id'],
   'lead_id' => $conversation['lead_id'] ?? null,
-  'external_source' => 'instagram',
+  'external_source' => $conversationProvider,
   'external_thread_id' => (string) $conversation['external_thread_id'],
   'last_message_preview' => $lastPreview !== '' ? $lastPreview : 'Adjunto enviado',
   'last_message_at' => $now,

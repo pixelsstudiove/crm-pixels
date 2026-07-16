@@ -350,7 +350,15 @@ SELECT
   ch.page_name,
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,
-  COALESCE(l.fullname, ct.display_name, NULLIF(CONCAT('@', TRIM(LEADING '@' FROM COALESCE(ct.username, ''))), '@'), 'Contacto de Instagram') AS fullname,
+  COALESCE(
+    l.fullname,
+    ct.display_name,
+    NULLIF(CONCAT('@', TRIM(LEADING '@' FROM COALESCE(ct.username, ''))), '@'),
+    CASE
+      WHEN c.external_source = 'messenger' THEN 'Contacto de Messenger'
+      ELSE 'Contacto de Instagram'
+    END
+  ) AS fullname,
   l.phone,
   l.email,
   COALESCE(l.brand_instagram, ct.username) AS brand_instagram,
@@ -418,6 +426,11 @@ function is_instagram_lead(array $lead): bool {
   $source = mb_strtolower(trim((string) ($lead['source_platform'] ?? '')));
   return $external === 'instagram' || str_contains($source, 'instagram');
 }
+function is_messenger_lead(array $lead): bool {
+  $external = mb_strtolower(trim((string) ($lead['external_source'] ?? '')));
+  $source = mb_strtolower(trim((string) ($lead['source_platform'] ?? '')));
+  return $external === 'messenger' || str_contains($source, 'messenger');
+}
 function instagram_inbox_url(): string {
   return (string) app_config('instagram.dm_inbox_url', 'https://www.instagram.com/direct/inbox/');
 }
@@ -469,6 +482,7 @@ function lead_contact_display(array $lead): string {
   $phone = dash_value($lead['phone'] ?? null);
   if ($phone !== '—') return $phone;
   if (is_instagram_lead($lead)) return 'Instagram DM';
+  if (is_messenger_lead($lead)) return 'Facebook Messenger';
   return '—';
 }
 function datetime_local_value($value): string {
@@ -1561,6 +1575,7 @@ function dash_channel_label(array $channel): string {
                       $phoneValue = dash_value($lead['phone'] ?? null);
                       $wa = $phoneValue !== '—' ? wa_number_from_formatted($phoneValue) : '';
                       $isInstagramLead = is_instagram_lead($lead);
+                      $isMessengerLead = is_messenger_lead($lead);
                       $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
                       $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
                       $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
@@ -1582,6 +1597,8 @@ function dash_channel_label(array $channel): string {
                               <span>-</span>
                               <a href="<?= h($igUrl) ?>" target="_blank" rel="noopener">@<?= h($igHandle) ?></a>
                             <?php endif; ?>
+                          <?php elseif ($isMessengerLead): ?>
+                            <span>Facebook Messenger</span>
                           <?php else: ?>
                             <?= h(lead_contact_display($lead)) ?>
                           <?php endif; ?>

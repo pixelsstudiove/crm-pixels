@@ -11,8 +11,10 @@ return [
   'META_REPLY_WARNING_HOURS' => '22',
   'META_NO_RESPONSE_THRESHOLD_HOURS' => '2',
   'META_GRAPH_VERSION' => 'v25.0',
+  // Facebook/Fanpage habilita mensajes de Messenger y, si la fanpage tiene Instagram vinculado, DMs de Instagram.
   'FACEBOOK_APP_ID' => '',
   'FACEBOOK_APP_SECRET' => '',
+  // Instagram Login directo habilita conexión sin pasar por fanpage.
   'INSTAGRAM_APP_ID' => '',
   'INSTAGRAM_WEBHOOK_VERIFY_TOKEN' => '',
   'INSTAGRAM_APP_SECRET' => '',

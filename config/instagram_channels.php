@@ -149,8 +149,14 @@ ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
   connection_type = VALUES(connection_type),
   page_name = VALUES(page_name),
-  instagram_user_id = VALUES(instagram_user_id),
-  instagram_username = VALUES(instagram_username),
+  instagram_user_id = CASE
+    WHEN VALUES(instagram_user_id) LIKE 'messenger:%' AND instagram_user_id NOT LIKE 'messenger:%' THEN instagram_user_id
+    ELSE VALUES(instagram_user_id)
+  END,
+  instagram_username = CASE
+    WHEN COALESCE(VALUES(instagram_username), '') = '' AND COALESCE(instagram_username, '') <> '' THEN instagram_username
+    ELSE VALUES(instagram_username)
+  END,
   page_access_token = VALUES(page_access_token),
   token_expires_at = VALUES(token_expires_at),
   scopes = VALUES(scopes),

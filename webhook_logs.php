@@ -38,7 +38,7 @@ LEFT JOIN {$messagesTable} m
   ON m.conversation_id = l.conversation_id
   AND m.direction = 'inbound'
   AND m.message_text = l.message_preview
-WHERE l.source='instagram'
+WHERE l.source IN ('instagram', 'messenger')
   AND l.conversation_id IS NOT NULL
   AND l.message_preview IS NOT NULL
   AND l.status IN ('processed', 'duplicate', 'lead_only')
@@ -115,7 +115,7 @@ function log_badge_class(string $status): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Eventos de Instagram - Pixels Studio</title>
+  <title>Eventos de Meta - Pixels Studio</title>
   <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <style>
     :root { --container-w:min(98vw, 1360px); }
@@ -145,7 +145,7 @@ function log_badge_class(string $status): string {
         <header class="logs-header">
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
-            <h1 class="title">Eventos de Instagram</h1>
+            <h1 class="title">Eventos de Meta</h1>
             <p class="subtitle">Monitoreo tecnico de mensajes recibidos por el webhook.</p>
           </div>
           <?php nav_render_config_top_nav($pdo, 'webhook_logs.php', $filterAccountId, ['status' => $status], ['status' => $status]); ?>

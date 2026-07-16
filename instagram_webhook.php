@@ -40,12 +40,47 @@ function ig_message_time($timestamp): string {
 }
 
 function ig_validate_signature(string $rawBody): bool {
-  $secret = (string) app_config('instagram.app_secret', '');
-  if ($secret === '') return true;
+  $secrets = array_values(array_unique(array_filter([
+    (string) app_config('instagram.app_secret', ''),
+    (string) app_config('instagram.facebook_app_secret', ''),
+  ], static fn($secret) => trim($secret) !== '')));
+  if (!$secrets) return true;
   $signature = (string) ($_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '');
   if (!str_starts_with($signature, 'sha256=')) return false;
-  $expected = 'sha256=' . hash_hmac('sha256', $rawBody, $secret);
-  return hash_equals($expected, $signature);
+  foreach ($secrets as $secret) {
+    $expected = 'sha256=' . hash_hmac('sha256', $rawBody, $secret);
+    if (hash_equals($expected, $signature)) return true;
+  }
+  return false;
+}
+
+function ig_provider_from_payload(array $payload): string {
+  $object = strtolower(trim((string) ($payload['object'] ?? '')));
+  return $object === 'page' ? 'messenger' : 'instagram';
+}
+
+function ig_provider_label(string $provider): string {
+  return $provider === 'messenger' ? 'Facebook Messenger' : 'Instagram DM';
+}
+
+function ig_provider_source(string $provider): string {
+  return $provider === 'messenger' ? 'facebook' : 'instagram';
+}
+
+function ig_provider_medium(string $provider): string {
+  return $provider === 'messenger' ? 'messenger' : 'dm';
+}
+
+function ig_provider_default_business_type(string $provider): string {
+  return $provider === 'messenger' ? 'Messenger' : (string) app_config('instagram.default_business_type', 'Instagram DM');
+}
+
+function ig_provider_default_service(string $provider): string {
+  return $provider === 'messenger' ? 'Mensaje directo de Facebook Messenger' : (string) app_config('instagram.default_service', 'Mensaje directo de Instagram');
+}
+
+function ig_provider_default_objective(string $provider): string {
+  return $provider === 'messenger' ? 'Conversación iniciada desde Facebook Messenger' : (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram');
 }
 
 function ig_ensure_leads_schema(PDO $pdo, string $dbName, string $table): void {
@@ -186,7 +221,7 @@ function ig_ensure_channel_schema_safe(PDO $pdo): string {
   return $table;
 }
 
-function ig_event_text(array $event): string {
+function ig_event_text(array $event, string $provider = 'instagram'): string {
   $text = ig_clean($event['message']['text'] ?? null, 1200);
   if ($text !== null) return $text;
   $postback = ig_clean($event['postback']['title'] ?? null, 1200);
@@ -200,7 +235,7 @@ function ig_event_text(array $event): string {
     }
     return 'Adjunto recibido: ' . implode(', ', array_unique($types));
   }
-  return 'Mensaje recibido desde Instagram.';
+  return 'Mensaje recibido desde ' . ig_provider_label($provider) . '.';
 }
 
 function ig_referral_data(array $event): array {
@@ -216,10 +251,24 @@ function ig_referral_data(array $event): array {
   ];
 }
 
-function ig_contact_profile(?array $channel, ?string $senderId): array {
+function ig_contact_profile(?array $channel, ?string $senderId, string $provider = 'instagram'): array {
   $senderId = ig_clean($senderId, 120);
   $token = ig_clean($channel['page_access_token'] ?? null, 2000);
   if ($senderId === null || $token === null) return [];
+
+  if ($provider === 'messenger') {
+    $response = ig_graph_request_base(ig_graph_base(), 'GET', $senderId, [
+      'fields' => 'name,first_name,last_name,profile_pic',
+      'access_token' => $token,
+    ]);
+    if (!($response['ok'] ?? false) || !isset($response['data']) || !is_array($response['data'])) return [];
+    $name = ig_clean($response['data']['name'] ?? trim((string) (($response['data']['first_name'] ?? '') . ' ' . ($response['data']['last_name'] ?? ''))), 120);
+    return [
+      'name' => $name,
+      'username' => null,
+      'profile_url' => ig_clean($response['data']['profile_pic'] ?? null, 255),
+    ];
+  }
 
   $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
   $bases = $isDirectLogin
@@ -318,7 +367,7 @@ function ig_media_label(string $type): string {
   return $type === 'audio' ? 'audio' : 'imagen';
 }
 
-function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel): array {
+function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel, string $provider = 'instagram'): array {
   $result = ['total' => 0, 'stored' => 0, 'errors' => []];
   if ($conversationId <= 0 || $messageId <= 0) {
     $result['errors'][] = 'Conversación o mensaje inválido para adjuntos.';
@@ -375,7 +424,7 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
     if ($type === 'audio' && $mime === 'video/webm') $mime = 'audio/webm';
     if ($type === 'audio' && $mime === 'application/ogg') $mime = 'audio/ogg';
 
-    $key = r2_random_key('instagram/inbound/' . $type . '/' . $conversationId, $mime);
+    $key = r2_random_key($provider . '/inbound/' . $type . '/' . $conversationId, $mime);
     $upload = r2_upload_bytes($key, $bytes, $mime);
     if (!($upload['ok'] ?? false)) {
       $result['errors'][] = 'R2 no aceptó el adjunto: ' . (string) ($upload['error'] ?? 'error desconocido');
@@ -392,7 +441,7 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
       'storage_disk' => 'r2',
       'storage_key' => $key,
       'original_url' => $url,
-      'filename' => basename(parse_url($url, PHP_URL_PATH) ?: ('instagram-' . $type . '.' . r2_extension_from_mime($mime))),
+      'filename' => basename(parse_url($url, PHP_URL_PATH) ?: ($provider . '-' . $type . '.' . r2_extension_from_mime($mime))),
       'external_attachment_id' => ig_clean($payload['attachment_id'] ?? null, 180),
     ]);
     if ($attachmentId > 0) $result['stored']++;
@@ -401,16 +450,17 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
   return $result;
 }
 
-function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event): array {
+function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event, string $provider = 'instagram'): array {
   try {
     conv_ensure_schema($pdo);
     $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
     $contactId = conv_upsert_contact($pdo, [
       'account_id' => $accountId,
-      'external_source' => 'instagram',
+      'external_source' => $provider,
       'external_contact_id' => $senderId,
       'display_name' => $profileName ?: $profileUsername,
       'username' => $profileUsername,
+      'profile_url' => ig_clean($event['_profile_url'] ?? null, 255),
       'last_seen_at' => $messageAt,
     ]);
     if ($contactId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar el contacto.'];
@@ -420,7 +470,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'channel_id' => $channel['id'] ?? null,
       'contact_id' => $contactId,
       'lead_id' => $leadId > 0 ? $leadId : null,
-      'external_source' => 'instagram',
+      'external_source' => $provider,
       'external_thread_id' => $threadId,
       'last_message_preview' => $messageText,
       'last_message_at' => $messageAt,
@@ -450,13 +500,13 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
 
     $attachmentResult = ['total' => 0, 'stored' => 0, 'errors' => []];
     if ($inserted > 0) {
-      $attachmentResult = ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel);
+      $attachmentResult = ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel, $provider);
       conv_upsert_conversation($pdo, [
         'account_id' => $accountId,
         'channel_id' => $channel['id'] ?? null,
         'contact_id' => $contactId,
         'lead_id' => $leadId > 0 ? $leadId : null,
-        'external_source' => 'instagram',
+        'external_source' => $provider,
         'external_thread_id' => $threadId,
         'last_message_preview' => $messageText,
         'last_message_at' => $messageAt,
@@ -478,15 +528,16 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
   }
 }
 
-function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $event): int {
+function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $event, string $provider = 'instagram'): int {
   $senderId = ig_clean($event['sender']['id'] ?? null, 120);
   if ($senderId === null) return 0;
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
   $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 2000);
-  $messageText = ig_event_text($event);
+  $messageText = ig_event_text($event, $provider);
   if ($recipientId === null) {
     conv_log_webhook_event($pdo, [
+      'source' => $provider,
       'status' => 'ignored',
       'event_type' => 'missing_recipient',
       'sender_id' => $senderId,
@@ -501,6 +552,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId);
   if (!$channel) {
     conv_log_webhook_event($pdo, [
+      'source' => $provider,
       'status' => 'ignored',
       'event_type' => 'inactive_or_unknown_channel',
       'recipient_id' => $recipientId,
@@ -517,22 +569,26 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
   $ref = ig_referral_data($event);
-  $profile = ig_contact_profile($channel ?: null, $senderId);
+  $profile = ig_contact_profile($channel ?: null, $senderId, $provider);
   $profileName = $profile['name'] ?? null;
   $profileUsername = $profile['username'] ?? null;
+  if (!empty($profile['profile_url'])) $event['_profile_url'] = $profile['profile_url'];
   $profileDisplayName = $profileName ?: $profileUsername;
 
   $contactKey = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
 
   $existing = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
-  $existing->execute([$accountId, 'instagram', $contactKey]);
+  $existing->execute([$accountId, $provider, $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
 
   if ($leadId > 0) {
     $update = $pdo->prepare(<<<SQL
 UPDATE {$table}
 SET
-  fullname = CASE WHEN ? IS NOT NULL AND (fullname = '' OR fullname LIKE 'Lead Instagram #%') THEN ? ELSE fullname END,
+  fullname = CASE
+    WHEN ? IS NOT NULL AND (fullname = '' OR fullname LIKE 'Lead Instagram #%' OR fullname LIKE 'Lead Facebook Messenger #%') THEN ?
+    ELSE fullname
+  END,
   brand_instagram = CASE WHEN ? IS NOT NULL THEN ? ELSE brand_instagram END,
   external_thread_id = ?,
   last_external_message_id = ?,
@@ -553,20 +609,21 @@ SQL);
         $stamp->execute([$messageAt, (int) $channel['id']]);
       } catch (Throwable $e) { /* no-op */ }
     }
-    $sync = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+    $sync = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider);
     $conversationId = (int) ($sync['conversation_id'] ?? 0);
     $conversationMessageId = (int) ($sync['message_id'] ?? 0);
     $messageInserted = (bool) ($sync['message_inserted'] ?? false);
     $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
     $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
     conv_log_webhook_event($pdo, [
+      'source' => $provider,
       'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
       'account_id' => $accountId,
       'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
       'recipient_id' => $recipientId,
       'sender_id' => $senderId,
       'channel_id' => (int) $channel['id'],
-      'channel_username' => $channel['instagram_username'] ?? $channel['page_name'] ?? null,
+      'channel_username' => $provider === 'messenger' ? ($channel['page_name'] ?? null) : ($channel['instagram_username'] ?? $channel['page_name'] ?? null),
       'external_message_id' => $messageId,
       'lead_id' => $leadId,
       'conversation_id' => $conversationId > 0 ? $conversationId : null,
@@ -578,8 +635,8 @@ SQL);
   }
 
   $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
-  $fullname = $profileDisplayName ?: 'Lead Instagram #' . substr($senderId, -6);
-  $brandInstagram = $profileUsername;
+  $fullname = $profileDisplayName ?: 'Lead ' . ig_provider_label($provider) . ' #' . substr($senderId, -6);
+  $brandInstagram = $provider === 'instagram' ? $profileUsername : null;
 
   $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
@@ -589,8 +646,8 @@ INSERT INTO {$table} (
   last_external_message_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
   ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
-  'Instagram DM', 'instagram', 'dm', ?, ?, ?, ?,
-  ?, 'pending', 0, 'disabled', 'instagram', ?, ?,
+  ?, ?, ?, ?, ?, ?, ?,
+  ?, 'pending', 0, 'disabled', ?, ?, ?,
   ?, ?, ?, ?
 )
 SQL);
@@ -598,15 +655,19 @@ SQL);
     $accountId,
     $fullname,
     $brandInstagram,
-    (string) app_config('instagram.default_business_type', 'Instagram DM'),
-    (string) app_config('instagram.default_service', 'Mensaje directo de Instagram'),
-    (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram'),
+    ig_provider_default_business_type($provider),
+    ig_provider_default_service($provider),
+    ig_provider_default_objective($provider),
     $messageText,
+    ig_provider_label($provider),
+    ig_provider_source($provider),
+    ig_provider_medium($provider),
     $ref['campaign'],
     $ref['content'],
     $ref['ad_name'],
     $ref['ad_id'],
     $defaultSalesStatus,
+    $provider,
     $contactKey,
     $threadId,
     $messageId,
@@ -623,20 +684,21 @@ SQL);
   }
 
   $leadId = (int) $pdo->lastInsertId();
-  $sync = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event);
+  $sync = ig_sync_conversation($pdo, $channel ?: null, $senderId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider);
   $conversationId = (int) ($sync['conversation_id'] ?? 0);
   $conversationMessageId = (int) ($sync['message_id'] ?? 0);
   $messageInserted = (bool) ($sync['message_inserted'] ?? false);
   $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
   $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
   conv_log_webhook_event($pdo, [
+    'source' => $provider,
     'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
     'account_id' => $accountId,
     'event_type' => isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'),
     'recipient_id' => $recipientId,
     'sender_id' => $senderId,
     'channel_id' => (int) $channel['id'],
-    'channel_username' => $channel['instagram_username'] ?? $channel['page_name'] ?? null,
+    'channel_username' => $provider === 'messenger' ? ($channel['page_name'] ?? null) : ($channel['instagram_username'] ?? $channel['page_name'] ?? null),
     'external_message_id' => $messageId,
     'lead_id' => $leadId,
     'conversation_id' => $conversationId > 0 ? $conversationId : null,
@@ -658,7 +720,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     exit;
   }
   http_response_code(403);
-  echo 'Webhook de Instagram no verificado.';
+  echo 'Webhook de Meta no verificado.';
   exit;
 }
 
@@ -679,6 +741,7 @@ if (!is_array($payload)) {
 try {
   ig_ensure_leads_schema($pdo, $DB_NAME, $TABLE_LEADS);
   $channelsTable = ig_ensure_channel_schema_safe($pdo);
+  $provider = ig_provider_from_payload($payload);
   $createdOrUpdated = [];
   $ignoredEvents = 0;
   foreach (($payload['entry'] ?? []) as $entry) {
@@ -687,7 +750,7 @@ try {
       if (!is_array($event)) continue;
       if (!empty($event['message']['is_echo'])) continue;
       if (!isset($event['message']) && !isset($event['postback'])) continue;
-      $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $channelsTable, $event);
+      $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $channelsTable, $event, $provider);
       if ($leadId > 0) $createdOrUpdated[] = $leadId;
       else $ignoredEvents++;
     }
