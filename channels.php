@@ -3,6 +3,8 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/instagram_channels.php';
+require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/lead_status_history.php';
 require_once __DIR__ . '/config/navigation.php';
 require_permission('manage_integrations');
 
@@ -58,6 +60,103 @@ function channels_unsubscribe_meta_app(array $channel): bool {
     'access_token' => $token,
   ]);
   return (bool) ($response['ok'] ?? false);
+}
+
+function channels_int_placeholders(array $ids): string {
+  return implode(',', array_fill(0, count($ids), '?'));
+}
+
+function channels_delete_by_ids(PDO $pdo, string $table, string $column, array $ids, ?int $accountId = null): int {
+  $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+  if (!$ids) return 0;
+  $deleted = 0;
+  foreach (array_chunk($ids, 200) as $chunk) {
+    $sql = "DELETE FROM {$table} WHERE {$column} IN (" . channels_int_placeholders($chunk) . ")";
+    $params = $chunk;
+    if ($accountId !== null && $accountId > 0) {
+      $sql .= ' AND account_id=?';
+      $params[] = $accountId;
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $deleted += $stmt->rowCount();
+  }
+  return $deleted;
+}
+
+function channels_delete_related_data(PDO $pdo, string $channelsTable, array $channel, string $leadsTable): array {
+  conv_ensure_schema($pdo);
+  lead_status_history_ensure_schema($pdo);
+
+  $channelId = (int) ($channel['id'] ?? 0);
+  $accountId = (int) ($channel['account_id'] ?? 0);
+  if ($channelId <= 0 || $accountId <= 0) {
+    return ['conversations' => 0, 'messages' => 0, 'attachments' => 0, 'leads' => 0, 'history' => 0, 'logs' => 0, 'contacts' => 0];
+  }
+
+  $conversationsTable = conv_conversations_table();
+  $messagesTable = conv_messages_table();
+  $attachmentsTable = conv_attachments_table();
+  $contactsTable = conv_contacts_table();
+  $logsTable = conv_webhook_logs_table();
+  $historyTable = lead_status_history_table();
+  $leadsTable = safe_identifier($leadsTable, 'leads');
+  $channelsTable = safe_identifier($channelsTable, 'instagram_channels');
+
+  $conversationStmt = $pdo->prepare("SELECT id, contact_id, lead_id FROM {$conversationsTable} WHERE channel_id=? AND account_id=?");
+  $conversationStmt->execute([$channelId, $accountId]);
+  $rows = $conversationStmt->fetchAll();
+  $conversationIds = [];
+  $contactIds = [];
+  $leadIds = [];
+  foreach ($rows as $row) {
+    $conversationIds[] = (int) ($row['id'] ?? 0);
+    $contactIds[] = (int) ($row['contact_id'] ?? 0);
+    $leadIds[] = (int) ($row['lead_id'] ?? 0);
+  }
+  $conversationIds = array_values(array_unique(array_filter($conversationIds)));
+  $contactIds = array_values(array_unique(array_filter($contactIds)));
+  $leadIds = array_values(array_unique(array_filter($leadIds)));
+
+  $counts = ['conversations' => 0, 'messages' => 0, 'attachments' => 0, 'leads' => 0, 'history' => 0, 'logs' => 0, 'contacts' => 0];
+  $pdo->beginTransaction();
+  try {
+    if ($conversationIds) {
+      $counts['attachments'] = channels_delete_by_ids($pdo, $attachmentsTable, 'conversation_id', $conversationIds, $accountId);
+      $counts['messages'] = channels_delete_by_ids($pdo, $messagesTable, 'conversation_id', $conversationIds, $accountId);
+      $counts['logs'] += channels_delete_by_ids($pdo, $logsTable, 'conversation_id', $conversationIds, $accountId);
+      if ($leadIds) {
+        $counts['logs'] += channels_delete_by_ids($pdo, $logsTable, 'lead_id', $leadIds, $accountId);
+        $counts['history'] = channels_delete_by_ids($pdo, $historyTable, 'lead_id', $leadIds, $accountId);
+        $counts['leads'] = channels_delete_by_ids($pdo, $leadsTable, 'id', $leadIds, $accountId);
+      }
+      $counts['conversations'] = channels_delete_by_ids($pdo, $conversationsTable, 'id', $conversationIds, $accountId);
+
+      foreach (array_chunk($contactIds, 200) as $chunk) {
+        $sql = "DELETE ct FROM {$contactsTable} ct
+                LEFT JOIN {$conversationsTable} c ON c.contact_id = ct.id
+                WHERE ct.id IN (" . channels_int_placeholders($chunk) . ")
+                  AND ct.account_id=?
+                  AND c.id IS NULL";
+        $params = array_merge($chunk, [$accountId]);
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $counts['contacts'] += $stmt->rowCount();
+      }
+    }
+    $channelLogStmt = $pdo->prepare("DELETE FROM {$logsTable} WHERE channel_id=? AND account_id=?");
+    $channelLogStmt->execute([$channelId, $accountId]);
+    $counts['logs'] += $channelLogStmt->rowCount();
+    $channelStmt = $pdo->prepare("DELETE FROM {$channelsTable} WHERE id=? AND account_id=?");
+    $channelStmt->execute([$channelId, $accountId]);
+
+    $pdo->commit();
+  } catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+  }
+
+  return $counts;
 }
 
 $connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
@@ -146,11 +245,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	        $errors[] = 'No encontramos el canal que intentas desconectar.';
 	      } else {
 	        $unsubscribed = channels_unsubscribe_meta_app($channel);
-	        $stmt = $pdo->prepare("DELETE FROM {$channelsTable} WHERE id=?");
-	        $stmt->execute([$id]);
+	        $cleanup = channels_delete_related_data($pdo, $channelsTable, $channel, $TABLE_LEADS);
+	        $cleanupSummary = sprintf(
+	          ' Se eliminaron %d conversaciones y %d leads relacionados.',
+	          (int) ($cleanup['conversations'] ?? 0),
+	          (int) ($cleanup['leads'] ?? 0)
+	        );
 	        $notice = $unsubscribed
-	          ? 'Canal desconectado de Meta y eliminado del CRM. Para usarlo de nuevo debes iniciar sesion otra vez.'
-	          : 'Canal eliminado del CRM. Si Meta no permitio revocar la suscripcion, reconecta el canal o revisa la app en Meta.';
+	          ? 'Canal desconectado de Meta y eliminado del CRM. Para usarlo de nuevo debes iniciar sesion otra vez.' . $cleanupSummary
+	          : 'Canal eliminado del CRM. Si Meta no permitio revocar la suscripcion, reconecta el canal o revisa la app en Meta.' . $cleanupSummary;
 	      }
 	    }
 	  }
@@ -294,7 +397,7 @@ try {
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="id" value="<?= (int) $channel['id'] ?>">
                 <input type="hidden" name="action" value="disconnect">
-                <button class="channel-btn danger" type="submit" onclick="return confirm('Esto eliminara la conexion del canal con el CRM. Para volver a usarlo deberas iniciar sesion nuevamente en Meta. ¿Deseas continuar?')">Desconectar canal</button>
+                <button class="channel-btn danger" type="submit" onclick="return confirm('Esto eliminara la conexion del canal con el CRM, sus chats del inbox y sus leads del embudo. Para volver a usarlo deberas iniciar sesion nuevamente en Meta. ¿Deseas continuar?')">Desconectar canal</button>
               </form>
             </article>
           <?php endforeach; else: ?>
