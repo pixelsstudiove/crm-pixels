@@ -351,7 +351,7 @@ try {
     }
   </style>
 </head>
-<body class="dashboard-page">
+<body class="dashboard-page config-page">
   <main class="dashboard-shell">
     <section class="form-card dashboard-card">
       <div class="panel">

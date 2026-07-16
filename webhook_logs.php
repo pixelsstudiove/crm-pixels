@@ -138,7 +138,7 @@ function log_badge_class(string $status): string {
     @media (max-width: 760px) { .logs-actions, .logs-filter { width:100%; } .logs-link, .logs-btn { flex:1; } }
   </style>
 </head>
-<body class="dashboard-page">
+<body class="dashboard-page config-page">
   <main class="dashboard-shell">
     <section class="form-card dashboard-card">
       <div class="panel">
@@ -198,15 +198,15 @@ function log_badge_class(string $status): string {
             <tbody>
               <?php if ($logs): foreach ($logs as $log): ?>
                 <tr>
-                  <td class="mono">#<?= (int) $log['id'] ?></td>
-                  <td><span class="log-badge <?= h(log_badge_class((string) $log['status'])) ?>"><?= h((string) $log['status']) ?></span></td>
-                  <td><?= h((string) ($log['event_type'] ?: '—')) ?></td>
-                  <td><?= h((string) ($log['channel_username'] ?: '—')) ?><br><span class="mono"><?= $log['channel_id'] ? '#' . (int) $log['channel_id'] : '—' ?></span></td>
-                  <td class="mono"><?= h((string) ($log['recipient_id'] ?: '—')) ?></td>
-                  <td class="mono"><?= h((string) ($log['sender_id'] ?: '—')) ?></td>
-                  <td class="preview"><?= h((string) ($log['message_preview'] ?: '—')) ?><br><span class="mono"><?= h((string) ($log['external_message_id'] ?: '—')) ?></span></td>
-                  <td class="mono"><?= $log['lead_id'] ? '#' . (int) $log['lead_id'] : '—' ?></td>
-                  <td class="mono">
+                  <td class="mono" data-label="ID">#<?= (int) $log['id'] ?></td>
+                  <td data-label="Estado"><span class="log-badge <?= h(log_badge_class((string) $log['status'])) ?>"><?= h((string) $log['status']) ?></span></td>
+                  <td data-label="Evento"><?= h((string) ($log['event_type'] ?: '—')) ?></td>
+                  <td data-label="Canal"><?= h((string) ($log['channel_username'] ?: '—')) ?><br><span class="mono"><?= $log['channel_id'] ? '#' . (int) $log['channel_id'] : '—' ?></span></td>
+                  <td class="mono" data-label="Recipient"><?= h((string) ($log['recipient_id'] ?: '—')) ?></td>
+                  <td class="mono" data-label="Sender"><?= h((string) ($log['sender_id'] ?: '—')) ?></td>
+                  <td class="preview" data-label="Mensaje"><?= h((string) ($log['message_preview'] ?: '—')) ?><br><span class="mono"><?= h((string) ($log['external_message_id'] ?: '—')) ?></span></td>
+                  <td class="mono" data-label="Lead"><?= $log['lead_id'] ? '#' . (int) $log['lead_id'] : '—' ?></td>
+                  <td class="mono" data-label="Conversación">
                     <?php if ($log['conversation_id']): ?>
                       <?php
                         $logPublicId = (int) ($log['conversation_public_id'] ?? $log['conversation_id']);
@@ -217,11 +217,11 @@ function log_badge_class(string $status): string {
                       —
                     <?php endif; ?>
                   </td>
-                  <td class="preview"><?= h((string) ($log['error_message'] ?: '—')) ?></td>
-                  <td><?= h(app_datetime($log['created_at'] ?? '')) ?></td>
+                  <td class="preview" data-label="Error"><?= h((string) ($log['error_message'] ?: '—')) ?></td>
+                  <td data-label="Fecha"><?= h(app_datetime($log['created_at'] ?? '')) ?></td>
                 </tr>
               <?php endforeach; else: ?>
-                <tr><td colspan="11">Todavia no hay eventos registrados.</td></tr>
+                <tr><td data-label="Eventos" colspan="11">Todavia no hay eventos registrados.</td></tr>
               <?php endif; ?>
             </tbody>
           </table>

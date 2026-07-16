@@ -517,6 +517,251 @@ body{
 .admin-content{
   min-width:0;
 }
+
+/* Vistas de configuracion */
+.config-page{
+  --config-ink:#071120;
+  --config-muted:#64748b;
+  --config-line:#d9e7f3;
+  --config-soft:#f4f8fc;
+  --config-cyan:#00c8f2;
+  --config-navy:#071120;
+  background:#eef4f9;
+}
+.config-page .dashboard-card{
+  background:#f7f9fc!important;
+  border-color:#dce8f3!important;
+  box-shadow:none!important;
+}
+.config-page .dashboard-card .panel{
+  padding:clamp(18px, 2vw, 34px)!important;
+}
+.config-page .accounts-header,
+.config-page .users-header,
+.config-page .channels-header,
+.config-page .logs-header{
+  align-items:center!important;
+  margin-bottom:22px!important;
+  padding-bottom:16px;
+  border-bottom:1px solid #dde8f3;
+}
+.config-page .title{
+  color:var(--config-ink);
+  letter-spacing:-.035em;
+}
+.config-page .subtitle{
+  color:#66758d;
+  font-weight:700;
+}
+.config-page .admin-side-nav{
+  border-color:var(--config-line)!important;
+  border-radius:18px!important;
+  background:#fff!important;
+  box-shadow:0 16px 38px rgba(15, 23, 42, .06)!important;
+}
+.config-page .admin-side-link{
+  min-height:44px;
+  border-radius:12px;
+  color:#273449;
+}
+.config-page .admin-side-link:hover{
+  border-color:#b9d8ec!important;
+  background:#eef8fe!important;
+  color:#007ea8!important;
+}
+.config-page .admin-side-link.is-active{
+  border-color:var(--config-navy)!important;
+  background:var(--config-navy)!important;
+  color:#fff!important;
+}
+.config-page .accounts-box,
+.config-page .users-box,
+.config-page .connect-card,
+.config-page .connect-account-card,
+.config-page .channel-card,
+.config-page .logs-table-wrap{
+  border:1px solid var(--config-line)!important;
+  border-radius:18px!important;
+  background:#fff!important;
+  box-shadow:0 16px 38px rgba(15, 23, 42, .06)!important;
+}
+.config-page .accounts-box,
+.config-page .users-box,
+.config-page .connect-card,
+.config-page .connect-account-card,
+.config-page .channel-card{
+  padding:18px!important;
+}
+.config-page .accounts-box h2,
+.config-page .users-box h2,
+.config-page .connect-card h2,
+.config-page .channel-card h2{
+  color:var(--config-ink)!important;
+  font-size:1.04rem!important;
+  letter-spacing:-.02em;
+}
+.config-page .account-row,
+.config-page .channel-card{
+  position:relative;
+  overflow:hidden;
+}
+.config-page .account-row{
+  border:1px solid var(--config-line)!important;
+  border-radius:16px!important;
+  background:#fff!important;
+  box-shadow:0 12px 28px rgba(15, 23, 42, .05)!important;
+}
+.config-page .account-row::before,
+.config-page .channel-card::before{
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:4px;
+  background:var(--config-cyan);
+}
+.config-page .connect-card::before,
+.config-page .connect-account-card::before,
+.config-page .channel-card[style]::before{
+  display:none;
+}
+.config-page .account-id{
+  background:var(--config-navy)!important;
+  color:#fff!important;
+}
+.config-page .account-pill,
+.config-page .channel-status{
+  border-radius:999px!important;
+  font-weight:900!important;
+}
+.config-page input,
+.config-page select,
+.config-page textarea{
+  border:1px solid var(--config-line)!important;
+  border-radius:12px!important;
+  background-color:#fff!important;
+  color:var(--config-ink)!important;
+  font:inherit!important;
+  font-weight:800!important;
+  outline:none!important;
+  box-shadow:none!important;
+}
+.config-page input,
+.config-page select{
+  min-height:44px!important;
+}
+.config-page textarea{
+  min-height:104px!important;
+}
+.config-page select{
+  appearance:none;
+  background-image:linear-gradient(45deg, transparent 50%, #071120 50%), linear-gradient(135deg, #071120 50%, transparent 50%)!important;
+  background-position:calc(100% - 18px) 50%, calc(100% - 12px) 50%!important;
+  background-size:6px 6px, 6px 6px!important;
+  background-repeat:no-repeat!important;
+  padding-right:36px!important;
+}
+.config-page input:focus,
+.config-page select:focus,
+.config-page textarea:focus{
+  border-color:var(--config-cyan)!important;
+  box-shadow:0 0 0 4px rgba(0, 200, 242, .14)!important;
+}
+.config-page .accounts-link,
+.config-page .users-link,
+.config-page .channel-link,
+.config-page .channel-btn,
+.config-page .logs-link,
+.config-page .logs-btn{
+  min-height:44px!important;
+  border-color:var(--config-navy)!important;
+  border-radius:12px!important;
+  background:var(--config-navy)!important;
+  color:#fff!important;
+  font-weight:900!important;
+  transition:transform .12s ease, background .18s ease, border-color .18s ease, color .18s ease;
+}
+.config-page .accounts-link:hover,
+.config-page .users-link:hover,
+.config-page .channel-link:hover,
+.config-page .channel-btn:hover,
+.config-page .logs-link:hover,
+.config-page .logs-btn:hover{
+  border-color:#172033!important;
+  background:#172033!important;
+  color:#fff!important;
+  transform:translateY(-1px);
+}
+.config-page .channel-link.primary,
+.config-page .channel-btn.primary{
+  background:var(--config-navy)!important;
+  border-color:var(--config-navy)!important;
+  color:#fff!important;
+}
+.config-page .accounts-link.danger,
+.config-page .channel-btn.danger{
+  border-color:#fecdd3!important;
+  background:#fff1f2!important;
+  color:#be123c!important;
+}
+.config-page .accounts-link.danger:hover,
+.config-page .channel-btn.danger:hover{
+  border-color:#be123c!important;
+  background:#be123c!important;
+  color:#fff!important;
+}
+.config-page .channel-btn.warning{
+  border-color:#f3d36c!important;
+  background:#fff7db!important;
+  color:#8a5b00!important;
+}
+.config-page .channel-toggle{
+  min-height:36px!important;
+  border-color:#cbd5e1!important;
+  background:#f8fafc!important;
+  color:#64748b!important;
+}
+.config-page .channel-toggle.is-on{
+  border-color:#99e1b0!important;
+  background:#eafaf0!important;
+  color:#217a43!important;
+}
+.config-page .users-table-wrap,
+.config-page .logs-table-wrap{
+  overflow:auto!important;
+}
+.config-page .users-table,
+.config-page .logs-table{
+  border-collapse:collapse!important;
+}
+.config-page .users-table th,
+.config-page .logs-table th{
+  background:var(--config-navy)!important;
+  color:#fff!important;
+}
+.config-page .users-table td,
+.config-page .logs-table td{
+  border-bottom:1px solid #e6edf5!important;
+  background:#fff!important;
+  color:#24324a!important;
+}
+.config-page .logs-filter{
+  align-items:center;
+}
+.config-page .logs-filter select{
+  min-width:220px;
+}
+.config-page .log-badge.ok{
+  background:#eef9f0!important;
+  color:#217a43!important;
+}
+.config-page .log-badge.warn{
+  background:#fff8df!important;
+  color:#946200!important;
+}
+.config-page .log-badge.muted{
+  background:#f1f5f9!important;
+  color:#64748b!important;
+}
 @media (min-width:768px){
   .dashboard-card .panel{padding:clamp(22px, 1.9vw, 34px);}
 }
@@ -546,6 +791,80 @@ body{
   .admin-side-link{
     flex:0 0 auto;
     white-space:nowrap;
+  }
+  .config-page .accounts-header,
+  .config-page .users-header,
+  .config-page .channels-header,
+  .config-page .logs-header{
+    align-items:flex-start!important;
+  }
+  .config-page .logs-filter{
+    display:grid!important;
+    grid-template-columns:1fr 1fr;
+    width:100%;
+  }
+  .config-page .logs-filter select{
+    grid-column:1 / -1;
+    min-width:0;
+    width:100%;
+  }
+  .config-page .logs-table-wrap{
+    overflow:visible!important;
+    border:0!important;
+    background:transparent!important;
+    box-shadow:none!important;
+  }
+  .config-page .logs-table,
+  .config-page .logs-table tbody,
+  .config-page .logs-table tr,
+  .config-page .logs-table td{
+    display:block;
+    width:100%;
+    min-width:0!important;
+  }
+  .config-page .logs-table{
+    border-collapse:separate!important;
+    border-spacing:0;
+    font-size:.94rem;
+  }
+  .config-page .logs-table thead{
+    display:none;
+  }
+  .config-page .logs-table tr{
+    position:relative;
+    margin-bottom:12px;
+    overflow:hidden;
+    border:1px solid var(--config-line);
+    border-radius:16px;
+    background:#fff;
+    box-shadow:0 12px 28px rgba(15, 23, 42, .05);
+  }
+  .config-page .logs-table tr::before{
+    content:"";
+    position:absolute;
+    inset:0 auto 0 0;
+    width:4px;
+    background:var(--config-cyan);
+  }
+  .config-page .logs-table td{
+    display:grid;
+    grid-template-columns:minmax(108px, 34%) minmax(0, 1fr);
+    gap:10px;
+    align-items:start;
+    padding:10px 14px 10px 18px!important;
+    border-bottom:1px solid #e6edf5!important;
+    overflow-wrap:anywhere;
+  }
+  .config-page .logs-table td::before{
+    content:attr(data-label);
+    color:var(--config-muted);
+    font-size:.76rem;
+    font-weight:900;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+  }
+  .config-page .logs-table td:last-child{
+    border-bottom:0!important;
   }
 }
 
