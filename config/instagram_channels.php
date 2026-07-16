@@ -86,9 +86,10 @@ function ig_graph_request(string $method, string $path, array $params = []): arr
 function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipientId): ?array {
   $recipientId = trim((string) $recipientId);
   if ($recipientId === '') return null;
+  $messengerRecipientId = 'messenger:' . $recipientId;
   try {
-    $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND (page_id=? OR instagram_user_id=?) LIMIT 1");
-    $stmt->execute([$recipientId, $recipientId]);
+    $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND (page_id=? OR instagram_user_id=? OR instagram_user_id=?) LIMIT 1");
+    $stmt->execute([$recipientId, $recipientId, $messengerRecipientId]);
     $row = $stmt->fetch();
     return $row ?: null;
   } catch (Throwable $e) {
@@ -147,7 +148,15 @@ INSERT INTO {$table} (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
 ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
-  connection_type = VALUES(connection_type),
+  connection_type = CASE
+    WHEN connection_type = 'facebook' AND VALUES(connection_type) = 'instagram_login' THEN connection_type
+    ELSE VALUES(connection_type)
+  END,
+  page_id = CASE
+    WHEN VALUES(connection_type) = 'facebook' THEN VALUES(page_id)
+    WHEN connection_type = 'facebook' THEN page_id
+    ELSE VALUES(page_id)
+  END,
   page_name = VALUES(page_name),
   instagram_user_id = CASE
     WHEN VALUES(instagram_user_id) LIKE 'messenger:%' AND instagram_user_id NOT LIKE 'messenger:%' THEN instagram_user_id
