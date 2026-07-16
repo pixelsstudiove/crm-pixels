@@ -180,6 +180,39 @@ function channels_delete_related_data(PDO $pdo, string $channelsTable, array $ch
   return $counts;
 }
 
+function channels_pending_meta_key(array $channel): string {
+  return (string) ($channel['pending_key'] ?? hash('sha256', implode('|', [
+    (string) ($channel['connection_type'] ?? ''),
+    (string) ($channel['page_id'] ?? ''),
+    (string) ($channel['instagram_user_id'] ?? ''),
+    (string) ($channel['receive_instagram'] ?? ''),
+    (string) ($channel['receive_messenger'] ?? ''),
+  ])));
+}
+
+function channels_pending_meta_payload(): ?array {
+  $pending = $_SESSION['meta_pending_channels'] ?? null;
+  if (!is_array($pending)) return null;
+  $createdAt = (int) ($pending['created_at'] ?? 0);
+  if ($createdAt <= 0 || time() - $createdAt > 1800) {
+    unset($_SESSION['meta_pending_channels']);
+    return null;
+  }
+  $channels = $pending['channels'] ?? [];
+  if (!is_array($channels) || !$channels) {
+    unset($_SESSION['meta_pending_channels']);
+    return null;
+  }
+  return $pending;
+}
+
+function channels_pending_meta_label(array $channel): string {
+  $types = [];
+  if (!empty($channel['receive_instagram'])) $types[] = 'Instagram';
+  if (!empty($channel['receive_messenger'])) $types[] = 'Messenger';
+  return $types ? implode(' + ', $types) : 'Canal Meta';
+}
+
 $connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
 if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
   $facebookMode = strtolower(trim((string) ($_GET['mode'] ?? 'both')));
@@ -250,7 +283,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
 	    $action = (string) ($_POST['action'] ?? '');
 	    $id = (int) ($_POST['id'] ?? 0);
-	    if ($action === 'toggle' && $id > 0) {
+	    if ($action === 'confirm_meta_channels') {
+	      $pending = channels_pending_meta_payload();
+	      $selectedKeys = $_POST['pending_channels'] ?? [];
+	      $selectedKeys = is_array($selectedKeys) ? array_values(array_unique(array_map('strval', $selectedKeys))) : [];
+	      if (!$pending) {
+	        $errors[] = 'La confirmación de Meta expiró. Inicia la conexión nuevamente.';
+	      } elseif (!$selectedKeys) {
+	        $errors[] = 'Selecciona al menos un canal para conectar.';
+	      } else {
+	        $saved = 0;
+	        $blocked = [];
+	        foreach (($pending['channels'] ?? []) as $pendingChannel) {
+	          if (!is_array($pendingChannel)) continue;
+	          $pendingKey = channels_pending_meta_key($pendingChannel);
+	          if (!in_array($pendingKey, $selectedKeys, true)) continue;
+	          try {
+	            if ((string) ($pendingChannel['connection_type'] ?? '') === 'facebook') {
+	              $subscribeResp = ig_graph_request('POST', (string) ($pendingChannel['page_id'] ?? '') . '/subscribed_apps', [
+	                'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
+	                'access_token' => (string) ($pendingChannel['page_access_token'] ?? ''),
+	              ]);
+	              if (!($subscribeResp['ok'] ?? false)) {
+	                throw new RuntimeException('Meta no permitió suscribir la fanpage al webhook.');
+	              }
+	            }
+	            ig_channel_upsert($pdo, $channelsTable, $pendingChannel);
+	            $saved++;
+	          } catch (RuntimeException $e) {
+	            $blocked[] = $e->getMessage();
+	          }
+	        }
+	        if ($saved > 0) {
+	          unset($_SESSION['meta_pending_channels']);
+	          $notice = $saved === 1 ? 'Canal conectado correctamente.' : "{$saved} canales conectados correctamente.";
+	          if ($blocked) $notice .= ' Algunos canales no se integraron porque ya pertenecen a otra cuenta o exceden los límites.';
+	        } else {
+	          $errors[] = $blocked ? (string) $blocked[0] : 'No se pudo conectar ninguno de los canales seleccionados.';
+	        }
+	      }
+	    } elseif ($action === 'cancel_meta_channels') {
+	      unset($_SESSION['meta_pending_channels']);
+	      $notice = 'Conexión cancelada. No se agregó ningún canal al CRM.';
+	    } elseif ($action === 'toggle' && $id > 0) {
 	      $channel = channels_find_channel($pdo, $channelsTable, $id, $scopeAccountId, $requestAccountId);
 	      if (!$channel) {
 	        $errors[] = 'No encontramos el canal que intentas actualizar.';
@@ -289,6 +364,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	  }
 }
 
+$pendingMetaChannels = channels_pending_meta_payload();
 $connectAccountParam = $mustChooseConnectAccount && $connectAccountId > 0 ? $connectAccountId : null;
 $connectLinkEnabled = $canConnect && (!$mustChooseConnectAccount || $connectAccountId > 0);
 $connectBaseSlug = $requestAccountId > 0 ? null : '';
@@ -348,6 +424,17 @@ try {
     .connect-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .connect-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
     .connect-card p { margin:6px 0 12px; color:var(--brand-muted); line-height:1.4; }
+    .meta-confirm-card { margin-bottom:14px; border:1px solid rgba(0,212,255,.22); border-radius:18px; background:#fff; padding:18px; box-shadow:0 16px 38px rgba(15, 23, 42, .06); }
+    .meta-confirm-head { display:flex; justify-content:space-between; gap:14px; align-items:flex-start; margin-bottom:14px; }
+    .meta-confirm-head h2 { margin:0 0 6px; color:var(--brand-ink); font-size:1.15rem; letter-spacing:-.02em; }
+    .meta-confirm-head p { margin:0; color:var(--brand-muted); line-height:1.45; font-weight:750; }
+    .meta-confirm-list { display:grid; gap:10px; margin-bottom:14px; }
+    .meta-confirm-option { display:grid; grid-template-columns:auto 1fr; gap:12px; align-items:flex-start; padding:14px; border:1px solid var(--line); border-radius:14px; background:#f8fcff; }
+    .meta-confirm-option input { width:18px!important; height:18px!important; min-height:18px!important; margin-top:4px; accent-color:#071120; }
+    .meta-confirm-title { display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--brand-ink); font-weight:950; }
+    .meta-confirm-tag { display:inline-flex; align-items:center; min-height:24px; padding:0 9px; border-radius:999px; background:#071120; color:#fff; font-size:.76rem; font-weight:900; }
+    .meta-confirm-meta { margin:4px 0 0; color:var(--brand-muted); font-weight:800; line-height:1.45; }
+    .meta-confirm-actions { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
     .connect-account-card { margin-bottom:14px; border:1px solid rgba(0,212,255,.18); border-radius:16px; background:#f8fcff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .06); }
     .connect-account-form { display:grid; grid-template-columns:minmax(220px, 360px) 1fr; gap:12px; align-items:end; }
     .connect-account-form label { display:grid; gap:6px; color:var(--brand-ink); font-weight:900; }
@@ -369,6 +456,9 @@ try {
     .notice { display:block; margin-bottom:14px; }
     @media (max-width: 760px) {
       .connect-account-form { grid-template-columns:1fr; }
+      .meta-confirm-head { display:grid; }
+      .meta-confirm-actions { display:grid; grid-template-columns:1fr; }
+      .meta-confirm-actions .channel-btn { width:100%; }
     }
   </style>
 </head>
@@ -390,6 +480,57 @@ try {
         <div class="admin-layout">
           <?php nav_render_admin_side_nav('channels'); ?>
           <div class="admin-content">
+            <?php if ($pendingMetaChannels): ?>
+              <?php
+                $pendingAccountId = (int) ($pendingMetaChannels['account_id'] ?? 0);
+                $pendingAccount = $pendingAccountId > 0 ? accounts_find($pdo, $pendingAccountId) : null;
+                $pendingChannels = array_values(array_filter((array) ($pendingMetaChannels['channels'] ?? []), 'is_array'));
+              ?>
+              <article class="meta-confirm-card">
+                <div class="meta-confirm-head">
+                  <div>
+                    <h2>Confirma los canales seleccionados en Meta</h2>
+                    <p>Solo se guardarán los activos que marques aquí. Esta revisión evita conectar cuentas que Meta pueda devolver por permisos anteriores.</p>
+                  </div>
+                  <?php if ($pendingAccount): ?>
+                    <span class="meta-confirm-tag"><?= h((string) ($pendingAccount['name'] ?? 'Cuenta')) ?></span>
+                  <?php endif; ?>
+                </div>
+                <form method="post" action="<?= h(account_url('channels.php')) ?>">
+                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                  <div class="meta-confirm-list">
+                    <?php foreach ($pendingChannels as $pendingChannel): ?>
+                      <?php
+                        $pendingKey = channels_pending_meta_key($pendingChannel);
+                        $pendingLabel = channels_pending_meta_label($pendingChannel);
+                        $pendingIgUsername = trim((string) ($pendingChannel['instagram_username'] ?? ''));
+                        $pendingPageName = trim((string) ($pendingChannel['page_name'] ?? ''));
+                      ?>
+                      <label class="meta-confirm-option">
+                        <input type="checkbox" name="pending_channels[]" value="<?= h($pendingKey) ?>" checked>
+                        <span>
+                          <span class="meta-confirm-title">
+                            <?= h($pendingIgUsername !== '' ? '@' . ltrim($pendingIgUsername, '@') : ($pendingPageName !== '' ? $pendingPageName : 'Canal Meta')) ?>
+                            <span class="meta-confirm-tag"><?= h($pendingLabel) ?></span>
+                          </span>
+                          <span class="meta-confirm-meta">
+                            Fanpage: <?= h($pendingPageName !== '' ? $pendingPageName : (string) ($pendingChannel['page_id'] ?? '')) ?>
+                            · Page ID: <?= h((string) ($pendingChannel['page_id'] ?? '')) ?>
+                            <?php if (!empty($pendingChannel['receive_instagram'])): ?>
+                              · Instagram ID: <?= h((string) ($pendingChannel['instagram_user_id'] ?? '')) ?>
+                            <?php endif; ?>
+                          </span>
+                        </span>
+                      </label>
+                    <?php endforeach; ?>
+                  </div>
+                  <div class="meta-confirm-actions">
+                    <button class="channel-btn" type="submit" name="action" value="cancel_meta_channels">Cancelar conexión</button>
+                    <button class="channel-btn primary" type="submit" name="action" value="confirm_meta_channels">Guardar canales seleccionados</button>
+                  </div>
+                </form>
+              </article>
+            <?php endif; ?>
             <?php if (!$canConnect): ?>
               <div class="form-alert alert-error notice">Falta configurar credenciales de Meta en config/local.php. Para Messenger usa FACEBOOK_APP_ID y FACEBOOK_APP_SECRET; para Instagram Login usa INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET.</div>
             <?php endif; ?>

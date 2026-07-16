@@ -58,6 +58,57 @@ function oauth_instagram_profile(string $accessToken): array {
   return ['ok' => false, 'error' => 'No se pudo leer el perfil de Instagram.'];
 }
 
+function oauth_meta_debug_token(string $appId, string $appSecret, string $userToken): array {
+  $appAccessToken = $appId . '|' . $appSecret;
+  $response = ig_graph_request('GET', 'debug_token', [
+    'input_token' => $userToken,
+    'access_token' => $appAccessToken,
+  ]);
+  if (!($response['ok'] ?? false) || !isset($response['data']['data']) || !is_array($response['data']['data'])) {
+    return ['ok' => false, 'error' => (string) ($response['error'] ?? 'No se pudo validar el token con Meta.')];
+  }
+  return ['ok' => true, 'data' => $response['data']['data']];
+}
+
+function oauth_meta_scope_target_ids(array $debugData, array $scopeNames): array {
+  $scopeNames = array_values(array_unique(array_map('strval', $scopeNames)));
+  $targetIds = [];
+  $granularScopes = $debugData['granular_scopes'] ?? [];
+  if (!is_array($granularScopes)) return [];
+
+  foreach ($granularScopes as $scope) {
+    if (!is_array($scope)) continue;
+    $name = (string) ($scope['scope'] ?? '');
+    if ($name === '' || !in_array($name, $scopeNames, true)) continue;
+    $ids = $scope['target_ids'] ?? [];
+    if (!is_array($ids)) continue;
+    foreach ($ids as $id) {
+      $id = trim((string) $id);
+      if ($id !== '') $targetIds[] = $id;
+    }
+  }
+
+  return array_values(array_unique($targetIds));
+}
+
+function oauth_meta_has_granular_scopes(array $debugData): bool {
+  return isset($debugData['granular_scopes']) && is_array($debugData['granular_scopes']) && count($debugData['granular_scopes']) > 0;
+}
+
+function oauth_meta_id_in_targets(string $id, array $targetIds): bool {
+  return $id !== '' && in_array($id, $targetIds, true);
+}
+
+function oauth_meta_pending_key(array $channel): string {
+  return hash('sha256', implode('|', [
+    (string) ($channel['connection_type'] ?? ''),
+    (string) ($channel['page_id'] ?? ''),
+    (string) ($channel['instagram_user_id'] ?? ''),
+    (string) ($channel['receive_instagram'] ?? ''),
+    (string) ($channel['receive_messenger'] ?? ''),
+  ]));
+}
+
 $state = (string) ($_GET['state'] ?? '');
 $code = (string) ($_GET['code'] ?? '');
 $expectedState = (string) ($_SESSION['instagram_oauth_state'] ?? '');
@@ -170,14 +221,35 @@ if (!$tokenResp['ok']) oauth_fail('Meta no entrego el token de acceso.');
 $userToken = (string) ($tokenResp['data']['access_token'] ?? '');
 if ($userToken === '') oauth_fail('Token de Meta vacio.');
 
+$debugResp = oauth_meta_debug_token($appId, $appSecret, $userToken);
+if (!$debugResp['ok']) oauth_fail('No se pudo confirmar con Meta qué activos fueron seleccionados.');
+$debugData = (array) ($debugResp['data'] ?? []);
+$hasGranularScopes = oauth_meta_has_granular_scopes($debugData);
+$pageTargetIds = oauth_meta_scope_target_ids($debugData, [
+  'pages_show_list',
+  'pages_manage_metadata',
+  'pages_messaging',
+  'pages_read_engagement',
+  'business_management',
+]);
+$instagramTargetIds = oauth_meta_scope_target_ids($debugData, [
+  'instagram_basic',
+  'instagram_manage_messages',
+  'instagram_business_basic',
+  'instagram_business_manage_messages',
+]);
+if ($hasGranularScopes && !$pageTargetIds && !$instagramTargetIds) {
+  oauth_fail('Meta no devolvio la lista de activos seleccionados. Intenta conectar nuevamente y selecciona los activos desde el flujo de permisos.');
+}
+
 $pagesResp = ig_graph_request('GET', 'me/accounts', [
   'fields' => 'id,name,access_token,instagram_business_account{id,username,name}',
+  'limit' => 100,
   'access_token' => $userToken,
 ]);
 if (!$pagesResp['ok']) oauth_fail('No se pudieron leer las paginas conectadas.');
 
-$saved = 0;
-$blocked = [];
+$pendingChannels = [];
 $wantsInstagram = in_array($facebookMode, ['both', 'instagram'], true);
 $wantsMessenger = in_array($facebookMode, ['both', 'messenger'], true);
 foreach (($pagesResp['data']['data'] ?? []) as $page) {
@@ -188,42 +260,47 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
   $pageId = (string) ($page['id'] ?? '');
   if ($pageId === '' || $pageToken === '') continue;
   $hasInstagram = is_array($ig) && !empty($ig['id']);
-  if ($wantsInstagram && !$hasInstagram && !$wantsMessenger) continue;
+  $igId = $hasInstagram ? (string) ($ig['id'] ?? '') : '';
+  $pageWasSelected = $pageTargetIds
+    ? oauth_meta_id_in_targets($pageId, $pageTargetIds)
+    : !$hasGranularScopes;
+  $instagramWasSelected = $instagramTargetIds
+    ? oauth_meta_id_in_targets($igId, $instagramTargetIds)
+    : ($pageWasSelected || !$hasGranularScopes);
 
-  // Mantiene la fanpage suscrita a la app. El CRM decide si procesa Instagram, Messenger o ambos por canal.
-  ig_graph_request('POST', $pageId . '/subscribed_apps', [
-    'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
-    'access_token' => $pageToken,
-  ]);
+  $receiveInstagram = $wantsInstagram && $hasInstagram && $instagramWasSelected && ($pageWasSelected || !$pageTargetIds);
+  $receiveMessenger = $wantsMessenger && $pageWasSelected;
+  if (!$receiveInstagram && !$receiveMessenger) continue;
 
-  try {
-    ig_channel_upsert($pdo, $channelsTable, [
-      'account_id' => $targetAccountId,
-      'connection_type' => 'facebook',
-      'page_id' => $pageId,
-      'page_name' => (string) ($page['name'] ?? ''),
-      'instagram_user_id' => $hasInstagram ? (string) $ig['id'] : 'messenger:' . $pageId,
-      'instagram_username' => $hasInstagram ? (string) ($ig['username'] ?? $ig['name'] ?? '') : '',
-      'page_access_token' => $pageToken,
-      'scopes' => (string) app_config('instagram.oauth_scopes', ''),
-      'receive_instagram' => $wantsInstagram && $hasInstagram ? 1 : 0,
-      'receive_messenger' => $wantsMessenger ? 1 : 0,
-      'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
-    ]);
-    $saved++;
-  } catch (RuntimeException $e) {
-    $blocked[] = $e->getMessage();
-  }
+  $channel = [
+    'account_id' => $targetAccountId,
+    'connection_type' => 'facebook',
+    'page_id' => $pageId,
+    'page_name' => (string) ($page['name'] ?? ''),
+    'instagram_user_id' => $hasInstagram ? $igId : 'messenger:' . $pageId,
+    'instagram_username' => $hasInstagram ? (string) ($ig['username'] ?? $ig['name'] ?? '') : '',
+    'page_access_token' => $pageToken,
+    'scopes' => (string) app_config('instagram.oauth_scopes', ''),
+    'receive_instagram' => $receiveInstagram ? 1 : 0,
+    'receive_messenger' => $receiveMessenger ? 1 : 0,
+    'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+  ];
+  $channel['pending_key'] = oauth_meta_pending_key($channel);
+  $pendingChannels[] = $channel;
 }
 
-if ($saved <= 0) {
-  if ($blocked) oauth_fail((string) $blocked[0]);
-  oauth_fail('No encontramos paginas disponibles para conectar.');
+if (!$pendingChannels) {
+  oauth_fail('No encontramos canales dentro de los activos seleccionados en Meta.');
 }
 
-$notice = $facebookMode === 'instagram'
-  ? 'Canales de Instagram por Facebook conectados correctamente.'
-  : ($facebookMode === 'messenger' ? 'Canales de Messenger conectados correctamente.' : 'Canales de Instagram y Messenger conectados correctamente.');
-if ($blocked) $notice .= ' Algunos canales no se integraron porque ya pertenecen a otra cuenta.';
-header('Location: ' . account_url('channels.php', ['notice' => $notice], $targetAccountSlug !== '' ? $targetAccountSlug : null));
+$_SESSION['meta_pending_channels'] = [
+  'provider' => 'facebook',
+  'mode' => $facebookMode,
+  'account_id' => $targetAccountId,
+  'account_slug' => $targetAccountSlug,
+  'created_at' => time(),
+  'channels' => $pendingChannels,
+];
+
+header('Location: ' . account_url('channels.php', ['confirm_meta' => '1'], $targetAccountSlug !== '' ? $targetAccountSlug : null));
 exit;
