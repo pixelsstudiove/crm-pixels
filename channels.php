@@ -292,11 +292,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $connectAccountParam = $mustChooseConnectAccount && $connectAccountId > 0 ? $connectAccountId : null;
 $connectLinkEnabled = $canConnect && (!$mustChooseConnectAccount || $connectAccountId > 0);
 $connectBaseSlug = $requestAccountId > 0 ? null : '';
-$facebookConnectUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
-$facebookConnectBothUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'both', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
-$facebookConnectInstagramUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
-$facebookConnectMessengerUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'messenger', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
-$instagramConnectUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$canAddChannelToSelected = $connectLinkEnabled && $connectAccountId > 0 && accounts_can_add_channel($pdo, $connectAccountId);
+$facebookBothAllowed = $canConnectFacebook && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['instagram', 'messenger']);
+$facebookInstagramAllowed = $canConnectFacebook && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['instagram']);
+$facebookMessengerAllowed = $canConnectFacebook && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['messenger']);
+$instagramDirectAllowed = $canConnectInstagram && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['instagram']);
+$facebookConnectBothUrl = $facebookBothAllowed ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'both', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$facebookConnectInstagramUrl = $facebookInstagramAllowed ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$facebookConnectMessengerUrl = $facebookMessengerAllowed ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'messenger', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$instagramConnectUrl = $instagramDirectAllowed ? account_url('channels.php', ['connect' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
 
 $channels = [];
 try {
@@ -327,7 +331,16 @@ try {
     .channel-link.primary, .channel-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
     .channel-btn.danger { background:#fff1f2; border-color:#fecdd3; color:#be123c; }
-    .channel-link.is-disabled { opacity:.55; pointer-events:none; }
+    .channel-link.is-disabled,
+    .channel-link.primary.is-disabled {
+      color:#64748b;
+      background:#e5e7eb;
+      border-color:#cbd5e1;
+      box-shadow:none;
+      cursor:not-allowed;
+      pointer-events:none;
+    }
+    .channel-link.is-disabled .channel-choice-icon { filter:grayscale(1); opacity:.62; }
     .connect-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .connect-actions .channel-link { min-height:36px; font-size:.9rem; }
     .channel-choice-icon { width:22px; height:22px; border-radius:999px; object-fit:cover; flex:0 0 auto; }
@@ -408,15 +421,15 @@ try {
             <h2>Facebook / Fanpage</h2>
             <p>Conecta páginas de Facebook y elige si quieres recibir Instagram, Messenger o ambos desde esa fanpage.</p>
             <div class="connect-actions">
-              <a class="channel-link primary <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>"><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"><img class="channel-choice-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Instagram + Messenger</a>
-              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>"><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Solo Instagram</a>
-              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>"><img class="channel-choice-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Solo Messenger</a>
+              <a class="channel-link primary <?= $facebookBothAllowed ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>" <?= $facebookBothAllowed ? '' : 'aria-disabled="true"' ?>><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"><img class="channel-choice-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Instagram + Messenger</a>
+              <a class="channel-link <?= $facebookInstagramAllowed ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>" <?= $facebookInstagramAllowed ? '' : 'aria-disabled="true"' ?>><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Solo Instagram</a>
+              <a class="channel-link <?= $facebookMessengerAllowed ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>" <?= $facebookMessengerAllowed ? '' : 'aria-disabled="true"' ?>><img class="channel-choice-icon" src="/images/icon_messenger.png" alt="" aria-hidden="true"> Solo Messenger</a>
             </div>
           </article>
           <article class="connect-card">
             <h2>Instagram Login</h2>
             <p>Conecta directamente una cuenta profesional de Instagram usando los permisos de Instagram Login.</p>
-            <a class="channel-link primary <?= $canConnectInstagram && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>"><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Conectar por Instagram</a>
+            <a class="channel-link primary <?= $instagramDirectAllowed ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>" <?= $instagramDirectAllowed ? '' : 'aria-disabled="true"' ?>><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Conectar por Instagram</a>
           </article>
         </div>
 
