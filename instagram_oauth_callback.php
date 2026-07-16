@@ -66,9 +66,11 @@ $targetAccountId = (int) (($_SESSION['instagram_oauth_account_id'] ?? 0) ?: curr
 $targetAccountSlug = trim((string) ($_SESSION['instagram_oauth_account_slug'] ?? accounts_slug_for_id($pdo, $targetAccountId)));
 $provider = strtolower(trim((string) ($_SESSION['instagram_oauth_provider'] ?? 'facebook')));
 if (!in_array($provider, ['facebook', 'instagram'], true)) $provider = 'facebook';
+$facebookMode = strtolower(trim((string) ($_SESSION['instagram_oauth_facebook_mode'] ?? 'both')));
+if (!in_array($facebookMode, ['both', 'instagram', 'messenger'], true)) $facebookMode = 'both';
 $oauthReturnSlug = $targetAccountSlug;
 
-unset($_SESSION['instagram_oauth_state'], $_SESSION['instagram_oauth_redirect'], $_SESSION['instagram_oauth_account_id'], $_SESSION['instagram_oauth_account_slug'], $_SESSION['instagram_oauth_provider']);
+unset($_SESSION['instagram_oauth_state'], $_SESSION['instagram_oauth_redirect'], $_SESSION['instagram_oauth_account_id'], $_SESSION['instagram_oauth_account_slug'], $_SESSION['instagram_oauth_provider'], $_SESSION['instagram_oauth_facebook_mode']);
 
 if ($state === '' || $expectedState === '' || !hash_equals($expectedState, $state)) {
   oauth_fail('No se pudo validar la conexion con Meta.');
@@ -146,6 +148,8 @@ if ($provider === 'instagram') {
       'page_access_token' => $accessToken,
       'token_expires_at' => $expiresAt,
       'scopes' => (string) app_config('instagram.direct_oauth_scopes', ''),
+      'receive_instagram' => 1,
+      'receive_messenger' => 0,
       'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
     ]);
   } catch (RuntimeException $e) {
@@ -174,6 +178,8 @@ if (!$pagesResp['ok']) oauth_fail('No se pudieron leer las paginas conectadas.')
 
 $saved = 0;
 $blocked = [];
+$wantsInstagram = in_array($facebookMode, ['both', 'instagram'], true);
+$wantsMessenger = in_array($facebookMode, ['both', 'messenger'], true);
 foreach (($pagesResp['data']['data'] ?? []) as $page) {
   if (!is_array($page)) continue;
   $ig = $page['instagram_business_account'] ?? null;
@@ -182,12 +188,15 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
   $pageId = (string) ($page['id'] ?? '');
   if ($pageId === '' || $pageToken === '') continue;
   $hasInstagram = is_array($ig) && !empty($ig['id']);
+  if ($wantsInstagram && !$hasInstagram && !$wantsMessenger) continue;
 
   // Intenta suscribir la pagina a la app. Si ya estaba suscrita, Meta responde OK o no bloquea la conexion local.
-  ig_graph_request('POST', $pageId . '/subscribed_apps', [
-    'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
-    'access_token' => $pageToken,
-  ]);
+  if ($wantsMessenger) {
+    ig_graph_request('POST', $pageId . '/subscribed_apps', [
+      'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
+      'access_token' => $pageToken,
+    ]);
+  }
 
   try {
     ig_channel_upsert($pdo, $channelsTable, [
@@ -199,6 +208,8 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
       'instagram_username' => $hasInstagram ? (string) ($ig['username'] ?? $ig['name'] ?? '') : '',
       'page_access_token' => $pageToken,
       'scopes' => (string) app_config('instagram.oauth_scopes', ''),
+      'receive_instagram' => $wantsInstagram && $hasInstagram ? 1 : 0,
+      'receive_messenger' => $wantsMessenger ? 1 : 0,
       'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
     ]);
     $saved++;
@@ -212,7 +223,9 @@ if ($saved <= 0) {
   oauth_fail('No encontramos paginas disponibles para conectar.');
 }
 
-$notice = 'Canales de Meta conectados correctamente.';
+$notice = $facebookMode === 'instagram'
+  ? 'Canales de Instagram por Facebook conectados correctamente.'
+  : ($facebookMode === 'messenger' ? 'Canales de Messenger conectados correctamente.' : 'Canales de Instagram y Messenger conectados correctamente.');
 if ($blocked) $notice .= ' Algunos canales no se integraron porque ya pertenecen a otra cuenta.';
 header('Location: ' . account_url('channels.php', ['notice' => $notice], $targetAccountSlug !== '' ? $targetAccountSlug : null));
 exit;

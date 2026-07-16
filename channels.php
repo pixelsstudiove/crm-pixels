@@ -31,6 +31,8 @@ $canConnect = $canConnectInstagram || $canConnectFacebook;
 
 $connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
 if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
+  $facebookMode = strtolower(trim((string) ($_GET['mode'] ?? 'both')));
+  if (!in_array($facebookMode, ['both', 'instagram', 'messenger'], true)) $facebookMode = 'both';
   $providerAppId = $connectProvider === 'facebook' ? $facebookAppId : $instagramAppId;
   $providerAppSecret = $connectProvider === 'facebook' ? $facebookAppSecret : $instagramAppSecret;
   if ($providerAppId === '' || $providerAppSecret === '') {
@@ -43,6 +45,7 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
     $_SESSION['instagram_oauth_account_id'] = $scopeAccountId;
     $_SESSION['instagram_oauth_account_slug'] = accounts_slug_for_id($pdo, $scopeAccountId);
     $_SESSION['instagram_oauth_provider'] = $connectProvider;
+    $_SESSION['instagram_oauth_facebook_mode'] = $connectProvider === 'facebook' ? $facebookMode : 'instagram';
 
     if ($connectProvider === 'instagram') {
       $authUrl = 'https://www.instagram.com/oauth/authorize?' . http_build_query([
@@ -67,6 +70,7 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
     if ((string) ($_GET['debug_oauth'] ?? '') === '1') {
       if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8');
       echo "Proveedor: {$connectProvider}\n";
+      if ($connectProvider === 'facebook') echo "Modo Facebook: {$facebookMode}\n";
       echo "App ID: {$providerAppId}\n";
       echo "Redirect URI: {$callbackUrl}\n";
       echo "Scopes: " . ($connectProvider === 'instagram' ? (string) app_config('instagram.direct_oauth_scopes', '') : (string) app_config('instagram.oauth_scopes', '')) . "\n";
@@ -121,6 +125,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $facebookConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook']) : '#';
+$facebookConnectBothUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'both']) : '#';
+$facebookConnectInstagramUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'instagram']) : '#';
+$facebookConnectMessengerUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'messenger']) : '#';
 $instagramConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'instagram']) : '#';
 
 $channels = [];
@@ -152,6 +159,8 @@ try {
     .channel-link.primary, .channel-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
     .channel-link.is-disabled { opacity:.55; pointer-events:none; }
+    .connect-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .connect-actions .channel-link { min-height:36px; font-size:.9rem; }
     .connect-panel { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-bottom:14px; }
     .connect-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .connect-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
@@ -191,8 +200,12 @@ try {
         <div class="connect-panel">
           <article class="connect-card">
             <h2>Facebook / Fanpage</h2>
-            <p>Conecta páginas de Facebook para recibir mensajes de Messenger y, si la página tiene Instagram vinculado, también DMs de Instagram.</p>
-            <a class="channel-link primary <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectUrl) ?>">Conectar por Facebook</a>
+            <p>Conecta páginas de Facebook y elige si quieres recibir Instagram, Messenger o ambos desde esa fanpage.</p>
+            <div class="connect-actions">
+              <a class="channel-link primary <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>">Instagram + Messenger</a>
+              <a class="channel-link <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>">Solo Instagram</a>
+              <a class="channel-link <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>">Solo Messenger</a>
+            </div>
           </article>
           <article class="connect-card">
             <h2>Instagram Login</h2>
@@ -218,7 +231,9 @@ try {
               <p><strong><?= $isDirectLogin ? 'Cuenta:' : 'Fanpage:' ?></strong> <?= h((string) ($channel['page_name'] ?: $channel['page_id'])) ?></p>
               <p><strong><?= $isDirectLogin ? 'Cuenta ID:' : 'Page ID:' ?></strong> <?= h((string) $channel['page_id']) ?></p>
               <p><strong>Instagram ID:</strong> <?= $hasInstagramChannel ? h((string) $channel['instagram_user_id']) : '—' ?></p>
-              <?php if (!$isDirectLogin): ?><p><strong>Messenger:</strong> Habilitado por fanpage</p><?php endif; ?>
+              <p><strong>Recibe:</strong>
+                <?= !empty($channel['receive_instagram']) ? 'Instagram' : '' ?><?= !empty($channel['receive_instagram']) && !empty($channel['receive_messenger']) ? ' + ' : '' ?><?= !empty($channel['receive_messenger']) ? 'Messenger' : '' ?><?= empty($channel['receive_instagram']) && empty($channel['receive_messenger']) ? '—' : '' ?>
+              </p>
               <?php if (!empty($channel['token_expires_at'])): ?><p><strong>Token vence:</strong> <?= h(app_datetime($channel['token_expires_at'])) ?></p><?php endif; ?>
               <p><strong>Ultimo evento:</strong> <?= h((string) ($channel['last_event_at'] ?: 'Sin eventos')) ?></p>
               <form method="post" action="<?= h(account_url('channels.php')) ?>">

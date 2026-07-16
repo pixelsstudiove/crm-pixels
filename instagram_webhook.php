@@ -83,6 +83,38 @@ function ig_provider_default_objective(string $provider): string {
   return $provider === 'messenger' ? 'Conversación iniciada desde Facebook Messenger' : (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram');
 }
 
+function ig_log_invalid_signature(PDO $pdo, string $rawBody): void {
+  try {
+    $payload = json_decode($rawBody, true);
+    if (!is_array($payload)) $payload = [];
+    conv_ensure_schema($pdo);
+    $provider = ig_provider_from_payload($payload);
+    $firstEvent = [];
+    foreach (($payload['entry'] ?? []) as $entry) {
+      if (!is_array($entry)) continue;
+      foreach (($entry['messaging'] ?? []) as $event) {
+        if (is_array($event)) {
+          $firstEvent = $event;
+          break 2;
+        }
+      }
+    }
+    conv_log_webhook_event($pdo, [
+      'source' => $provider,
+      'status' => 'ignored',
+      'event_type' => 'invalid_signature',
+      'recipient_id' => ig_clean($firstEvent['recipient']['id'] ?? null, 120),
+      'sender_id' => ig_clean($firstEvent['sender']['id'] ?? null, 120),
+      'external_message_id' => ig_clean($firstEvent['message']['mid'] ?? $firstEvent['postback']['mid'] ?? null, 2000),
+      'message_preview' => ig_event_text($firstEvent, $provider),
+      'error_message' => 'Firma invalida. Revisa FACEBOOK_APP_SECRET / INSTAGRAM_APP_SECRET segun la app que envia el webhook.',
+      'payload_json' => json_encode($payload ?: ['raw' => mb_substr($rawBody, 0, 2000)], JSON_UNESCAPED_UNICODE),
+    ]);
+  } catch (Throwable $e) {
+    /* No bloquear la respuesta del webhook por diagnostico. */
+  }
+}
+
 function ig_ensure_leads_schema(PDO $pdo, string $dbName, string $table): void {
   $defaultAccountId = accounts_default_id($pdo);
   $defaultSalesStatus = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) app_config('sales_funnel.default_status', 'nuevo_lead')) ?: 'nuevo_lead';
@@ -549,7 +581,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
     return 0;
   }
 
-  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId);
+  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $recipientId, $provider);
   if (!$channel) {
     conv_log_webhook_event($pdo, [
       'source' => $provider,
@@ -730,6 +762,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $raw = (string) file_get_contents('php://input');
 if (!ig_validate_signature($raw)) {
+  ig_log_invalid_signature($pdo, $raw);
   ig_json(['ok' => false, 'error' => 'Firma inválida'], 403);
 }
 

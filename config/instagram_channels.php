@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS {$table} (
   page_access_token TEXT NULL,
   token_expires_at DATETIME NULL,
   scopes TEXT NULL,
+  receive_instagram TINYINT(1) NOT NULL DEFAULT 1,
+  receive_messenger TINYINT(1) NOT NULL DEFAULT 0,
   connected_by INT UNSIGNED NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   last_event_at DATETIME NULL,
@@ -37,6 +39,8 @@ SQL);
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN connection_type VARCHAR(40) NOT NULL DEFAULT 'facebook' AFTER account_id"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN token_expires_at DATETIME NULL AFTER page_access_token"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN scopes TEXT NULL AFTER token_expires_at"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_instagram TINYINT(1) NOT NULL DEFAULT 1 AFTER scopes"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_messenger TINYINT(1) NOT NULL DEFAULT 0 AFTER receive_instagram"); } catch (Throwable $e) { /* no-op */ }
 }
 
 function ig_graph_version(): string {
@@ -83,13 +87,18 @@ function ig_graph_request(string $method, string $path, array $params = []): arr
   return ig_graph_request_base(ig_graph_base(), $method, $path, $params);
 }
 
-function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipientId): ?array {
+function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipientId, string $provider = 'instagram'): ?array {
   $recipientId = trim((string) $recipientId);
   if ($recipientId === '') return null;
   $messengerRecipientId = 'messenger:' . $recipientId;
   try {
-    $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND (page_id=? OR instagram_user_id=? OR instagram_user_id=?) LIMIT 1");
-    $stmt->execute([$recipientId, $recipientId, $messengerRecipientId]);
+    if ($provider === 'messenger') {
+      $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND receive_messenger=1 AND (page_id=? OR instagram_user_id=?) ORDER BY updated_at DESC, id DESC LIMIT 1");
+      $stmt->execute([$recipientId, $messengerRecipientId]);
+    } else {
+      $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND receive_instagram=1 AND (instagram_user_id=? OR page_id=?) ORDER BY updated_at DESC, id DESC LIMIT 1");
+      $stmt->execute([$recipientId, $recipientId]);
+    }
     $row = $stmt->fetch();
     return $row ?: null;
   } catch (Throwable $e) {
@@ -139,13 +148,15 @@ function ig_channel_upsert(PDO $pdo, string $table, array $channel): void {
   $connectionType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) ($channel['connection_type'] ?? 'facebook')) ?: 'facebook';
   $pageId = (string) $channel['page_id'];
   $instagramUserId = (string) $channel['instagram_user_id'];
+  $receiveInstagram = !empty($channel['receive_instagram']) ? 1 : 0;
+  $receiveMessenger = !empty($channel['receive_messenger']) ? 1 : 0;
   $existingInOtherAccount = ig_channel_active_in_other_account($pdo, $table, $accountId, $pageId, $instagramUserId);
   if ($existingInOtherAccount) throw new RuntimeException(ig_channel_existing_account_message($existingInOtherAccount));
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, token_expires_at, scopes, connected_by, is_active, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+  account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, token_expires_at, scopes, receive_instagram, receive_messenger, connected_by, is_active, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
 ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
   connection_type = CASE
@@ -169,6 +180,8 @@ ON DUPLICATE KEY UPDATE
   page_access_token = VALUES(page_access_token),
   token_expires_at = VALUES(token_expires_at),
   scopes = VALUES(scopes),
+  receive_instagram = VALUES(receive_instagram),
+  receive_messenger = VALUES(receive_messenger),
   connected_by = VALUES(connected_by),
   is_active = 1,
   updated_at = NOW()
@@ -183,6 +196,8 @@ SQL);
     $channel['page_access_token'] ?? null,
     $channel['token_expires_at'] ?? null,
     $channel['scopes'] ?? null,
+    $receiveInstagram,
+    $receiveMessenger,
     $channel['connected_by'] ?? null,
   ]);
 }

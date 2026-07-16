@@ -540,9 +540,11 @@ function conv_instagram_channel_for_conversation(PDO $pdo, array $conversation):
   $channelsTable = ig_channels_table();
   $channelId = (int) ($conversation['channel_id'] ?? 0);
   $accountId = (int) (($conversation['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
+  $provider = conv_conversation_provider($conversation);
+  $capabilityColumn = $provider === 'messenger' ? 'receive_messenger' : 'receive_instagram';
 
   if ($channelId > 0) {
-    $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 AND COALESCE(page_access_token, '')<>'' LIMIT 1");
+    $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 AND {$capabilityColumn}=1 AND COALESCE(page_access_token, '')<>'' LIMIT 1");
     $stmt->execute([$channelId]);
     $channel = $stmt->fetch();
     if ($channel) return $channel;
@@ -553,6 +555,7 @@ SELECT *
 FROM {$channelsTable}
 WHERE account_id=?
   AND is_active=1
+  AND {$capabilityColumn}=1
   AND COALESCE(page_access_token, '')<>''
 ORDER BY updated_at DESC, id DESC
 LIMIT 2
