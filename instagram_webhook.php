@@ -561,7 +561,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
     ]);
 
     $attachmentResult = ['total' => 0, 'stored' => 0, 'errors' => []];
-    if ($inserted > 0) {
+    if ($inserted > 0 && !$messageAlreadyExists) {
       $attachmentResult = ig_store_message_attachments($pdo, $conversationId, $inserted, $event, $channel, $provider);
       conv_upsert_conversation($pdo, [
         'account_id' => $accountId,

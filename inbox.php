@@ -486,14 +486,16 @@ function inbox_visible_message_text($value, array $attachments): string {
     .conversation-filter-disclosure summary:hover { background:#151b2d; }
     .conversation-filter-options { display:grid; gap:9px; padding:10px; border-top:1px solid var(--inbox-line); background:#fbfcff; }
     .conversation-list { flex:1 1 auto; min-height:0; overflow:auto; padding:10px; background:#fbfcff; scrollbar-color:#c4cfdd transparent; }
-    .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 44px 12px 62px; min-height:96px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
+    .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 44px 13px 70px; min-height:104px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
     .conversation-item:hover { transform:translateY(-1px); border-color:#c7d3e2; box-shadow:0 10px 24px rgba(15,23,42,.08); }
     .conversation-item.is-active { border-color:#c7d3e2; background:#f7f9fc; box-shadow:inset 4px 0 0 var(--inbox-cyan); }
     .conversation-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+    .conversation-main-row { flex-direction:column; justify-content:flex-start; gap:2px; padding-right:4px; }
+    .conversation-meta-row:empty { display:none; }
     .conversation-name { font-weight:950; color:var(--inbox-ink); letter-spacing:-.02em; }
     .conversation-time { color:var(--inbox-muted); font-size:.76rem; font-weight:760; white-space:nowrap; }
     .conversation-preview { color:var(--inbox-muted); margin-top:7px; padding-right:4px; font-size:.9rem; line-height:1.35; }
-    .conversation-avatar { position:absolute; left:13px; top:14px; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; overflow:hidden; background:#edf3ff; color:var(--inbox-navy); border:1px solid #d8e4f1; box-shadow:0 8px 18px rgba(15,23,42,.08); font-size:.78rem; font-weight:950; letter-spacing:.01em; }
+    .conversation-avatar { position:absolute; left:15px; top:50%; transform:translateY(-50%); width:40px; height:40px; border-radius:50%; display:grid; place-items:center; overflow:hidden; background:#edf3ff; color:var(--inbox-navy); border:1px solid #d8e4f1; box-shadow:0 8px 18px rgba(15,23,42,.08); font-size:.78rem; font-weight:950; letter-spacing:.01em; }
     .conversation-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
     .conversation-channel-icon { position:absolute; right:13px; bottom:13px; width:24px; height:24px; border-radius:999px; object-fit:contain; background:#fff; padding:3px; border:1px solid #d8e4f1; box-shadow:0 8px 18px rgba(15,23,42,.14); }
     .badge { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:999px; font-size:.72rem; font-weight:900; background:#eef9f0; color:#217a43; border:1px solid #a8e0ba; }
@@ -706,12 +708,11 @@ function inbox_visible_message_text($value, array $attachments): string {
                       <?= h($avatarInitials) ?>
                     <?php endif; ?>
                   </span>
-                  <div class="conversation-row">
+                  <div class="conversation-row conversation-main-row">
                     <span class="conversation-name"><?= h(inbox_contact_name($conversation)) ?></span>
                     <span class="conversation-time"><?= h(inbox_time($conversation['last_message_at'] ?? $conversation['created_at'] ?? '')) ?></span>
                   </div>
                   <div class="conversation-row conversation-meta-row" style="margin-top:6px">
-                    <span class="badge conversation-status"><?= h($statusOptions[(string) ($conversation['status'] ?? '')] ?? 'Abierta') ?></span>
                     <?php $conversationWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? ''); ?>
                     <?php if (($conversationWindow['status'] ?? '') !== 'active'): ?><span class="window-pill conversation-window <?= h((string) ($conversationWindow['status'] ?? '')) ?>"><?= h((string) ($conversationWindow['label'] ?? 'Chat')) ?></span><?php endif; ?>
                     <?php if ((int) ($conversation['unread_count'] ?? 0) > 0): ?><span class="badge unread conversation-unread"><?= (int) $conversation['unread_count'] ?></span><?php endif; ?>
@@ -1220,13 +1221,11 @@ function inbox_visible_message_text($value, array $attachments): string {
       element.dataset.conversationKey = conversationKey(item);
       element.innerHTML = `
         <span class="conversation-avatar" data-initials="C" aria-hidden="true"></span>
-        <div class="conversation-row">
+        <div class="conversation-row conversation-main-row">
           <span class="conversation-name"></span>
           <span class="conversation-time"></span>
         </div>
-        <div class="conversation-row conversation-meta-row" style="margin-top:6px">
-          <span class="badge conversation-status"></span>
-        </div>
+        <div class="conversation-row conversation-meta-row" style="margin-top:6px"></div>
         <div class="conversation-preview"></div>
         <img class="conversation-channel-icon" src="" alt="" loading="lazy">
       `;
@@ -1267,10 +1266,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     function updateConversationMeta(element, item, unread) {
       const metaRow = element.querySelector('.conversation-meta-row');
       if (!metaRow) return;
-      const status = metaRow.querySelector('.conversation-status') || document.createElement('span');
-      status.className = 'badge conversation-status';
-      setTextIfChanged(status, item.status_label || 'Abierta');
-      if (!status.parentElement) metaRow.appendChild(status);
+      metaRow.querySelector('.conversation-status')?.remove();
 
       const replyWindow = item.reply_window || null;
       const showWindow = replyWindow && replyWindow.status && replyWindow.status !== 'active';
