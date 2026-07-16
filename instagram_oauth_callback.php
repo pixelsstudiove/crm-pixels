@@ -225,20 +225,17 @@ $debugResp = oauth_meta_debug_token($appId, $appSecret, $userToken);
 if (!$debugResp['ok']) oauth_fail('No se pudo confirmar con Meta qué activos fueron seleccionados.');
 $debugData = (array) ($debugResp['data'] ?? []);
 $hasGranularScopes = oauth_meta_has_granular_scopes($debugData);
-$pageTargetIds = oauth_meta_scope_target_ids($debugData, [
-  'pages_show_list',
-  'pages_manage_metadata',
+$messengerTargetIds = oauth_meta_scope_target_ids($debugData, [
   'pages_messaging',
-  'pages_read_engagement',
-  'business_management',
 ]);
 $instagramTargetIds = oauth_meta_scope_target_ids($debugData, [
-  'instagram_basic',
   'instagram_manage_messages',
-  'instagram_business_basic',
   'instagram_business_manage_messages',
 ]);
-if ($hasGranularScopes && !$pageTargetIds && !$instagramTargetIds) {
+$metadataTargetIds = oauth_meta_scope_target_ids($debugData, [
+  'pages_manage_metadata',
+]);
+if ($hasGranularScopes && !$messengerTargetIds && !$instagramTargetIds) {
   oauth_fail('Meta no devolvio la lista de activos seleccionados. Intenta conectar nuevamente y selecciona los activos desde el flujo de permisos.');
 }
 
@@ -261,15 +258,18 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
   if ($pageId === '' || $pageToken === '') continue;
   $hasInstagram = is_array($ig) && !empty($ig['id']);
   $igId = $hasInstagram ? (string) ($ig['id'] ?? '') : '';
-  $pageWasSelected = $pageTargetIds
-    ? oauth_meta_id_in_targets($pageId, $pageTargetIds)
-    : !$hasGranularScopes;
+  $pageWasSelectedForMessenger = $messengerTargetIds
+    ? oauth_meta_id_in_targets($pageId, $messengerTargetIds)
+    : (!$hasGranularScopes && $wantsMessenger);
+  $pageHasMetadataAccess = $metadataTargetIds
+    ? oauth_meta_id_in_targets($pageId, $metadataTargetIds)
+    : true;
   $instagramWasSelected = $instagramTargetIds
-    ? oauth_meta_id_in_targets($igId, $instagramTargetIds)
-    : ($pageWasSelected || !$hasGranularScopes);
+    ? (oauth_meta_id_in_targets($igId, $instagramTargetIds) || oauth_meta_id_in_targets($pageId, $instagramTargetIds))
+    : (!$hasGranularScopes && $wantsInstagram);
 
-  $receiveInstagram = $wantsInstagram && $hasInstagram && $instagramWasSelected && ($pageWasSelected || !$pageTargetIds);
-  $receiveMessenger = $wantsMessenger && $pageWasSelected;
+  $receiveInstagram = $wantsInstagram && $hasInstagram && $instagramWasSelected && $pageHasMetadataAccess;
+  $receiveMessenger = $wantsMessenger && $pageWasSelectedForMessenger && $pageHasMetadataAccess;
   if (!$receiveInstagram && !$receiveMessenger) continue;
 
   $channel = [
