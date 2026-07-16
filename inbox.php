@@ -351,6 +351,29 @@ function inbox_source_contact_html(array $conversation): string {
     : '—';
 }
 
+function inbox_channel_icon_source(array $conversation): string {
+  $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
+  if ($source === 'messenger') return 'messenger';
+  if ($source === 'whatsapp') return 'whatsapp';
+  return 'instagram';
+}
+
+function inbox_channel_icon_path(array $conversation): string {
+  $source = inbox_channel_icon_source($conversation);
+  if ($source === 'messenger') return 'images/icon_messenger.png';
+  if ($source === 'whatsapp') {
+    return is_file(__DIR__ . '/images/icon_whatsapp.png') ? 'images/icon_whatsapp.png' : 'images/icon_whatwsapp.png';
+  }
+  return 'images/icon_instagram.png';
+}
+
+function inbox_channel_icon_label(array $conversation): string {
+  $source = inbox_channel_icon_source($conversation);
+  if ($source === 'messenger') return 'Messenger';
+  if ($source === 'whatsapp') return 'WhatsApp';
+  return 'Instagram';
+}
+
 function inbox_short($value, int $max = 70): string {
   $value = trim((string) $value);
   if ($value === '') return '—';
@@ -439,13 +462,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     .conversation-filter-disclosure summary:hover { background:#151b2d; }
     .conversation-filter-options { display:grid; gap:9px; padding:10px; border-top:1px solid var(--inbox-line); background:#fbfcff; }
     .conversation-list { flex:1 1 auto; min-height:0; overflow:auto; padding:10px; background:#fbfcff; scrollbar-color:#c4cfdd transparent; }
-    .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 13px 12px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
+    .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 44px 12px 13px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
     .conversation-item:hover { transform:translateY(-1px); border-color:#c7d3e2; box-shadow:0 10px 24px rgba(15,23,42,.08); }
     .conversation-item.is-active { border-color:#c7d3e2; background:#f7f9fc; box-shadow:inset 4px 0 0 var(--inbox-cyan); }
     .conversation-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
     .conversation-name { font-weight:950; color:var(--inbox-ink); letter-spacing:-.02em; }
     .conversation-time { color:var(--inbox-muted); font-size:.76rem; font-weight:760; white-space:nowrap; }
-    .conversation-preview { color:var(--inbox-muted); margin-top:7px; font-size:.9rem; line-height:1.35; }
+    .conversation-preview { color:var(--inbox-muted); margin-top:7px; padding-right:4px; font-size:.9rem; line-height:1.35; }
+    .conversation-channel-icon { position:absolute; right:13px; bottom:13px; width:24px; height:24px; border-radius:999px; object-fit:contain; background:#fff; padding:3px; border:1px solid #d8e4f1; box-shadow:0 8px 18px rgba(15,23,42,.14); }
     .badge { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:999px; font-size:.72rem; font-weight:900; background:#eef9f0; color:#217a43; border:1px solid #a8e0ba; }
     .badge.unread { background:var(--inbox-navy); color:#fff; border-color:var(--inbox-navy); }
     .window-pill { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:999px; font-size:.72rem; font-weight:900; border:1px solid #bfe2c5; background:#eef9f0; color:#217a43; }
@@ -658,6 +682,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <?php if ((int) ($conversation['unread_count'] ?? 0) > 0): ?><span class="badge unread"><?= (int) $conversation['unread_count'] ?></span><?php endif; ?>
                   </div>
                   <div class="conversation-preview"><?= h(inbox_short($conversation['last_message_preview'] ?? '', 92)) ?></div>
+                  <img class="conversation-channel-icon" src="<?= h(inbox_channel_icon_path($conversation)) ?>" alt="<?= h(inbox_channel_icon_label($conversation)) ?>" loading="lazy">
                 </a>
               <?php endforeach; else: ?>
                 <div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram o Messenger.</div>
@@ -1149,6 +1174,8 @@ function inbox_visible_message_text($value, array $attachments): string {
         const active = Number(item.id) === Number(inboxState.conversationId)
           && (!inboxState.selectedAccountId || !itemAccountId || itemAccountId === Number(inboxState.selectedAccountId));
         const unread = active ? 0 : Number(item.unread_count || 0);
+        const channelIcon = item.channel_icon || 'images/icon_instagram.png';
+        const channelLabel = item.channel_label || 'Instagram';
         return `
           <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id, item.account_slug || '', itemAccountId))}">
             <div class="conversation-row">
@@ -1161,6 +1188,7 @@ function inbox_visible_message_text($value, array $attachments): string {
               ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
             </div>
             <div class="conversation-preview">${escapeHtml(item.preview)}</div>
+            <img class="conversation-channel-icon" src="${escapeHtml(channelIcon)}" alt="${escapeHtml(channelLabel)}" loading="lazy">
           </a>
         `;
       }).join('');

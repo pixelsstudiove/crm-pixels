@@ -47,6 +47,29 @@ function updates_time($value): string {
   return app_datetime($value);
 }
 
+function updates_channel_icon_source(array $conversation): string {
+  $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
+  if ($source === 'messenger') return 'messenger';
+  if ($source === 'whatsapp') return 'whatsapp';
+  return 'instagram';
+}
+
+function updates_channel_icon_path(array $conversation): string {
+  $source = updates_channel_icon_source($conversation);
+  if ($source === 'messenger') return 'images/icon_messenger.png';
+  if ($source === 'whatsapp') {
+    return is_file(__DIR__ . '/images/icon_whatsapp.png') ? 'images/icon_whatsapp.png' : 'images/icon_whatwsapp.png';
+  }
+  return 'images/icon_instagram.png';
+}
+
+function updates_channel_icon_label(array $conversation): string {
+  $source = updates_channel_icon_source($conversation);
+  if ($source === 'messenger') return 'Messenger';
+  if ($source === 'whatsapp') return 'WhatsApp';
+  return 'Instagram';
+}
+
 try {
   $filterStatus = trim((string) ($_GET['status'] ?? ''));
   if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
@@ -145,6 +168,8 @@ SQL;
       'preview' => updates_short($row['last_message_preview'] ?? '', 92),
       'unread_count' => (int) ($row['unread_count'] ?? 0),
       'reply_window' => meta_reply_window_info($row['last_inbound_at'] ?? ''),
+      'channel_icon' => updates_channel_icon_path($row),
+      'channel_label' => updates_channel_icon_label($row),
     ];
   }
 
