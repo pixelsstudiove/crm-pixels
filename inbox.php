@@ -406,6 +406,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     .conversation-filters input::placeholder { color:#98a2b3; font-weight:700; }
     .conversation-filters select, .status-form select { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 14px center; background-size:14px; }
     .conversation-filters input:focus, .conversation-filters select:focus, .status-form select:focus { border-color:var(--inbox-violet); box-shadow:0 0 0 4px rgba(124,60,255,.12); }
+    .conversation-filter-disclosure { border:1px solid var(--inbox-line); border-radius:14px; background:#fff; overflow:hidden; }
+    .conversation-filter-disclosure summary { min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 13px; color:var(--inbox-ink); font-size:.9rem; font-weight:850; cursor:pointer; user-select:none; list-style:none; transition:background .18s ease, color .18s ease; }
+    .conversation-filter-disclosure summary::-webkit-details-marker { display:none; }
+    .conversation-filter-disclosure summary::after { content:"⌄"; color:var(--inbox-cyan); font-size:.95rem; line-height:1; transition:transform .18s ease; }
+    .conversation-filter-disclosure[open] summary::after { transform:rotate(180deg); }
+    .conversation-filter-disclosure summary:hover { background:#f7f9fc; }
+    .conversation-filter-options { display:grid; gap:9px; padding:10px; border-top:1px solid var(--inbox-line); background:#fbfcff; }
+    .filter-count { display:inline-flex; align-items:center; justify-content:center; min-height:22px; padding:0 8px; border-radius:999px; background:#f0eaff; color:var(--inbox-violet); font-size:.72rem; font-weight:950; }
     .conversation-list { flex:1 1 auto; min-height:0; overflow:auto; padding:10px; background:#fbfcff; scrollbar-color:#c4cfdd transparent; }
     .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 13px 12px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
     .conversation-item:hover { transform:translateY(-1px); border-color:#c7d3e2; box-shadow:0 10px 24px rgba(15,23,42,.08); }
@@ -578,20 +586,29 @@ function inbox_visible_message_text($value, array $attachments): string {
 
         <div class="inbox-layout">
           <aside class="inbox-panel" aria-label="Conversaciones">
+            <?php $activeFilterCount = ($filterChannelId > 0 ? 1 : 0) + ($filterStatus !== '' ? 1 : 0); ?>
             <form class="conversation-filters" method="get" action="inbox.php">
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar conversación">
-              <select name="channel_id" onchange="this.form.submit()" aria-label="Filtrar por canal">
-                <option value="">Todos los canales</option>
-                <?php foreach ($channelOptions as $channel): ?>
-                  <option value="<?= (int) $channel['id'] ?>" <?= $filterChannelId === (int) $channel['id'] ? 'selected' : '' ?>><?= h(inbox_channel_label($channel)) ?></option>
-                <?php endforeach; ?>
-              </select>
-              <select name="status" onchange="this.form.submit()" aria-label="Filtrar por estado">
-                <option value="">Todos los estados</option>
-                <?php foreach ($statusOptions as $value => $label): ?>
-                  <option value="<?= h($value) ?>" <?= $filterStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                <?php endforeach; ?>
-              </select>
+              <details class="conversation-filter-disclosure" <?= $activeFilterCount > 0 ? 'open' : '' ?>>
+                <summary>
+                  <span>Filtros</span>
+                  <?php if ($activeFilterCount > 0): ?><span class="filter-count"><?= (int) $activeFilterCount ?> <?= $activeFilterCount === 1 ? 'activo' : 'activos' ?></span><?php endif; ?>
+                </summary>
+                <div class="conversation-filter-options">
+                  <select name="channel_id" onchange="this.form.submit()" aria-label="Filtrar por canal">
+                    <option value="">Todos los canales</option>
+                    <?php foreach ($channelOptions as $channel): ?>
+                      <option value="<?= (int) $channel['id'] ?>" <?= $filterChannelId === (int) $channel['id'] ? 'selected' : '' ?>><?= h(inbox_channel_label($channel)) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                  <select name="status" onchange="this.form.submit()" aria-label="Filtrar por estado">
+                    <option value="">Todos los estados</option>
+                    <?php foreach ($statusOptions as $value => $label): ?>
+                      <option value="<?= h($value) ?>" <?= $filterStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+              </details>
             </form>
             <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedRouteId ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
