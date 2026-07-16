@@ -13,6 +13,27 @@ ig_channels_ensure_schema($pdo, $channelsTable);
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
 $requestAccountId = accounts_request_account_id($pdo);
 $scopeAccountId = $requestAccountId > 0 ? $requestAccountId : $currentAccountId;
+$connectAccountOptions = [];
+if (is_super_admin()) {
+  try {
+    $stmt = $pdo->query("SELECT id, name, slug, status FROM " . accounts_table() . " ORDER BY name ASC");
+    $connectAccountOptions = $stmt ? $stmt->fetchAll() : [];
+  } catch (Throwable $e) {
+    $connectAccountOptions = nav_fetch_account_options($pdo);
+  }
+}
+$connectAccountId = $scopeAccountId;
+$connectAccountSlug = $requestAccountId > 0 ? accounts_slug_for_id($pdo, $requestAccountId) : '';
+$mustChooseConnectAccount = is_super_admin() && $requestAccountId <= 0;
+if ($mustChooseConnectAccount) {
+  $connectAccountId = max(0, (int) ($_GET['connect_account_id'] ?? 0));
+  $connectAccountSlug = $connectAccountId > 0 ? accounts_slug_for_id($pdo, $connectAccountId) : '';
+}
+$selectedConnectAccount = $connectAccountId > 0 ? accounts_find($pdo, $connectAccountId) : null;
+if ($mustChooseConnectAccount && (!$selectedConnectAccount || (string) ($selectedConnectAccount['status'] ?? 'active') !== 'active')) {
+  $connectAccountId = 0;
+  $connectAccountSlug = '';
+}
 
 $errors = [];
 $notice = trim((string) ($_GET['notice'] ?? ''));
@@ -165,15 +186,17 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
   if (!in_array($facebookMode, ['both', 'instagram', 'messenger'], true)) $facebookMode = 'both';
   $providerAppId = $connectProvider === 'facebook' ? $facebookAppId : $instagramAppId;
   $providerAppSecret = $connectProvider === 'facebook' ? $facebookAppSecret : $instagramAppSecret;
-  if ($providerAppId === '' || $providerAppSecret === '') {
+  if ($mustChooseConnectAccount && $connectAccountId <= 0) {
+    $errors[] = 'Selecciona la cuenta cliente a la que quieres asignar este nuevo canal antes de conectar con Meta.';
+  } elseif ($providerAppId === '' || $providerAppSecret === '') {
     $errors[] = $connectProvider === 'facebook'
       ? 'Falta configurar FACEBOOK_APP_ID y/o FACEBOOK_APP_SECRET en config/local.php.'
       : 'Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.';
   } else {
     $_SESSION['instagram_oauth_state'] = bin2hex(random_bytes(24));
     $_SESSION['instagram_oauth_redirect'] = $callbackUrl;
-    $_SESSION['instagram_oauth_account_id'] = $scopeAccountId;
-    $_SESSION['instagram_oauth_account_slug'] = accounts_slug_for_id($pdo, $scopeAccountId);
+    $_SESSION['instagram_oauth_account_id'] = $connectAccountId;
+    $_SESSION['instagram_oauth_account_slug'] = $connectAccountSlug !== '' ? $connectAccountSlug : accounts_slug_for_id($pdo, $connectAccountId);
     $_SESSION['instagram_oauth_provider'] = $connectProvider;
     $_SESSION['instagram_oauth_facebook_mode'] = $connectProvider === 'facebook' ? $facebookMode : 'instagram';
 
@@ -259,11 +282,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	  }
 }
 
-$facebookConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook']) : '#';
-$facebookConnectBothUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'both']) : '#';
-$facebookConnectInstagramUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'instagram']) : '#';
-$facebookConnectMessengerUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'messenger']) : '#';
-$instagramConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'instagram']) : '#';
+$connectAccountParam = $mustChooseConnectAccount && $connectAccountId > 0 ? $connectAccountId : null;
+$connectLinkEnabled = $canConnect && (!$mustChooseConnectAccount || $connectAccountId > 0);
+$connectBaseSlug = $requestAccountId > 0 ? null : '';
+$facebookConnectUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$facebookConnectBothUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'both', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$facebookConnectInstagramUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$facebookConnectMessengerUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'messenger', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
+$instagramConnectUrl = $connectLinkEnabled ? account_url('channels.php', ['connect' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
 
 $channels = [];
 try {
@@ -301,6 +327,11 @@ try {
     .connect-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .connect-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
     .connect-card p { margin:6px 0 12px; color:var(--brand-muted); line-height:1.4; }
+    .connect-account-card { margin-bottom:14px; border:1px solid rgba(0,212,255,.18); border-radius:16px; background:#f8fcff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .06); }
+    .connect-account-form { display:grid; grid-template-columns:minmax(220px, 360px) 1fr; gap:12px; align-items:end; }
+    .connect-account-form label { display:grid; gap:6px; color:var(--brand-ink); font-weight:900; }
+    .connect-account-form select { width:100%; min-height:44px; border:1px solid var(--line); border-radius:12px; padding:0 42px 0 12px; color:var(--brand-ink); background:#fff; font-weight:800; }
+    .connect-account-help { margin:0; color:var(--brand-muted); line-height:1.45; }
     .channel-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; }
     .channel-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
     .channel-card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
@@ -315,6 +346,9 @@ try {
     .channel-status.on { background:#eef9f0; color:#217a43; border:1px solid #a8e0ba; }
     .channel-status.off { background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; }
     .notice { display:block; margin-bottom:14px; }
+    @media (max-width: 760px) {
+      .connect-account-form { grid-template-columns:1fr; }
+    }
   </style>
 </head>
 <body class="dashboard-page">
@@ -339,20 +373,42 @@ try {
               <div class="form-alert alert-error notice">Falta configurar credenciales de Meta en config/local.php. Para Messenger usa FACEBOOK_APP_ID y FACEBOOK_APP_SECRET; para Instagram Login usa INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET.</div>
             <?php endif; ?>
 
+        <?php if ($mustChooseConnectAccount): ?>
+          <article class="connect-account-card">
+            <form class="connect-account-form" method="get" action="<?= h(account_url('channels.php', [], '')) ?>">
+              <label>
+                Cuenta destino del nuevo canal
+                <select name="connect_account_id" onchange="this.form.submit()">
+                  <option value="">Selecciona una cuenta</option>
+                  <?php foreach ($connectAccountOptions as $account): ?>
+                    <?php $accountStatus = (string) ($account['status'] ?? 'active'); ?>
+                    <option value="<?= (int) $account['id'] ?>" <?= $connectAccountId === (int) $account['id'] ? 'selected' : '' ?> <?= $accountStatus !== 'active' ? 'disabled' : '' ?>>
+                      <?= h((string) ($account['name'] ?? 'Cuenta')) ?><?= $accountStatus !== 'active' ? ' (inactiva)' : '' ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+              <p class="connect-account-help">
+                Como estás viendo todas las cuentas, primero elige a qué cliente se asignará el canal. Esa cuenta quedará guardada durante el login de Meta.
+              </p>
+            </form>
+          </article>
+        <?php endif; ?>
+
         <div class="connect-panel">
           <article class="connect-card">
             <h2>Facebook / Fanpage</h2>
             <p>Conecta páginas de Facebook y elige si quieres recibir Instagram, Messenger o ambos desde esa fanpage.</p>
             <div class="connect-actions">
-              <a class="channel-link primary <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>">Instagram + Messenger</a>
-              <a class="channel-link <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>">Solo Instagram</a>
-              <a class="channel-link <?= $canConnectFacebook ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>">Solo Messenger</a>
+              <a class="channel-link primary <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectBothUrl) ?>">Instagram + Messenger</a>
+              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectInstagramUrl) ?>">Solo Instagram</a>
+              <a class="channel-link <?= $canConnectFacebook && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($facebookConnectMessengerUrl) ?>">Solo Messenger</a>
             </div>
           </article>
           <article class="connect-card">
             <h2>Instagram Login</h2>
             <p>Conecta directamente una cuenta profesional de Instagram usando los permisos de Instagram Login.</p>
-            <a class="channel-link primary <?= $canConnectInstagram ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>">Conectar por Instagram</a>
+            <a class="channel-link primary <?= $canConnectInstagram && (!$mustChooseConnectAccount || $connectAccountId > 0) ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>">Conectar por Instagram</a>
           </article>
         </div>
 
