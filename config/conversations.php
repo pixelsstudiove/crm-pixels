@@ -518,12 +518,21 @@ function conv_graph_post_json(string $path, array $payload, string $accessToken)
 function conv_instagram_send_bases(array $channel): array {
   $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
   $bases = $isDirectLogin
-    ? [ig_instagram_graph_base(), ig_graph_base()]
-    : [ig_graph_base(), ig_instagram_graph_base()];
+    ? [ig_instagram_graph_base()]
+    : [ig_graph_base()];
   return array_values(array_unique(array_filter($bases)));
 }
 
 function conv_instagram_send_targets(array $channel): array {
+  $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
+  if ($isDirectLogin) {
+    $targets = [
+      'me',
+      (string) ($channel['instagram_user_id'] ?? ''),
+    ];
+    return array_values(array_unique(array_filter($targets, static fn($value) => trim($value) !== '')));
+  }
+
   $targets = array_values(array_filter([
     (string) ($channel['instagram_user_id'] ?? ''),
     (string) ($channel['page_id'] ?? ''),
