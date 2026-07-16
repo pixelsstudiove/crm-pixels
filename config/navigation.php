@@ -88,6 +88,7 @@ function nav_render_user_menu(bool $includeProfileModal = true): void {
         <button type="button" class="menu-item menu-item-nested" data-modal-open="profileModal">Cambiar contraseña</button>
       <?php endif; ?>
       <span class="menu-section-title">Configuración</span>
+      <?php if (can('manage_accounts')): ?><a class="menu-item menu-item-nested" href="/account_create.php">Crear cuenta</a><?php endif; ?>
       <?php if (can('manage_accounts')): ?><a class="menu-item menu-item-nested" href="/accounts.php">Gestión de cuentas</a><?php endif; ?>
       <?php if (can('manage_users')): ?><a class="menu-item menu-item-nested" href="/users.php">Gestión de usuarios</a><?php endif; ?>
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('channels.php')) ?>">Gestión de canales</a><?php endif; ?>
@@ -103,6 +104,7 @@ function nav_render_user_menu(bool $includeProfileModal = true): void {
 
 function nav_admin_items(): array {
   $items = [];
+  if (can('manage_accounts')) $items[] = ['key' => 'account_create', 'label' => 'Crear cuenta', 'href' => '/account_create.php'];
   if (can('manage_accounts')) $items[] = ['key' => 'accounts', 'label' => 'Gestión de cuentas', 'href' => '/accounts.php'];
   if (can('manage_users')) $items[] = ['key' => 'users', 'label' => 'Gestión de usuarios', 'href' => '/users.php'];
   if (can('manage_integrations')) $items[] = ['key' => 'channels', 'label' => 'Gestión de canales', 'href' => account_url('channels.php')];

@@ -106,28 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors[] = 'CSRF inválido. Recarga la página.';
   } else {
     if (isset($_POST['create_account_submit'])) {
-      $name = trim((string) ($_POST['create_name'] ?? ''));
-      $rawSlug = (string) ($_POST['create_slug'] ?? $name);
-      $slug = account_slug_from_name($rawSlug);
-      $status = (string) ($_POST['create_status'] ?? 'active');
-      $maxOperators = account_optional_limit($errors, (string) ($_POST['create_max_operators'] ?? ''), 'El límite de operadores');
-      $maxChannels = account_optional_limit($errors, (string) ($_POST['create_max_channels'] ?? ''), 'El límite de canales');
-      $allowInstagram = account_bool_from_post('create_allow_instagram');
-      $allowMessenger = account_bool_from_post('create_allow_messenger');
-      $allowWhatsapp = account_bool_from_post('create_allow_whatsapp');
-      account_validate_payload($errors, $name, $slug, $status, $statusOptions);
-      if (!$errors && account_name_is_used($pdo, $accountsTable, $name)) $errors[] = 'Ya existe una cuenta con ese nombre.';
-      if (!$errors && account_slug_is_used($pdo, $accountsTable, $slug)) $errors[] = 'Ese slug ya está siendo usado por otra cuenta.';
-
-      if (!$errors) {
-        try {
-          $stmt = $pdo->prepare("INSERT INTO {$accountsTable} (name, slug, status, max_operators, max_channels, allow_instagram, allow_messenger, allow_whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-          $stmt->execute([$name, $slug, $status, $maxOperators, $maxChannels, $allowInstagram, $allowMessenger, $allowWhatsapp]);
-          $notice = 'Cuenta creada correctamente.';
-        } catch (Throwable $e) {
-          $errors[] = 'No se pudo crear la cuenta.';
-        }
-      }
+      $errors[] = 'Para crear una cuenta usa la sección Crear cuenta del menú de configuración.';
     } elseif (isset($_POST['update_account_submit'])) {
       $accountId = max(0, (int) ($_POST['update_id'] ?? 0));
       $name = trim((string) ($_POST['update_name'] ?? ''));
@@ -196,70 +175,81 @@ SQL);
   <style>
     :root { --container-w:min(98vw, 1320px); }
     .accounts-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
-    .accounts-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .accounts-link { display:inline-flex; align-items:center; justify-content:center; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:10px; color:#007ea8; background:var(--surface-soft); font:inherit; font-weight:850; text-decoration:none; cursor:pointer; }
-    .accounts-grid { display:grid; grid-template-columns:minmax(260px, 320px) minmax(0, 1fr); gap:16px; align-items:start; }
-    .accounts-box { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
-    .accounts-box h2 { margin:0 0 12px; color:var(--brand-ink); font-size:1.1rem; }
-    .accounts-form { display:grid; gap:12px; }
-    .accounts-form input, .accounts-form select { width:100%; min-width:0; height:42px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:var(--brand-ink); background:#fff; outline:none; font:inherit; }
-    .accounts-current { min-width:0; }
-    .accounts-list { display:grid; gap:12px; }
-    .account-row { display:grid; gap:12px; padding:14px; border:1px solid rgba(0,212,255,.14); border-radius:14px; background:#fbfdff; }
-    .account-summary { display:grid; grid-template-columns:auto minmax(160px, 1fr) minmax(130px, auto) minmax(150px, auto); gap:12px; align-items:center; }
-    .account-id { display:inline-flex; align-items:center; justify-content:center; min-width:42px; min-height:42px; padding:0 10px; border-radius:12px; background:#071120; color:#eafaff; font-weight:900; }
-    .account-name { min-width:0; }
-    .account-name strong { display:block; color:var(--brand-ink); font-size:1.05rem; line-height:1.2; overflow-wrap:anywhere; }
-    .account-name span { display:block; margin-top:4px; color:var(--brand-muted); font-size:.86rem; font-weight:800; overflow-wrap:anywhere; }
-    .account-pill { display:inline-flex; align-items:center; justify-content:center; min-height:30px; padding:0 10px; border:1px solid #a8e0ba; border-radius:999px; background:#eef9f0; color:#217a43; font-size:.8rem; font-weight:900; white-space:nowrap; }
-    .account-pill.off { border-color:#cbd5e1; background:#f1f5f9; color:#64748b; }
-    .account-usage { color:var(--brand-muted); font-size:.9rem; font-weight:850; text-align:right; white-space:nowrap; }
-    .account-limits { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px; border:1px solid rgba(0,68,99,.10); border-radius:14px; background:#f8fcff; }
-    .account-limits-title { grid-column:1 / -1; margin:0; color:var(--brand-muted); font-size:.78rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
-    .account-channel-options { display:grid; gap:8px; }
-    .account-channel-options .account-limits-title { grid-column:auto; }
-    .account-toggle { display:flex; align-items:center; gap:8px; min-height:36px; padding:0 10px; border:1px solid rgba(0,68,99,.10); border-radius:12px; background:#fff; color:var(--brand-ink); font-weight:850; }
-    .account-toggle input { width:18px!important; height:18px!important; min-height:18px!important; padding:0!important; accent-color:var(--brand-primary); }
-    .account-meta-grid { display:grid; grid-template-columns:repeat(5, minmax(110px, 1fr)); gap:8px; color:var(--brand-muted); font-size:.86rem; font-weight:850; }
-    .account-meta-grid strong { display:block; color:var(--brand-ink); font-size:1rem; }
-    .accounts-inline { display:grid; grid-template-columns:repeat(2, minmax(160px, 1fr)) minmax(130px, 160px) repeat(2, minmax(120px, 150px)); gap:8px; align-items:start; min-width:0; }
-    .accounts-inline .account-channel-options { grid-column:1 / -1; grid-template-columns:repeat(3, minmax(120px, 1fr)); }
-    .account-limits .account-channel-options { grid-column:1 / -1; grid-template-columns:repeat(3, minmax(120px, 1fr)); }
-    .accounts-inline .accounts-link { justify-self:start; }
-    .accounts-row-actions { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; min-width:0; }
-    .accounts-delete-form { margin:0; }
-    .accounts-delete-form .accounts-link { min-height:42px; white-space:nowrap; }
+    .accounts-link { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:0 16px; border:1px solid var(--line); border-radius:12px; color:#007ea8; background:var(--surface-soft); font:inherit; font-weight:900; text-decoration:none; cursor:pointer; transition:background .16s,color .16s,border-color .16s; }
+    .accounts-link:hover { background:#071120; border-color:#071120; color:#fff; }
+    .accounts-link.primary { background:#071120; border-color:#071120; color:#fff; }
+    .accounts-link.primary:hover { background:#fff; color:#071120; }
     .accounts-link.danger { border-color:#f1c2c6; background:#fff1f2; color:#9f2631; }
-    .accounts-link.danger:hover { background:#ffe4e6; border-color:#e998a1; }
+    .accounts-link.danger:hover { background:#9f2631; border-color:#9f2631; color:#fff; }
+    .accounts-box { border:1px solid rgba(0,212,255,.16); border-radius:20px; background:#fff; padding:20px; box-shadow:0 10px 26px rgba(0, 76, 110, .07); }
+    .accounts-box h2 { margin:0 0 16px; color:var(--brand-ink); font-size:1.25rem; letter-spacing:-.02em; }
+    .accounts-current { min-width:0; }
+    .accounts-list { display:grid; gap:14px; }
+    .account-row { display:grid; gap:16px; padding:18px; border:1px solid rgba(0,212,255,.16); border-radius:18px; background:#fbfdff; box-shadow:0 8px 18px rgba(6, 24, 44, .04); }
+    .account-summary { display:grid; grid-template-columns:auto minmax(180px, 1fr) auto auto; gap:14px; align-items:center; }
+    .account-id { display:inline-flex; align-items:center; justify-content:center; min-width:52px; min-height:52px; padding:0 12px; border-radius:14px; background:#071120; color:#eafaff; font-weight:950; font-size:1.05rem; }
+    .account-name { min-width:0; }
+    .account-name strong { display:block; color:var(--brand-ink); font-size:1.15rem; line-height:1.16; overflow-wrap:anywhere; }
+    .account-name span { display:block; margin-top:4px; color:var(--brand-muted); font-size:.92rem; font-weight:850; overflow-wrap:anywhere; }
+    .account-pill { display:inline-flex; align-items:center; justify-content:center; min-height:34px; padding:0 14px; border:1px solid #a8e0ba; border-radius:999px; background:#eef9f0; color:#217a43; font-size:.84rem; font-weight:950; white-space:nowrap; }
+    .account-pill.off { border-color:#cbd5e1; background:#f1f5f9; color:#64748b; }
+    .account-usage { color:var(--brand-muted); font-size:.94rem; font-weight:900; text-align:right; white-space:nowrap; }
+    .account-meta-grid { display:grid; grid-template-columns:repeat(5, minmax(120px, 1fr)); gap:10px; }
+    .account-metric { min-width:0; padding:12px; border:1px solid rgba(0,68,99,.10); border-radius:14px; background:#fff; color:var(--brand-muted); font-size:.84rem; font-weight:900; }
+    .account-metric strong { display:block; margin-bottom:3px; color:var(--brand-ink); font-size:1.02rem; overflow-wrap:anywhere; }
+    .accounts-form { display:grid; gap:14px; }
+    .account-form-grid { display:grid; grid-template-columns:minmax(180px, 1.35fr) minmax(160px, 1fr) minmax(130px, .8fr) repeat(2, minmax(140px, .9fr)); gap:10px; align-items:end; }
+    .account-field { display:grid; gap:7px; min-width:0; }
+    .account-field span,
+    .account-channel-title { color:var(--brand-muted); font-size:.76rem; font-weight:950; letter-spacing:.05em; text-transform:uppercase; }
+    .account-field input,
+    .account-field select {
+      width:100%;
+      min-width:0;
+      min-height:46px;
+      padding:0 13px;
+      border:1px solid var(--line);
+      border-radius:13px;
+      color:var(--brand-ink);
+      background:#fff;
+      outline:none;
+      font:inherit;
+      font-weight:850;
+    }
+    .account-field input:focus,
+    .account-field select:focus { border-color:var(--focus); box-shadow:0 0 0 3px rgba(0,212,255,.14); }
+    .account-field select { appearance:none; padding-right:40px; cursor:pointer; }
+    .account-select-field { position:relative; }
+    .account-select-field::after { content:"⌄"; position:absolute; right:13px; bottom:13px; color:var(--brand-primary); font-size:1.08rem; pointer-events:none; line-height:1; }
+    .account-channel-options { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:10px; }
+    .account-toggle { display:flex; align-items:center; gap:10px; min-height:46px; padding:0 13px; border:1px solid rgba(0,68,99,.10); border-radius:13px; background:#fff; color:var(--brand-ink); font-weight:900; }
+    .account-toggle input { width:19px!important; height:19px!important; min-height:19px!important; padding:0!important; accent-color:var(--brand-primary); }
+    .accounts-row-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; padding-top:2px; }
+    .accounts-delete-form { margin:0; }
     .accounts-empty { margin:0; padding:16px; border:1px dashed rgba(0,212,255,.28); border-radius:14px; color:var(--brand-muted); font-weight:850; }
     .notice { display:block; margin-bottom:14px; }
     .admin-content { container-type:inline-size; }
-    @container (max-width: 1180px) {
-      .accounts-grid { grid-template-columns:1fr; }
-      .accounts-grid > .accounts-box:first-child { max-width:420px; }
-    }
-    @media (max-width: 1180px) {
-      .accounts-grid { grid-template-columns:1fr; }
-      .accounts-grid > .accounts-box:first-child { max-width:420px; }
-      .accounts-inline { grid-template-columns:repeat(2, minmax(140px, 1fr)); }
+    @media (max-width: 1280px) {
+      .account-meta-grid,
+      .account-form-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
     }
     @media (max-width: 980px) {
-      .account-summary { grid-template-columns:auto minmax(0, 1fr); }
+      .account-summary { grid-template-columns:auto minmax(0, 1fr); align-items:start; }
       .account-pill { justify-self:start; }
       .account-usage { text-align:left; white-space:normal; }
-      .accounts-row-actions { grid-template-columns:1fr; }
-      .accounts-delete-form .accounts-link { width:100%; }
+      .account-meta-grid,
+      .account-form-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 720px) {
-      .account-row { padding:12px; }
-      .account-summary { align-items:start; }
-      .accounts-row-actions { min-width:0; grid-template-columns:1fr; }
-      .account-limits { grid-template-columns:1fr; }
-      .account-meta-grid { grid-template-columns:1fr 1fr; }
-      .accounts-inline { min-width:0; grid-template-columns:1fr; }
-      .accounts-inline .account-channel-options { grid-template-columns:1fr; }
-      .accounts-row-actions .accounts-link,
-      .accounts-delete-form .accounts-link { width:100%; }
+      .accounts-box { padding:14px; }
+      .account-row { padding:14px; }
+      .account-summary,
+      .account-meta-grid,
+      .account-form-grid,
+      .account-channel-options { grid-template-columns:1fr; }
+      .account-id { width:max-content; }
+      .accounts-row-actions { display:grid; grid-template-columns:1fr; }
+      .accounts-row-actions .accounts-link { width:100%; }
     }
   </style>
 </head>
@@ -282,48 +272,6 @@ SQL);
         <div class="admin-layout">
           <?php nav_render_admin_side_nav('accounts'); ?>
           <div class="admin-content">
-        <div class="accounts-grid">
-          <section class="accounts-box">
-            <h2>Nueva cuenta</h2>
-            <form class="accounts-form" method="post" action="/accounts.php" autocomplete="off">
-              <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-              <label class="field">
-                <span class="field-label">Nombre</span>
-                <input type="text" name="create_name" maxlength="160" required autocomplete="off">
-              </label>
-              <label class="field">
-                <span class="field-label">Slug</span>
-                <input type="text" name="create_slug" maxlength="80" placeholder="cliente-demo" autocomplete="off">
-              </label>
-              <label class="field">
-                <span class="field-label">Estado</span>
-                <select name="create_status">
-                  <?php foreach ($statusOptions as $value => $label): ?>
-                    <option value="<?= h($value) ?>"><?= h($label) ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </label>
-              <div class="account-limits">
-                <p class="account-limits-title">Límites de la cuenta</p>
-                <label class="field">
-                  <span class="field-label">Operadores máximos</span>
-                  <input type="number" name="create_max_operators" min="0" max="9999" placeholder="Ilimitado" inputmode="numeric">
-                </label>
-                <label class="field">
-                  <span class="field-label">Canales máximos</span>
-                  <input type="number" name="create_max_channels" min="0" max="9999" placeholder="Ilimitado" inputmode="numeric">
-                </label>
-                <div class="account-channel-options">
-                  <p class="account-limits-title">Canales permitidos</p>
-                  <label class="account-toggle"><input type="checkbox" name="create_allow_instagram" value="1" checked> Instagram</label>
-                  <label class="account-toggle"><input type="checkbox" name="create_allow_messenger" value="1" checked> Messenger</label>
-                  <label class="account-toggle"><input type="checkbox" name="create_allow_whatsapp" value="1" checked> WhatsApp</label>
-                </div>
-              </div>
-              <button class="btn" type="submit" name="create_account_submit" value="1">Crear cuenta</button>
-            </form>
-          </section>
-
           <section class="accounts-box accounts-current">
             <h2>Cuentas actuales</h2>
             <div class="accounts-list">
@@ -343,32 +291,52 @@ SQL);
                     <span class="account-usage"><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</span>
                   </div>
                   <div class="account-meta-grid">
-                    <span><strong><?= h(accounts_limit_label(isset($account['max_operators']) && $account['max_operators'] !== null ? (int) $account['max_operators'] : null)) ?></strong>Operadores</span>
-                    <span><strong><?= h(accounts_limit_label(isset($account['max_channels']) && $account['max_channels'] !== null ? (int) $account['max_channels'] : null)) ?></strong>Canales</span>
-                    <span><strong><?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Instagram</span>
-                    <span><strong><?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Messenger</span>
-                    <span><strong><?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>WhatsApp</span>
+                    <span class="account-metric"><strong><?= h(accounts_limit_label(isset($account['max_operators']) && $account['max_operators'] !== null ? (int) $account['max_operators'] : null)) ?></strong>Agentes permitidos</span>
+                    <span class="account-metric"><strong><?= h(accounts_limit_label(isset($account['max_channels']) && $account['max_channels'] !== null ? (int) $account['max_channels'] : null)) ?></strong>Canales máximos</span>
+                    <span class="account-metric"><strong><?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Instagram</span>
+                    <span class="account-metric"><strong><?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Facebook</span>
+                    <span class="account-metric"><strong><?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>WhatsApp</span>
                   </div>
-                  <div class="accounts-row-actions">
-                    <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
-                      <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                      <input type="hidden" name="update_id" value="<?= (int) $account['id'] ?>">
-                      <input type="text" name="update_name" value="<?= h((string) $account['name']) ?>" maxlength="160" aria-label="Nombre" autocomplete="off">
-                      <input type="text" name="update_slug" value="<?= h((string) $account['slug']) ?>" maxlength="80" aria-label="Slug" autocomplete="off">
-                      <select name="update_status" aria-label="Estado">
-                        <?php foreach ($statusOptions as $value => $label): ?>
-                          <option value="<?= h($value) ?>" <?= $accountStatus === $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                        <?php endforeach; ?>
-                      </select>
-                      <input type="number" name="update_max_operators" value="<?= h((string) ($account['max_operators'] ?? '')) ?>" min="0" max="9999" placeholder="Operadores" aria-label="Operadores máximos" inputmode="numeric">
-                      <input type="number" name="update_max_channels" value="<?= h((string) ($account['max_channels'] ?? '')) ?>" min="0" max="9999" placeholder="Canales" aria-label="Canales máximos" inputmode="numeric">
+                  <form id="account-update-<?= (int) $account['id'] ?>" class="accounts-form" method="post" action="/accounts.php" autocomplete="off">
+                    <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                    <input type="hidden" name="update_id" value="<?= (int) $account['id'] ?>">
+                    <div class="account-form-grid">
+                      <label class="account-field">
+                        <span>Nombre</span>
+                        <input type="text" name="update_name" value="<?= h((string) $account['name']) ?>" maxlength="160" aria-label="Nombre" autocomplete="off">
+                      </label>
+                      <label class="account-field">
+                        <span>Slug</span>
+                        <input type="text" name="update_slug" value="<?= h((string) $account['slug']) ?>" maxlength="80" aria-label="Slug" autocomplete="off">
+                      </label>
+                      <label class="account-field account-select-field">
+                        <span>Estado</span>
+                        <select name="update_status" aria-label="Estado">
+                          <?php foreach ($statusOptions as $value => $label): ?>
+                            <option value="<?= h($value) ?>" <?= $accountStatus === $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </label>
+                      <label class="account-field">
+                        <span>Agentes permitidos</span>
+                        <input type="number" name="update_max_operators" value="<?= h((string) ($account['max_operators'] ?? '')) ?>" min="0" max="9999" placeholder="Ilimitado" aria-label="Agentes permitidos" inputmode="numeric">
+                      </label>
+                      <label class="account-field">
+                        <span>Canales máximos</span>
+                        <input type="number" name="update_max_channels" value="<?= h((string) ($account['max_channels'] ?? '')) ?>" min="0" max="9999" placeholder="Ilimitado" aria-label="Canales máximos" inputmode="numeric">
+                      </label>
+                    </div>
+                    <div>
+                      <span class="account-channel-title">Tipos de canal permitidos</span>
                       <div class="account-channel-options">
                         <label class="account-toggle"><input type="checkbox" name="update_allow_instagram" value="1" <?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'checked' : '' ?>> Instagram</label>
-                        <label class="account-toggle"><input type="checkbox" name="update_allow_messenger" value="1" <?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'checked' : '' ?>> Messenger</label>
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_messenger" value="1" <?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'checked' : '' ?>> Facebook</label>
                         <label class="account-toggle"><input type="checkbox" name="update_allow_whatsapp" value="1" <?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'checked' : '' ?>> WhatsApp</label>
                       </div>
-                      <button class="accounts-link" type="submit" name="update_account_submit" value="1">Guardar</button>
-                    </form>
+                    </div>
+                  </form>
+                  <div class="accounts-row-actions">
+                    <button class="accounts-link primary" form="account-update-<?= (int) $account['id'] ?>" type="submit" name="update_account_submit" value="1">Guardar</button>
                     <form class="accounts-delete-form" method="post" action="/accounts.php" onsubmit="return confirm('Esta accion eliminara la cuenta y todos sus datos relacionados. ¿Deseas continuar?');">
                       <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                       <input type="hidden" name="delete_id" value="<?= (int) $account['id'] ?>">
