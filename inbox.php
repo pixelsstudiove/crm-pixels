@@ -412,12 +412,12 @@ function inbox_visible_message_text($value, array $attachments): string {
     .conversation-filters input::placeholder { color:#98a2b3; font-weight:700; }
     .conversation-filters select, .status-form select { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23667085' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 14px center; background-size:14px; }
     .conversation-filters input:focus, .conversation-filters select:focus, .status-form select:focus { border-color:var(--inbox-violet); box-shadow:0 0 0 4px rgba(124,60,255,.12); }
-    .conversation-filter-disclosure { border:1px solid rgba(22,199,232,.42); border-radius:12px; background:#ecfbff; overflow:hidden; }
-    .conversation-filter-disclosure summary { min-height:28px; display:flex; align-items:center; justify-content:center; padding:0; color:var(--inbox-cyan); cursor:pointer; user-select:none; list-style:none; transition:background .18s ease, border-color .18s ease; }
+    .conversation-filter-disclosure { border:1px solid var(--inbox-navy); border-radius:12px; background:var(--inbox-navy); overflow:hidden; }
+    .conversation-filter-disclosure summary { min-height:28px; display:flex; align-items:center; justify-content:center; padding:0; color:#fff; cursor:pointer; user-select:none; list-style:none; transition:background .18s ease, border-color .18s ease; }
     .conversation-filter-disclosure summary::-webkit-details-marker { display:none; }
-    .conversation-filter-disclosure summary::after { content:"⌄"; color:var(--inbox-cyan); font-size:1.05rem; font-weight:950; line-height:1; transition:transform .18s ease; }
+    .conversation-filter-disclosure summary::after { content:"⌄"; color:#fff; font-size:1.05rem; font-weight:950; line-height:1; transition:transform .18s ease; }
     .conversation-filter-disclosure[open] summary::after { transform:rotate(180deg); }
-    .conversation-filter-disclosure summary:hover { background:#dff7ff; }
+    .conversation-filter-disclosure summary:hover { background:#151b2d; }
     .conversation-filter-options { display:grid; gap:9px; padding:10px; border-top:1px solid var(--inbox-line); background:#fbfcff; }
     .conversation-list { flex:1 1 auto; min-height:0; overflow:auto; padding:10px; background:#fbfcff; scrollbar-color:#c4cfdd transparent; }
     .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 13px 12px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
@@ -505,9 +505,9 @@ function inbox_visible_message_text($value, array $attachments): string {
     .live-status { color:var(--inbox-muted); font-size:.82rem; }
     .side-panel { padding:12px; display:flex; flex-direction:column; gap:12px; overflow:hidden; background:#fff; transition:padding .18s ease; }
     .side-panel-content { min-height:0; display:grid; align-content:start; gap:14px; overflow:auto; padding:4px; }
-    .side-panel-toggle { flex:0 0 auto; width:100%; min-height:34px; border:1px solid rgba(22,199,232,.42); border-radius:12px; background:#ecfbff; color:var(--inbox-cyan); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; font-size:.78rem; font-weight:950; letter-spacing:.02em; transition:background .18s ease, border-color .18s ease, color .18s ease; }
-    .side-panel-toggle::after { content:"›"; color:var(--inbox-cyan); font-size:1.05rem; font-weight:950; line-height:1; }
-    .side-panel-toggle:hover { background:#dff7ff; }
+    .side-panel-toggle { flex:0 0 auto; width:100%; min-height:34px; border:1px solid var(--inbox-navy); border-radius:12px; background:var(--inbox-navy); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; font-size:.78rem; font-weight:950; letter-spacing:.02em; transition:background .18s ease, border-color .18s ease, color .18s ease; }
+    .side-panel-toggle::after { content:"›"; color:#fff; font-size:1.05rem; font-weight:950; line-height:1; }
+    .side-panel-toggle:hover { background:#151b2d; border-color:#151b2d; }
     .inbox-layout.is-side-collapsed .side-panel { padding:6px; }
     .inbox-layout.is-side-collapsed .side-panel-content { display:none; }
     .inbox-layout.is-side-collapsed .side-panel-toggle { flex:1 1 auto; min-height:0; height:100%; }
