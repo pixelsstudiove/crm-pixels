@@ -29,6 +29,25 @@ function account_validate_payload(array &$errors, string $name, string $slug, st
   if (!array_key_exists($status, $statusOptions)) $errors[] = 'Selecciona un estado válido.';
 }
 
+function account_optional_limit(array &$errors, string $value, string $label): ?int {
+  $value = trim($value);
+  if ($value === '') return null;
+  if (!preg_match('/^\d+$/', $value)) {
+    $errors[] = "{$label} debe ser un número entero positivo o dejarse vacío para ilimitado.";
+    return null;
+  }
+  $limit = (int) $value;
+  if ($limit > 9999) {
+    $errors[] = "{$label} no puede ser mayor a 9999.";
+    return null;
+  }
+  return $limit;
+}
+
+function account_bool_from_post(string $key): int {
+  return isset($_POST[$key]) ? 1 : 0;
+}
+
 function account_exists(PDO $pdo, string $accountsTable, int $accountId): bool {
   if ($accountId <= 0) return false;
   $stmt = $pdo->prepare("SELECT id FROM {$accountsTable} WHERE id=? LIMIT 1");
@@ -91,14 +110,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $rawSlug = (string) ($_POST['create_slug'] ?? $name);
       $slug = account_slug_from_name($rawSlug);
       $status = (string) ($_POST['create_status'] ?? 'active');
+      $maxOperators = account_optional_limit($errors, (string) ($_POST['create_max_operators'] ?? ''), 'El límite de operadores');
+      $maxChannels = account_optional_limit($errors, (string) ($_POST['create_max_channels'] ?? ''), 'El límite de canales');
+      $allowInstagram = account_bool_from_post('create_allow_instagram');
+      $allowMessenger = account_bool_from_post('create_allow_messenger');
+      $allowWhatsapp = account_bool_from_post('create_allow_whatsapp');
       account_validate_payload($errors, $name, $slug, $status, $statusOptions);
       if (!$errors && account_name_is_used($pdo, $accountsTable, $name)) $errors[] = 'Ya existe una cuenta con ese nombre.';
       if (!$errors && account_slug_is_used($pdo, $accountsTable, $slug)) $errors[] = 'Ese slug ya está siendo usado por otra cuenta.';
 
       if (!$errors) {
         try {
-          $stmt = $pdo->prepare("INSERT INTO {$accountsTable} (name, slug, status) VALUES (?, ?, ?)");
-          $stmt->execute([$name, $slug, $status]);
+          $stmt = $pdo->prepare("INSERT INTO {$accountsTable} (name, slug, status, max_operators, max_channels, allow_instagram, allow_messenger, allow_whatsapp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+          $stmt->execute([$name, $slug, $status, $maxOperators, $maxChannels, $allowInstagram, $allowMessenger, $allowWhatsapp]);
           $notice = 'Cuenta creada correctamente.';
         } catch (Throwable $e) {
           $errors[] = 'No se pudo crear la cuenta.';
@@ -110,14 +134,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       $rawSlug = (string) ($_POST['update_slug'] ?? $name);
       $slug = account_slug_from_name($rawSlug);
       $status = (string) ($_POST['update_status'] ?? 'active');
+      $maxOperators = account_optional_limit($errors, (string) ($_POST['update_max_operators'] ?? ''), 'El límite de operadores');
+      $maxChannels = account_optional_limit($errors, (string) ($_POST['update_max_channels'] ?? ''), 'El límite de canales');
+      $allowInstagram = account_bool_from_post('update_allow_instagram');
+      $allowMessenger = account_bool_from_post('update_allow_messenger');
+      $allowWhatsapp = account_bool_from_post('update_allow_whatsapp');
       account_validate_payload($errors, $name, $slug, $status, $statusOptions);
       if (!$errors && !account_exists($pdo, $accountsTable, $accountId)) $errors[] = 'La cuenta que intentas actualizar no existe.';
       if (!$errors && account_slug_is_used($pdo, $accountsTable, $slug, $accountId)) $errors[] = 'Ese slug ya está siendo usado por otra cuenta.';
 
       if (!$errors) {
         try {
-          $stmt = $pdo->prepare("UPDATE {$accountsTable} SET name=?, slug=?, status=?, updated_at=NOW() WHERE id=?");
-          $stmt->execute([$name, $slug, $status, $accountId]);
+          $stmt = $pdo->prepare("UPDATE {$accountsTable} SET name=?, slug=?, status=?, max_operators=?, max_channels=?, allow_instagram=?, allow_messenger=?, allow_whatsapp=?, updated_at=NOW() WHERE id=?");
+          $stmt->execute([$name, $slug, $status, $maxOperators, $maxChannels, $allowInstagram, $allowMessenger, $allowWhatsapp, $accountId]);
           $notice = 'Cuenta actualizada correctamente.';
         } catch (Throwable $e) {
           $errors[] = 'No se pudo actualizar la cuenta.';
@@ -185,7 +214,18 @@ SQL);
     .account-pill { display:inline-flex; align-items:center; justify-content:center; min-height:30px; padding:0 10px; border:1px solid #a8e0ba; border-radius:999px; background:#eef9f0; color:#217a43; font-size:.8rem; font-weight:900; white-space:nowrap; }
     .account-pill.off { border-color:#cbd5e1; background:#f1f5f9; color:#64748b; }
     .account-usage { color:var(--brand-muted); font-size:.9rem; font-weight:850; text-align:right; white-space:nowrap; }
-    .accounts-inline { display:grid; grid-template-columns:minmax(180px, 1.1fr) minmax(160px, .9fr) minmax(130px, 150px) auto; gap:8px; align-items:start; min-width:0; }
+    .account-limits { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px; border:1px solid rgba(0,68,99,.10); border-radius:14px; background:#f8fcff; }
+    .account-limits-title { grid-column:1 / -1; margin:0; color:var(--brand-muted); font-size:.78rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+    .account-channel-options { display:grid; gap:8px; }
+    .account-channel-options .account-limits-title { grid-column:auto; }
+    .account-toggle { display:flex; align-items:center; gap:8px; min-height:36px; padding:0 10px; border:1px solid rgba(0,68,99,.10); border-radius:12px; background:#fff; color:var(--brand-ink); font-weight:850; }
+    .account-toggle input { width:18px!important; height:18px!important; min-height:18px!important; padding:0!important; accent-color:var(--brand-primary); }
+    .account-meta-grid { display:grid; grid-template-columns:repeat(5, minmax(110px, 1fr)); gap:8px; color:var(--brand-muted); font-size:.86rem; font-weight:850; }
+    .account-meta-grid strong { display:block; color:var(--brand-ink); font-size:1rem; }
+    .accounts-inline { display:grid; grid-template-columns:repeat(2, minmax(160px, 1fr)) minmax(130px, 160px) repeat(2, minmax(120px, 150px)); gap:8px; align-items:start; min-width:0; }
+    .accounts-inline .account-channel-options { grid-column:1 / -1; grid-template-columns:repeat(3, minmax(120px, 1fr)); }
+    .account-limits .account-channel-options { grid-column:1 / -1; grid-template-columns:repeat(3, minmax(120px, 1fr)); }
+    .accounts-inline .accounts-link { justify-self:start; }
     .accounts-row-actions { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:8px; align-items:start; min-width:0; }
     .accounts-delete-form { margin:0; }
     .accounts-delete-form .accounts-link { min-height:42px; white-space:nowrap; }
@@ -201,7 +241,7 @@ SQL);
     @media (max-width: 1180px) {
       .accounts-grid { grid-template-columns:1fr; }
       .accounts-grid > .accounts-box:first-child { max-width:420px; }
-      .accounts-inline { grid-template-columns:minmax(160px, 1fr) minmax(140px, 1fr) minmax(120px, 150px) auto; }
+      .accounts-inline { grid-template-columns:repeat(2, minmax(140px, 1fr)); }
     }
     @media (max-width: 980px) {
       .account-summary { grid-template-columns:auto minmax(0, 1fr); }
@@ -214,7 +254,10 @@ SQL);
       .account-row { padding:12px; }
       .account-summary { align-items:start; }
       .accounts-row-actions { min-width:0; grid-template-columns:1fr; }
+      .account-limits { grid-template-columns:1fr; }
+      .account-meta-grid { grid-template-columns:1fr 1fr; }
       .accounts-inline { min-width:0; grid-template-columns:1fr; }
+      .accounts-inline .account-channel-options { grid-template-columns:1fr; }
       .accounts-row-actions .accounts-link,
       .accounts-delete-form .accounts-link { width:100%; }
     }
@@ -260,6 +303,23 @@ SQL);
                   <?php endforeach; ?>
                 </select>
               </label>
+              <div class="account-limits">
+                <p class="account-limits-title">Límites de la cuenta</p>
+                <label class="field">
+                  <span class="field-label">Operadores máximos</span>
+                  <input type="number" name="create_max_operators" min="0" max="9999" placeholder="Ilimitado" inputmode="numeric">
+                </label>
+                <label class="field">
+                  <span class="field-label">Canales máximos</span>
+                  <input type="number" name="create_max_channels" min="0" max="9999" placeholder="Ilimitado" inputmode="numeric">
+                </label>
+                <div class="account-channel-options">
+                  <p class="account-limits-title">Canales permitidos</p>
+                  <label class="account-toggle"><input type="checkbox" name="create_allow_instagram" value="1" checked> Instagram</label>
+                  <label class="account-toggle"><input type="checkbox" name="create_allow_messenger" value="1" checked> Messenger</label>
+                  <label class="account-toggle"><input type="checkbox" name="create_allow_whatsapp" value="1" checked> WhatsApp</label>
+                </div>
+              </div>
               <button class="btn" type="submit" name="create_account_submit" value="1">Crear cuenta</button>
             </form>
           </section>
@@ -282,6 +342,13 @@ SQL);
                     <span class="account-pill <?= $accountStatus === 'active' ? '' : 'off' ?>"><?= h($accountStatusLabel) ?></span>
                     <span class="account-usage"><?= (int) ($account['users_total'] ?? 0) ?> usuarios · <?= (int) ($account['channels_total'] ?? 0) ?> canales</span>
                   </div>
+                  <div class="account-meta-grid">
+                    <span><strong><?= h(accounts_limit_label(isset($account['max_operators']) && $account['max_operators'] !== null ? (int) $account['max_operators'] : null)) ?></strong>Operadores</span>
+                    <span><strong><?= h(accounts_limit_label(isset($account['max_channels']) && $account['max_channels'] !== null ? (int) $account['max_channels'] : null)) ?></strong>Canales</span>
+                    <span><strong><?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Instagram</span>
+                    <span><strong><?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>Messenger</span>
+                    <span><strong><?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'Sí' : 'No' ?></strong>WhatsApp</span>
+                  </div>
                   <div class="accounts-row-actions">
                     <form class="accounts-form accounts-inline" method="post" action="/accounts.php" autocomplete="off">
                       <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
@@ -293,6 +360,13 @@ SQL);
                           <option value="<?= h($value) ?>" <?= $accountStatus === $value ? 'selected' : '' ?>><?= h($label) ?></option>
                         <?php endforeach; ?>
                       </select>
+                      <input type="number" name="update_max_operators" value="<?= h((string) ($account['max_operators'] ?? '')) ?>" min="0" max="9999" placeholder="Operadores" aria-label="Operadores máximos" inputmode="numeric">
+                      <input type="number" name="update_max_channels" value="<?= h((string) ($account['max_channels'] ?? '')) ?>" min="0" max="9999" placeholder="Canales" aria-label="Canales máximos" inputmode="numeric">
+                      <div class="account-channel-options">
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_instagram" value="1" <?= (int) ($account['allow_instagram'] ?? 1) === 1 ? 'checked' : '' ?>> Instagram</label>
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_messenger" value="1" <?= (int) ($account['allow_messenger'] ?? 1) === 1 ? 'checked' : '' ?>> Messenger</label>
+                        <label class="account-toggle"><input type="checkbox" name="update_allow_whatsapp" value="1" <?= (int) ($account['allow_whatsapp'] ?? 1) === 1 ? 'checked' : '' ?>> WhatsApp</label>
+                      </div>
                       <button class="accounts-link" type="submit" name="update_account_submit" value="1">Guardar</button>
                     </form>
                     <form class="accounts-delete-form" method="post" action="/accounts.php" onsubmit="return confirm('Esta accion eliminara la cuenta y todos sus datos relacionados. ¿Deseas continuar?');">

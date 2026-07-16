@@ -186,12 +186,19 @@ if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
   if (!in_array($facebookMode, ['both', 'instagram', 'messenger'], true)) $facebookMode = 'both';
   $providerAppId = $connectProvider === 'facebook' ? $facebookAppId : $instagramAppId;
   $providerAppSecret = $connectProvider === 'facebook' ? $facebookAppSecret : $instagramAppSecret;
+  $requestedTypes = $connectProvider === 'instagram'
+    ? ['instagram']
+    : ($facebookMode === 'both' ? ['instagram', 'messenger'] : [$facebookMode]);
   if ($mustChooseConnectAccount && $connectAccountId <= 0) {
     $errors[] = 'Selecciona la cuenta cliente a la que quieres asignar este nuevo canal antes de conectar con Meta.';
   } elseif ($providerAppId === '' || $providerAppSecret === '') {
     $errors[] = $connectProvider === 'facebook'
       ? 'Falta configurar FACEBOOK_APP_ID y/o FACEBOOK_APP_SECRET en config/local.php.'
       : 'Falta configurar INSTAGRAM_APP_ID y/o INSTAGRAM_APP_SECRET en config/local.php.';
+  } elseif (!accounts_channel_types_allowed($selectedConnectAccount ?: [], $requestedTypes)) {
+    $errors[] = 'Esta cuenta no tiene permitido conectar: ' . implode(', ', accounts_channel_types_denied($selectedConnectAccount ?: [], $requestedTypes)) . '.';
+  } elseif (!accounts_can_add_channel($pdo, $connectAccountId)) {
+    $errors[] = accounts_limit_error($pdo, $connectAccountId, 'channels');
   } else {
     $_SESSION['instagram_oauth_state'] = bin2hex(random_bytes(24));
     $_SESSION['instagram_oauth_redirect'] = $callbackUrl;

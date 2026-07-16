@@ -153,8 +153,32 @@ function ig_channel_upsert(PDO $pdo, string $table, array $channel): void {
   $instagramUserId = (string) $channel['instagram_user_id'];
   $receiveInstagram = !empty($channel['receive_instagram']) ? 1 : 0;
   $receiveMessenger = !empty($channel['receive_messenger']) ? 1 : 0;
+  $account = accounts_find($pdo, $accountId) ?: [];
+  $requestedTypes = [];
+  if ($receiveInstagram === 1) $requestedTypes[] = 'instagram';
+  if ($receiveMessenger === 1) $requestedTypes[] = 'messenger';
+  $deniedTypes = accounts_channel_types_denied($account, $requestedTypes);
+  if ($deniedTypes) {
+    throw new RuntimeException('Esta cuenta no tiene permitido conectar: ' . implode(', ', $deniedTypes) . '.');
+  }
   $existingInOtherAccount = ig_channel_active_in_other_account($pdo, $table, $accountId, $pageId, $instagramUserId);
   if ($existingInOtherAccount) throw new RuntimeException(ig_channel_existing_account_message($existingInOtherAccount));
+
+  $identifiers = array_values(array_unique(array_filter([
+    trim($pageId),
+    trim($instagramUserId),
+  ], static fn($value) => $value !== '')));
+  $existingChannelId = 0;
+  if ($identifiers) {
+    $placeholders = implode(',', array_fill(0, count($identifiers), '?'));
+    $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND (page_id IN ({$placeholders}) OR instagram_user_id IN ({$placeholders})) ORDER BY id DESC LIMIT 1");
+    $find->execute(array_merge([$accountId], $identifiers, $identifiers));
+    $existingChannelId = (int) ($find->fetchColumn() ?: 0);
+  }
+  if ($existingChannelId <= 0 && !accounts_can_add_channel($pdo, $accountId)) {
+    $message = accounts_limit_error($pdo, $accountId, 'channels');
+    throw new RuntimeException($message !== '' ? $message : 'Esta cuenta ya alcanzó su límite de canales.');
+  }
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (

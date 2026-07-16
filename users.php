@@ -62,6 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       if ($targetAccountId <= 0) $errors[] = 'Selecciona una cuenta válida.';
       if (strlen($password) < 8) $errors[] = 'La contraseña debe tener al menos 8 caracteres.';
       if ($password !== $confirm) $errors[] = 'La confirmación de contraseña no coincide.';
+      if (!$errors && $role !== 'super_admin' && !accounts_can_add_operator($pdo, $targetAccountId)) {
+        $errors[] = accounts_limit_error($pdo, $targetAccountId, 'operators');
+      }
 
       if (!$errors) {
         try {
@@ -94,6 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
       if (!is_super_admin() && normalize_role($target['role'] ?? '') !== 'vendedor') {
         $errors[] = 'Solo puedes actualizar vendedores de tu cuenta.';
+      }
+      if (!$errors && $role !== 'super_admin' && !accounts_can_add_operator($pdo, $targetAccountId, $id)) {
+        $errors[] = accounts_limit_error($pdo, $targetAccountId, 'operators', $id);
       }
 
       if (!$errors) {

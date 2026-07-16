@@ -19,6 +19,7 @@ function account_index_exists(PDO $pdo, string $dbName, string $table, string $i
 }
 
 function accounts_ensure_schema(PDO $pdo): void {
+  global $DB_NAME;
   $table = accounts_table();
   $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS {$table} (
@@ -27,12 +28,25 @@ CREATE TABLE IF NOT EXISTS {$table} (
   slug VARCHAR(80) NOT NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'active',
   plan VARCHAR(60) NULL,
+  max_operators INT UNSIGNED NULL,
+  max_channels INT UNSIGNED NULL,
+  allow_instagram TINYINT(1) NOT NULL DEFAULT 1,
+  allow_messenger TINYINT(1) NOT NULL DEFAULT 1,
+  allow_whatsapp TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_slug (slug),
   KEY idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL);
+  $dbName = (string) ($DB_NAME ?? '');
+  if ($dbName !== '') {
+    try { if (!account_column_exists($pdo, $dbName, $table, 'max_operators')) $pdo->exec("ALTER TABLE {$table} ADD COLUMN max_operators INT UNSIGNED NULL AFTER plan"); } catch (Throwable $e) { /* no-op */ }
+    try { if (!account_column_exists($pdo, $dbName, $table, 'max_channels')) $pdo->exec("ALTER TABLE {$table} ADD COLUMN max_channels INT UNSIGNED NULL AFTER max_operators"); } catch (Throwable $e) { /* no-op */ }
+    try { if (!account_column_exists($pdo, $dbName, $table, 'allow_instagram')) $pdo->exec("ALTER TABLE {$table} ADD COLUMN allow_instagram TINYINT(1) NOT NULL DEFAULT 1 AFTER max_channels"); } catch (Throwable $e) { /* no-op */ }
+    try { if (!account_column_exists($pdo, $dbName, $table, 'allow_messenger')) $pdo->exec("ALTER TABLE {$table} ADD COLUMN allow_messenger TINYINT(1) NOT NULL DEFAULT 1 AFTER allow_instagram"); } catch (Throwable $e) { /* no-op */ }
+    try { if (!account_column_exists($pdo, $dbName, $table, 'allow_whatsapp')) $pdo->exec("ALTER TABLE {$table} ADD COLUMN allow_whatsapp TINYINT(1) NOT NULL DEFAULT 1 AFTER allow_messenger"); } catch (Throwable $e) { /* no-op */ }
+  }
 }
 
 function accounts_default_id(PDO $pdo): int {
@@ -112,6 +126,106 @@ function account_url(string $script, array $params = [], ?string $slug = null): 
 function accounts_is_active(PDO $pdo, int $accountId): bool {
   $account = accounts_find($pdo, $accountId);
   return !$account || (string) ($account['status'] ?? 'active') === 'active';
+}
+
+function accounts_limit_label(?int $limit): string {
+  return $limit !== null && $limit >= 0 ? (string) $limit : 'Ilimitado';
+}
+
+function accounts_channel_type_label(string $type): string {
+  return [
+    'instagram' => 'Instagram',
+    'messenger' => 'Messenger',
+    'whatsapp' => 'WhatsApp',
+  ][$type] ?? ucfirst($type);
+}
+
+function accounts_allows_channel_type(array $account, string $type): bool {
+  $type = strtolower(trim($type));
+  $column = [
+    'instagram' => 'allow_instagram',
+    'messenger' => 'allow_messenger',
+    'whatsapp' => 'allow_whatsapp',
+  ][$type] ?? '';
+  return $column === '' || (int) ($account[$column] ?? 1) === 1;
+}
+
+function accounts_channel_types_allowed(array $account, array $types): bool {
+  foreach (array_values(array_unique($types)) as $type) {
+    if (!accounts_allows_channel_type($account, (string) $type)) return false;
+  }
+  return true;
+}
+
+function accounts_channel_types_denied(array $account, array $types): array {
+  $denied = [];
+  foreach (array_values(array_unique($types)) as $type) {
+    $type = (string) $type;
+    if (!accounts_allows_channel_type($account, $type)) $denied[] = accounts_channel_type_label($type);
+  }
+  return $denied;
+}
+
+function accounts_channel_count(PDO $pdo, int $accountId, int $ignoreChannelId = 0): int {
+  $channelsTable = safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels');
+  try {
+    if ($ignoreChannelId > 0) {
+      $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$channelsTable} WHERE account_id=? AND id<>?");
+      $stmt->execute([$accountId, $ignoreChannelId]);
+    } else {
+      $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$channelsTable} WHERE account_id=?");
+      $stmt->execute([$accountId]);
+    }
+    return (int) $stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return 0;
+  }
+}
+
+function accounts_operator_count(PDO $pdo, int $accountId, int $ignoreUserId = 0): int {
+  $usersTable = safe_identifier((string) app_config('database.users_table', 'users'), 'users');
+  try {
+    if ($ignoreUserId > 0) {
+      $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$usersTable} WHERE account_id=? AND id<>? AND role<>'super_admin'");
+      $stmt->execute([$accountId, $ignoreUserId]);
+    } else {
+      $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$usersTable} WHERE account_id=? AND role<>'super_admin'");
+      $stmt->execute([$accountId]);
+    }
+    return (int) $stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return 0;
+  }
+}
+
+function accounts_can_add_channel(PDO $pdo, int $accountId, int $ignoreChannelId = 0): bool {
+  $account = accounts_find($pdo, $accountId);
+  $limit = isset($account['max_channels']) && $account['max_channels'] !== null && $account['max_channels'] !== '' ? (int) $account['max_channels'] : null;
+  return $limit === null || accounts_channel_count($pdo, $accountId, $ignoreChannelId) < $limit;
+}
+
+function accounts_can_add_operator(PDO $pdo, int $accountId, int $ignoreUserId = 0): bool {
+  $account = accounts_find($pdo, $accountId);
+  $limit = isset($account['max_operators']) && $account['max_operators'] !== null && $account['max_operators'] !== '' ? (int) $account['max_operators'] : null;
+  return $limit === null || accounts_operator_count($pdo, $accountId, $ignoreUserId) < $limit;
+}
+
+function accounts_limit_error(PDO $pdo, int $accountId, string $resource, int $ignoreId = 0): string {
+  $account = accounts_find($pdo, $accountId);
+  $accountName = trim((string) ($account['name'] ?? 'esta cuenta'));
+  if ($resource === 'operators') {
+    $limit = isset($account['max_operators']) && $account['max_operators'] !== null && $account['max_operators'] !== '' ? (int) $account['max_operators'] : null;
+    if ($limit !== null && accounts_operator_count($pdo, $accountId, $ignoreId) >= $limit) {
+      return "La cuenta {$accountName} ya alcanzó el límite de {$limit} operadores.";
+    }
+  }
+  if ($resource === 'channels') {
+    $limit = isset($account['max_channels']) && $account['max_channels'] !== null && $account['max_channels'] !== '' ? (int) $account['max_channels'] : null;
+    if ($limit !== null && accounts_channel_count($pdo, $accountId, $ignoreId) >= $limit) {
+      return "La cuenta {$accountName} ya alcanzó el límite de {$limit} canales.";
+    }
+  }
+  return '';
 }
 
 function accounts_add_account_column(PDO $pdo, string $dbName, string $table, int $defaultAccountId, string $after = 'id'): void {
