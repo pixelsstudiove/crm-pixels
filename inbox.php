@@ -126,6 +126,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($previousStatus === '') {
           if (inbox_wants_json()) inbox_json_error('Lead no encontrado para esta cuenta.', 404);
           $errors[] = 'Lead no encontrado para esta cuenta.';
+        } elseif ($salesStatus === 'nuevo_lead' && $previousStatus !== 'nuevo_lead' && lead_status_has_operator_reply($pdo, $leadId, is_super_admin() ? null : $currentAccountId)) {
+          if (inbox_wants_json()) inbox_json_error('No puedes devolver este lead a Nuevo lead porque ya fue respondido por un operador.');
+          $errors[] = 'No puedes devolver este lead a Nuevo lead porque ya fue respondido por un operador.';
         } else {
           if (is_super_admin()) {
             $stmt = $pdo->prepare("UPDATE {$TABLE_LEADS} SET sales_status=?, updated_at=NOW() WHERE id=?");

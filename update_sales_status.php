@@ -80,6 +80,12 @@ try {
     echo json_encode(['ok' => false, 'error' => 'Lead no encontrado para esta cuenta.'], JSON_UNESCAPED_UNICODE);
     exit;
   }
+  $leadAccountId = is_super_admin() ? null : $currentAccountId;
+  if ($salesStatus === 'nuevo_lead' && $previousStatus !== 'nuevo_lead' && lead_status_has_operator_reply($pdo, $id, $leadAccountId)) {
+    http_response_code(422);
+    echo json_encode(['ok' => false, 'error' => 'No puedes devolver este lead a Nuevo lead porque ya fue respondido por un operador.'], JSON_UNESCAPED_UNICODE);
+    exit;
+  }
   if ($previousStatus === $salesStatus) {
     echo json_encode([
       'ok' => true,

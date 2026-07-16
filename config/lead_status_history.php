@@ -81,6 +81,35 @@ SQL);
   ]);
 }
 
+function lead_status_has_operator_reply(PDO $pdo, int $leadId, ?int $accountId = null): bool {
+  if ($leadId <= 0) return false;
+  $conversationsTable = safe_identifier((string) app_config('database.conversations_table', 'conversations'), 'conversations');
+  $messagesTable = safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages');
+  $accountSql = '';
+  $params = [':lead_id' => $leadId];
+  if ($accountId !== null && $accountId > 0) {
+    $accountSql = 'AND c.account_id = :account_id';
+    $params[':account_id'] = $accountId;
+  }
+
+  try {
+    $stmt = $pdo->prepare(<<<SQL
+SELECT 1
+FROM {$conversationsTable} c
+JOIN {$messagesTable} m ON m.conversation_id = c.id
+WHERE c.lead_id = :lead_id
+  AND m.direction = 'outbound'
+  {$accountSql}
+LIMIT 1
+SQL);
+    foreach ($params as $key => $value) $stmt->bindValue($key, $value);
+    $stmt->execute();
+    return (bool) $stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
 function lead_status_auto_mark_no_response(PDO $pdo, string $leadsTable, ?int $accountId = null): int {
   $windowHours = max(1, (int) app_config('instagram.reply_window_hours', 24));
   $thresholdHours = max(1, min($windowHours, (int) app_config('instagram.no_response_threshold_hours', 2)));
@@ -92,6 +121,7 @@ function lead_status_auto_mark_no_response(PDO $pdo, string $leadsTable, ?int $a
   $leadsTable = safe_identifier($leadsTable, 'leads');
   $conversationsTable = safe_identifier((string) app_config('database.conversations_table', 'conversations'), 'conversations');
   $messagesTable = safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages');
+  $historyTable = lead_status_history_table();
 
   $windowSeconds = $windowHours * 3600;
   $thresholdSeconds = $thresholdHours * 3600;
@@ -101,6 +131,7 @@ function lead_status_auto_mark_no_response(PDO $pdo, string $leadsTable, ?int $a
 
   $accountSql = '';
   $params = [
+    ':target_status' => $targetStatus,
     ':max_last_inbound' => $maxLastInbound,
     ':status_a' => $fromStatuses[0],
     ':status_b' => $fromStatuses[1],
@@ -123,6 +154,15 @@ JOIN (
 ) im ON im.conversation_id = c.id
 WHERE l.sales_status IN (:status_a, :status_b)
   AND im.last_inbound_at <= :max_last_inbound
+  AND NOT EXISTS (
+    SELECT 1
+    FROM {$historyTable} h
+    WHERE h.lead_id = l.id
+      AND h.account_id = l.account_id
+      AND h.previous_status = :target_status
+      AND h.new_status <> :target_status
+      AND h.created_at >= im.last_inbound_at
+  )
   {$accountSql}
 GROUP BY l.id, l.account_id, l.sales_status
 LIMIT 500
