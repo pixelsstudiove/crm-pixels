@@ -94,7 +94,7 @@ $logoExists = $logoPath !== '' && is_file($logoFile);
         </div>
         <aside class="assistant-card">
           <span>Status comercial</span>
-          <strong>Interesado</strong>
+          <strong>En conversación</strong>
           <div class="mini-progress"><i></i></div>
           <small>Historial guardado</small>
         </aside>

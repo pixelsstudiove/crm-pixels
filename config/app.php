@@ -120,14 +120,12 @@ $app = [
     'default_status' => 'nuevo_lead',
     'statuses' => [
       'nuevo_lead' => 'Nuevo lead',
-      'contactado' => 'Contactado',
       'en_conversacion' => 'En conversación',
-      'interesado' => 'Interesado',
       'propuesta_enviada' => 'Propuesta enviada',
-      'en_seguimiento' => 'En seguimiento',
+      'no_responde' => 'No responde',
       'cliente_ganado' => 'Cliente ganado',
       'cliente_perdido' => 'Cliente perdido',
-      'no_responde' => 'No responde',
+      'no_califica' => 'No califica',
     ],
   ],
 
@@ -181,7 +179,8 @@ $app = [
     'default_service' => 'Mensaje directo de Instagram',
     'default_objective' => 'Conversación iniciada desde Instagram',
     'reply_window_hours' => (int) env_value('META_REPLY_WINDOW_HOURS', '24'),
-    'reply_warning_hours' => (int) env_value('META_REPLY_WARNING_HOURS', '20'),
+    'reply_warning_hours' => (int) env_value('META_REPLY_WARNING_HOURS', '22'),
+    'no_response_threshold_hours' => (int) env_value('META_NO_RESPONSE_THRESHOLD_HOURS', '2'),
   ],
 
   'media' => [

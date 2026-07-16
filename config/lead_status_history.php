@@ -37,6 +37,27 @@ function lead_status_label(string $status): string {
   return (string) ($statuses[$status] ?? $status);
 }
 
+function lead_status_normalize_legacy_statuses(PDO $pdo, string $leadsTable): void {
+  $leadsTable = safe_identifier($leadsTable, 'leads');
+  $updates = [
+    'contactado' => 'en_conversacion',
+    'interesado' => 'en_conversacion',
+    'en_seguimiento' => 'en_conversacion',
+    'diagnostico_agendado' => 'en_conversacion',
+    'en_negociacion' => 'propuesta_enviada',
+  ];
+  $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
+  try {
+    $stmt = $pdo->prepare("UPDATE {$leadsTable} SET sales_status=?, updated_at=NOW() WHERE sales_status=?");
+  } catch (Throwable $e) {
+    return;
+  }
+  foreach ($updates as $from => $to) {
+    if (!in_array($to, $allowedStatuses, true)) continue;
+    try { $stmt->execute([$to, $from]); } catch (Throwable $e) { /* no-op */ }
+  }
+}
+
 function lead_status_history_record(PDO $pdo, int $leadId, ?string $previousStatus, string $newStatus, string $reason, ?int $accountId = null): void {
   lead_status_history_ensure_schema($pdo);
   $table = lead_status_history_table();
@@ -58,6 +79,84 @@ SQL);
     $newStatus,
     $reason,
   ]);
+}
+
+function lead_status_auto_mark_no_response(PDO $pdo, string $leadsTable, ?int $accountId = null): int {
+  $windowHours = max(1, (int) app_config('instagram.reply_window_hours', 24));
+  $thresholdHours = max(1, min($windowHours, (int) app_config('instagram.no_response_threshold_hours', 2)));
+  $fromStatuses = ['nuevo_lead', 'en_conversacion'];
+  $targetStatus = 'no_responde';
+  $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
+  if (!in_array($targetStatus, $allowedStatuses, true)) return 0;
+
+  $leadsTable = safe_identifier($leadsTable, 'leads');
+  $conversationsTable = safe_identifier((string) app_config('database.conversations_table', 'conversations'), 'conversations');
+  $messagesTable = safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages');
+
+  $windowSeconds = $windowHours * 3600;
+  $thresholdSeconds = $thresholdHours * 3600;
+  $now = time();
+  $maxLastInbound = gmdate('Y-m-d H:i:s', $now - ($windowSeconds - $thresholdSeconds));
+  $reason = 'Ventana Meta por vencer: quedan ' . $thresholdHours . ' hora' . ($thresholdHours === 1 ? '' : 's') . ' o menos para responder. Status actualizado automaticamente a ' . lead_status_label($targetStatus) . '.';
+
+  $accountSql = '';
+  $params = [
+    ':max_last_inbound' => $maxLastInbound,
+    ':status_a' => $fromStatuses[0],
+    ':status_b' => $fromStatuses[1],
+  ];
+  if ($accountId !== null && $accountId > 0) {
+    $accountSql = 'AND l.account_id = :account_id';
+    $params[':account_id'] = $accountId;
+  }
+
+  lead_status_history_ensure_schema($pdo);
+  $selectSql = <<<SQL
+SELECT l.id, l.account_id, l.sales_status
+FROM {$leadsTable} l
+JOIN {$conversationsTable} c ON c.lead_id = l.id
+JOIN (
+  SELECT conversation_id, MAX(sent_at) AS last_inbound_at
+  FROM {$messagesTable}
+  WHERE direction = 'inbound'
+  GROUP BY conversation_id
+) im ON im.conversation_id = c.id
+WHERE l.sales_status IN (:status_a, :status_b)
+  AND im.last_inbound_at <= :max_last_inbound
+  {$accountSql}
+GROUP BY l.id, l.account_id, l.sales_status
+LIMIT 500
+SQL;
+  try {
+    $select = $pdo->prepare($selectSql);
+    foreach ($params as $key => $value) $select->bindValue($key, $value);
+    $select->execute();
+    $rows = $select->fetchAll() ?: [];
+  } catch (Throwable $e) {
+    return 0;
+  }
+  if (!$rows) return 0;
+
+  try {
+    $update = $pdo->prepare("UPDATE {$leadsTable} SET sales_status=?, updated_at=NOW() WHERE id=? AND account_id=? AND sales_status=?");
+  } catch (Throwable $e) {
+    return 0;
+  }
+  $affected = 0;
+  foreach ($rows as $row) {
+    $leadId = (int) ($row['id'] ?? 0);
+    $rowAccountId = (int) ($row['account_id'] ?? 0);
+    $previousStatus = (string) ($row['sales_status'] ?? '');
+    if ($leadId <= 0 || $rowAccountId <= 0 || !in_array($previousStatus, $fromStatuses, true)) continue;
+
+    $update->execute([$targetStatus, $leadId, $rowAccountId, $previousStatus]);
+    if ($update->rowCount() < 1) continue;
+
+    lead_status_history_record($pdo, $leadId, $previousStatus, $targetStatus, $reason, $rowAccountId);
+    $affected++;
+  }
+
+  return $affected;
 }
 
 function lead_status_history_rows(PDO $pdo, int $leadId, int $limit = 80): array {

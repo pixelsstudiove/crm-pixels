@@ -59,7 +59,7 @@ function send_auto_contact_lead_after_reply(PDO $pdo, string $leadsTable, int $l
   if ($leadId <= 0 || $accountId <= 0 || $hadOutboundBefore) return null;
 
   $defaultStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
-  $targetStatus = 'contactado';
+  $targetStatus = 'en_conversacion';
   $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
   if (!in_array($targetStatus, $allowedStatuses, true)) return null;
 

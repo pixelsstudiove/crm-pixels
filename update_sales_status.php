@@ -28,14 +28,12 @@ $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
 if ($allowedStatuses === []) {
   $allowedStatuses = [
     'nuevo_lead',
-    'contactado',
     'en_conversacion',
-    'interesado',
     'propuesta_enviada',
-    'en_seguimiento',
+    'no_responde',
     'cliente_ganado',
     'cliente_perdido',
-    'no_responde',
+    'no_califica',
   ];
 }
 

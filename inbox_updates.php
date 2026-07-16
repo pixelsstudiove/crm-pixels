@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/lead_status_history.php';
 require_permission('view_conversations');
 
 if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
@@ -15,6 +16,10 @@ $messagesTable = conv_messages_table();
 $channelsTable = ig_channels_table();
 $accountsTable = accounts_table();
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
+if (isset($TABLE_LEADS)) {
+  lead_status_normalize_legacy_statuses($pdo, $TABLE_LEADS);
+  lead_status_auto_mark_no_response($pdo, $TABLE_LEADS, is_super_admin() ? null : $currentAccountId);
+}
 
 $statusOptions = [
   'abierta' => 'Abierta',

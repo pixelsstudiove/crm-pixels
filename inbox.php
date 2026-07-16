@@ -15,6 +15,10 @@ $messagesTable = conv_messages_table();
 $channelsTable = ig_channels_table();
 $accountsTable = accounts_table();
 $currentAccountId = (int) (current_account_id() ?: accounts_default_id($pdo));
+if (isset($TABLE_LEADS)) {
+  lead_status_normalize_legacy_statuses($pdo, $TABLE_LEADS);
+  lead_status_auto_mark_no_response($pdo, $TABLE_LEADS, is_super_admin() ? null : $currentAccountId);
+}
 
 $canSendMessages = can('send_messages');
 $canManageConversations = can('manage_conversations') || can('send_messages');
@@ -34,14 +38,12 @@ $salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
 if ($salesStatusOptions === []) {
   $salesStatusOptions = [
     'nuevo_lead' => 'Nuevo lead',
-    'contactado' => 'Contactado',
     'en_conversacion' => 'En conversación',
-    'interesado' => 'Interesado',
     'propuesta_enviada' => 'Propuesta enviada',
-    'en_seguimiento' => 'En seguimiento',
+    'no_responde' => 'No responde',
     'cliente_ganado' => 'Cliente ganado',
     'cliente_perdido' => 'Cliente perdido',
-    'no_responde' => 'No responde',
+    'no_califica' => 'No califica',
   ];
 }
 

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/lead_status_history.php';
 require_once __DIR__ . '/config/navigation.php';
 
 function column_exists_dash(PDO $pdo, string $dbName, string $table, string $column): bool {
@@ -162,6 +163,8 @@ SQL);
 
 ensure_dashboard_schema($pdo, $DB_NAME, $TABLE_LEADS);
 conv_ensure_schema($pdo);
+lead_status_normalize_legacy_statuses($pdo, $TABLE_LEADS);
+lead_status_auto_mark_no_response($pdo, $TABLE_LEADS, is_super_admin() ? null : (int) (current_account_id() ?: accounts_default_id($pdo)));
 
 $contactsTable = conv_contacts_table();
 $conversationsTable = conv_conversations_table();
@@ -286,14 +289,12 @@ foreach ($statusCountsStmt->fetchAll() as $row) {
 }
 $summaryToneByStatus = [
   'nuevo_lead' => 'new',
-  'contactado' => 'contacted',
   'en_conversacion' => 'scheduled',
-  'interesado' => 'interested',
   'propuesta_enviada' => 'proposal',
-  'en_seguimiento' => 'followup',
+  'no_responde' => 'muted',
   'cliente_ganado' => 'won',
   'cliente_perdido' => 'lost',
-  'no_responde' => 'muted',
+  'no_califica' => 'default',
 ];
 $summaryBaseParams = [];
 if ($filterAccountId > 0 && $requestSlug === '') $summaryBaseParams['account_id'] = $filterAccountId;
@@ -956,14 +957,12 @@ function dash_channel_label(array $channel): string {
       cursor:progress;
     }
     .sales-status-select[data-status="nuevo_lead"] { --status-color:var(--dash-cyan); }
-    .sales-status-select[data-status="contactado"] { --status-color:#5271ff; }
     .sales-status-select[data-status="en_conversacion"] { --status-color:var(--dash-violet); }
-    .sales-status-select[data-status="interesado"] { --status-color:var(--dash-green); }
     .sales-status-select[data-status="propuesta_enviada"] { --status-color:var(--dash-amber); }
-    .sales-status-select[data-status="en_seguimiento"] { --status-color:#f97316; }
+    .sales-status-select[data-status="no_responde"] { --status-color:#667085; }
     .sales-status-select[data-status="cliente_ganado"] { --status-color:#159a61; }
     .sales-status-select[data-status="cliente_perdido"] { --status-color:var(--dash-red); }
-    .sales-status-select[data-status="no_responde"] { --status-color:#667085; }
+    .sales-status-select[data-status="no_califica"] { --status-color:#475467; }
     .sales-status-badge {
       --status-color:#b7c7d9;
       display:inline-flex;
@@ -981,14 +980,12 @@ function dash_channel_label(array $channel): string {
       white-space:nowrap;
     }
     .sales-status-badge[data-status="nuevo_lead"] { --status-color:var(--dash-cyan); }
-    .sales-status-badge[data-status="contactado"] { --status-color:#5271ff; }
     .sales-status-badge[data-status="en_conversacion"] { --status-color:var(--dash-violet); }
-    .sales-status-badge[data-status="interesado"] { --status-color:var(--dash-green); }
     .sales-status-badge[data-status="propuesta_enviada"] { --status-color:var(--dash-amber); }
-    .sales-status-badge[data-status="en_seguimiento"] { --status-color:#f97316; }
+    .sales-status-badge[data-status="no_responde"] { --status-color:#667085; }
     .sales-status-badge[data-status="cliente_ganado"] { --status-color:#159a61; }
     .sales-status-badge[data-status="cliente_perdido"] { --status-color:var(--dash-red); }
-    .sales-status-badge[data-status="no_responde"] { --status-color:#667085; }
+    .sales-status-badge[data-status="no_califica"] { --status-color:#475467; }
     .readonly-text {
       min-width:220px;
       max-width:300px;
@@ -1061,14 +1058,12 @@ function dash_channel_label(array $channel): string {
       grid-column:1 / -1;
     }
     .funnel-column[data-status="nuevo_lead"] { --status-color:var(--dash-cyan); --status-bg:#f3fbff; }
-    .funnel-column[data-status="contactado"] { --status-color:#5271ff; --status-bg:#f5f7ff; }
     .funnel-column[data-status="en_conversacion"] { --status-color:var(--dash-violet); --status-bg:#f8f5ff; }
-    .funnel-column[data-status="interesado"] { --status-color:var(--dash-green); --status-bg:#f1fcf8; }
     .funnel-column[data-status="propuesta_enviada"] { --status-color:var(--dash-amber); --status-bg:#fffaf0; }
-    .funnel-column[data-status="en_seguimiento"] { --status-color:#f97316; --status-bg:#fff7ed; }
+    .funnel-column[data-status="no_responde"] { --status-color:#667085; --status-bg:#f8fafc; }
     .funnel-column[data-status="cliente_ganado"] { --status-color:#159a61; --status-bg:#f1fbf5; }
     .funnel-column[data-status="cliente_perdido"] { --status-color:var(--dash-red); --status-bg:#fff5f6; }
-    .funnel-column[data-status="no_responde"] { --status-color:#667085; --status-bg:#f8fafc; }
+    .funnel-column[data-status="no_califica"] { --status-color:#475467; --status-bg:#f2f4f7; }
     .funnel-column-header {
       position:sticky;
       top:0;

@@ -211,9 +211,11 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
 function normalize_sales_funnel_statuses(PDO $pdo, string $leadsTable, array &$log): void {
   if (!column_exists($pdo, $leadsTable, 'sales_status')) return;
   $updates = [
-    'diagnostico_agendado' => 'interesado',
-    'en_negociacion' => 'en_seguimiento',
-    'no_califica' => 'cliente_perdido',
+    'contactado' => 'en_conversacion',
+    'interesado' => 'en_conversacion',
+    'en_seguimiento' => 'en_conversacion',
+    'diagnostico_agendado' => 'en_conversacion',
+    'en_negociacion' => 'propuesta_enviada',
   ];
   $stmt = $pdo->prepare("UPDATE `{$leadsTable}` SET `sales_status` = ? WHERE `sales_status` = ?");
   foreach ($updates as $from => $to) {
