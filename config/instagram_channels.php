@@ -63,6 +63,9 @@ function ig_graph_request_base(string $baseUrl, string $method, string $path, ar
   $ch = curl_init();
   if ($method === 'GET') {
     if ($params) $url .= (str_contains($url, '?') ? '&' : '?') . http_build_query($params);
+  } elseif ($method === 'DELETE') {
+    if ($params) $url .= (str_contains($url, '?') ? '&' : '?') . http_build_query($params);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
   } else {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));

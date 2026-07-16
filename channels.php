@@ -36,6 +36,30 @@ $metaConfigStatus = [
   'verify_token' => trim((string) app_config('instagram.webhook_verify_token', '')) !== '',
 ];
 
+function channels_find_channel(PDO $pdo, string $channelsTable, int $id, int $scopeAccountId, int $requestAccountId): ?array {
+  if ($id <= 0) return null;
+  if (is_super_admin() && $requestAccountId <= 0) {
+    $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? LIMIT 1");
+    $stmt->execute([$id]);
+  } else {
+    $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND account_id=? LIMIT 1");
+    $stmt->execute([$id, $scopeAccountId]);
+  }
+  $channel = $stmt->fetch();
+  return $channel ?: null;
+}
+
+function channels_unsubscribe_meta_app(array $channel): bool {
+  $connectionType = (string) ($channel['connection_type'] ?? 'facebook');
+  $pageId = trim((string) ($channel['page_id'] ?? ''));
+  $token = trim((string) ($channel['page_access_token'] ?? ''));
+  if ($connectionType !== 'facebook' || $pageId === '' || $token === '') return false;
+  $response = ig_graph_request('DELETE', $pageId . '/subscribed_apps', [
+    'access_token' => $token,
+  ]);
+  return (bool) ($response['ok'] ?? false);
+}
+
 $connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
 if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
   $facebookMode = strtolower(trim((string) ($_GET['mode'] ?? 'both')));
@@ -95,40 +119,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals($_SESSION['csrf'], (string) $csrf)) {
     $errors[] = 'CSRF invalido. Recarga la pagina.';
   } else {
-    $action = (string) ($_POST['action'] ?? '');
-    $id = (int) ($_POST['id'] ?? 0);
-    if ($action === 'disconnect' && $id > 0) {
-      if (is_super_admin() && $requestAccountId <= 0) {
-        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=?");
-        $stmt->execute([$id]);
-      } else {
-        $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=0, updated_at=NOW() WHERE id=? AND account_id=?");
-        $stmt->execute([$id, $scopeAccountId]);
-      }
-      $notice = 'Canal desconectado.';
-    } elseif ($action === 'connect' && $id > 0) {
-      if (is_super_admin() && $requestAccountId <= 0) {
-        $find = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? LIMIT 1");
-        $find->execute([$id]);
-      } else {
-        $find = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND account_id=? LIMIT 1");
-        $find->execute([$id, $scopeAccountId]);
-      }
-      $channel = $find->fetch();
-      if (!$channel) {
-        $errors[] = 'No encontramos el canal que intentas conectar.';
-      } else {
-        $existingInOtherAccount = ig_channel_active_in_other_account($pdo, $channelsTable, (int) $channel['account_id'], (string) $channel['page_id'], (string) $channel['instagram_user_id'], (int) $channel['id']);
-        if ($existingInOtherAccount) {
-          $errors[] = ig_channel_existing_account_message($existingInOtherAccount);
-        } else {
-          $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=1, connected_by=?, updated_at=NOW() WHERE id=?");
-          $stmt->execute([(int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
-          $notice = 'Canal conectado. Los proximos mensajes entraran al inbox.';
-        }
-      }
-    }
-  }
+	    $action = (string) ($_POST['action'] ?? '');
+	    $id = (int) ($_POST['id'] ?? 0);
+	    if ($action === 'toggle' && $id > 0) {
+	      $channel = channels_find_channel($pdo, $channelsTable, $id, $scopeAccountId, $requestAccountId);
+	      if (!$channel) {
+	        $errors[] = 'No encontramos el canal que intentas actualizar.';
+	      } else {
+	        $nextActive = (int) ($_POST['is_active'] ?? 0) === 1 ? 1 : 0;
+	        if ($nextActive === 1) {
+	          $existingInOtherAccount = ig_channel_active_in_other_account($pdo, $channelsTable, (int) $channel['account_id'], (string) $channel['page_id'], (string) $channel['instagram_user_id'], (int) $channel['id']);
+	          if ($existingInOtherAccount) {
+	            $errors[] = ig_channel_existing_account_message($existingInOtherAccount);
+	            $nextActive = (int) ($channel['is_active'] ?? 0);
+	          }
+	        }
+	        if (!$errors) {
+	          $stmt = $pdo->prepare("UPDATE {$channelsTable} SET is_active=?, connected_by=?, updated_at=NOW() WHERE id=?");
+	          $stmt->execute([$nextActive, (int) ($_SESSION['user_id'] ?? 0) ?: null, $id]);
+	          $notice = $nextActive === 1 ? 'Canal activado. Los proximos mensajes entraran al inbox.' : 'Canal pausado. Puedes activarlo nuevamente cuando quieras.';
+	        }
+	      }
+	    } elseif ($action === 'disconnect' && $id > 0) {
+	      $channel = channels_find_channel($pdo, $channelsTable, $id, $scopeAccountId, $requestAccountId);
+	      if (!$channel) {
+	        $errors[] = 'No encontramos el canal que intentas desconectar.';
+	      } else {
+	        $unsubscribed = channels_unsubscribe_meta_app($channel);
+	        $stmt = $pdo->prepare("DELETE FROM {$channelsTable} WHERE id=?");
+	        $stmt->execute([$id]);
+	        $notice = $unsubscribed
+	          ? 'Canal desconectado de Meta y eliminado del CRM. Para usarlo de nuevo debes iniciar sesion otra vez.'
+	          : 'Canal eliminado del CRM. Si Meta no permitio revocar la suscripcion, reconecta el canal o revisa la app en Meta.';
+	      }
+	    }
+	  }
 }
 
 $facebookConnectUrl = $canConnect ? account_url('channels.php', ['connect' => 'facebook']) : '#';
@@ -165,6 +190,7 @@ try {
     .channel-link:hover, .channel-btn:hover { background:#dff6ff; border-color:#8bdfff; }
     .channel-link.primary, .channel-btn.primary { background:#071120; border-color:#071120; color:#eafaff; }
     .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
+    .channel-btn.danger { background:#fff1f2; border-color:#fecdd3; color:#be123c; }
     .channel-link.is-disabled { opacity:.55; pointer-events:none; }
     .connect-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .connect-actions .channel-link { min-height:36px; font-size:.9rem; }
@@ -174,6 +200,12 @@ try {
     .connect-card p { margin:6px 0 12px; color:var(--brand-muted); line-height:1.4; }
     .channel-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; }
     .channel-card { border:1px solid rgba(0,212,255,.16); border-radius:16px; background:#fff; padding:16px; box-shadow:0 8px 22px rgba(0, 76, 110, .07); }
+    .channel-card-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:10px; }
+    .channel-toggle-form { margin:0; }
+    .channel-toggle { position:relative; display:inline-flex; align-items:center; gap:8px; min-height:32px; padding:0 10px 0 36px; border:1px solid #cbd5e1; border-radius:999px; background:#f8fafc; color:#64748b; font-weight:900; cursor:pointer; }
+    .channel-toggle::before { content:""; position:absolute; left:7px; width:20px; height:20px; border-radius:999px; background:#94a3b8; transition:.18s ease; }
+    .channel-toggle.is-on { border-color:#a8e0ba; background:#eef9f0; color:#217a43; }
+    .channel-toggle.is-on::before { background:#22c55e; transform:translateX(0); }
     .channel-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.1rem; }
     .channel-card p { margin:6px 0; color:var(--brand-muted); line-height:1.4; }
     .channel-status { display:inline-flex; align-items:center; min-height:28px; padding:0 10px; border-radius:999px; font-size:.8rem; font-weight:900; }
@@ -233,7 +265,19 @@ try {
         <div class="channel-grid">
           <?php if ($channels): foreach ($channels as $channel): ?>
             <article class="channel-card">
-              <span class="channel-status <?= (int) $channel['is_active'] === 1 ? 'on' : 'off' ?>"><?= (int) $channel['is_active'] === 1 ? 'Activo' : 'Inactivo' ?></span>
+              <?php $isChannelActive = (int) $channel['is_active'] === 1; ?>
+              <div class="channel-card-head">
+                <span class="channel-status <?= $isChannelActive ? 'on' : 'off' ?>"><?= $isChannelActive ? 'Activo' : 'Inactivo' ?></span>
+                <form class="channel-toggle-form" method="post" action="<?= h(account_url('channels.php')) ?>">
+                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                  <input type="hidden" name="id" value="<?= (int) $channel['id'] ?>">
+                  <input type="hidden" name="action" value="toggle">
+                  <input type="hidden" name="is_active" value="<?= $isChannelActive ? 0 : 1 ?>">
+                  <button class="channel-toggle <?= $isChannelActive ? 'is-on' : '' ?>" type="submit" aria-label="<?= $isChannelActive ? 'Pausar canal' : 'Activar canal' ?>">
+                    <?= $isChannelActive ? 'Activo' : 'Pausado' ?>
+                  </button>
+                </form>
+              </div>
               <?php $hasInstagramChannel = !str_starts_with((string) ($channel['instagram_user_id'] ?? ''), 'messenger:'); ?>
               <h2><?= h((string) ($channel['instagram_username'] ?: ($channel['page_name'] ?: 'Canal Meta conectado'))) ?></h2>
               <p><strong>Tipo:</strong> <?= h((string) (($channel['connection_type'] ?? 'facebook') === 'instagram_login' ? 'Instagram Login' : 'Facebook / Fanpage')) ?></p>
@@ -249,13 +293,8 @@ try {
               <form method="post" action="<?= h(account_url('channels.php')) ?>">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                 <input type="hidden" name="id" value="<?= (int) $channel['id'] ?>">
-                <?php if ((int) $channel['is_active'] === 1): ?>
-                  <input type="hidden" name="action" value="disconnect">
-                  <button class="channel-btn warning" type="submit">Desconectar</button>
-                <?php else: ?>
-                  <input type="hidden" name="action" value="connect">
-                  <button class="channel-btn primary" type="submit">Conectar</button>
-                <?php endif; ?>
+                <input type="hidden" name="action" value="disconnect">
+                <button class="channel-btn danger" type="submit" onclick="return confirm('Esto eliminara la conexion del canal con el CRM. Para volver a usarlo deberas iniciar sesion nuevamente en Meta. ¿Deseas continuar?')">Desconectar canal</button>
               </form>
             </article>
           <?php endforeach; else: ?>
