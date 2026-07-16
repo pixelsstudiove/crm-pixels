@@ -697,7 +697,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
                 <?php $conversationSlug = trim((string) ($conversation['account_slug'] ?? $requestSlug)); ?>
                 <?php $avatarUrl = inbox_avatar_url($conversation); ?>
-                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="<?= h(account_url('inbox.php', ['id' => conv_display_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
+                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" data-conversation-key="<?= (int) ($conversation['account_id'] ?? 0) ?>:<?= (int) conv_display_id($conversation) ?>" href="<?= h(account_url('inbox.php', ['id' => conv_display_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
                   <span class="conversation-avatar" aria-hidden="true">
                     <?php if ($avatarUrl !== ''): ?>
                       <img src="<?= h($avatarUrl) ?>" alt="">
@@ -709,11 +709,11 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <span class="conversation-name"><?= h(inbox_contact_name($conversation)) ?></span>
                     <span class="conversation-time"><?= h(inbox_time($conversation['last_message_at'] ?? $conversation['created_at'] ?? '')) ?></span>
                   </div>
-                  <div class="conversation-row" style="margin-top:6px">
-                    <span class="badge"><?= h($statusOptions[(string) ($conversation['status'] ?? '')] ?? 'Abierta') ?></span>
+                  <div class="conversation-row conversation-meta-row" style="margin-top:6px">
+                    <span class="badge conversation-status"><?= h($statusOptions[(string) ($conversation['status'] ?? '')] ?? 'Abierta') ?></span>
                     <?php $conversationWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? ''); ?>
-                    <?php if (($conversationWindow['status'] ?? '') !== 'active'): ?><span class="window-pill <?= h((string) ($conversationWindow['status'] ?? '')) ?>"><?= h((string) ($conversationWindow['label'] ?? 'Chat')) ?></span><?php endif; ?>
-                    <?php if ((int) ($conversation['unread_count'] ?? 0) > 0): ?><span class="badge unread"><?= (int) $conversation['unread_count'] ?></span><?php endif; ?>
+                    <?php if (($conversationWindow['status'] ?? '') !== 'active'): ?><span class="window-pill conversation-window <?= h((string) ($conversationWindow['status'] ?? '')) ?>"><?= h((string) ($conversationWindow['label'] ?? 'Chat')) ?></span><?php endif; ?>
+                    <?php if ((int) ($conversation['unread_count'] ?? 0) > 0): ?><span class="badge unread conversation-unread"><?= (int) $conversation['unread_count'] ?></span><?php endif; ?>
                   </div>
                   <div class="conversation-preview"><?= h(inbox_short($conversation['last_message_preview'] ?? '', 92)) ?></div>
                   <img class="conversation-channel-icon" src="<?= h(inbox_channel_icon_path($conversation)) ?>" alt="<?= h(inbox_channel_icon_label($conversation)) ?>" loading="lazy">
@@ -1197,40 +1197,145 @@ function inbox_visible_message_text($value, array $attachments): string {
       return `${cleanSlug ? `/${encodeURIComponent(cleanSlug)}/` : ''}inbox.php?${params.toString()}`;
     }
 
+    function conversationKey(item) {
+      return `${Number(item.account_id || 0)}:${Number(item.id || 0)}`;
+    }
+
+    function setTextIfChanged(node, value) {
+      if (!node) return;
+      const next = String(value ?? '');
+      if (node.textContent !== next) node.textContent = next;
+    }
+
+    function setAttributeIfChanged(node, attribute, value) {
+      if (!node) return;
+      const next = String(value ?? '');
+      if (node.getAttribute(attribute) !== next) node.setAttribute(attribute, next);
+    }
+
+    function createConversationElement(item) {
+      const element = document.createElement('a');
+      element.className = 'conversation-item';
+      element.dataset.conversationKey = conversationKey(item);
+      element.innerHTML = `
+        <span class="conversation-avatar" aria-hidden="true"></span>
+        <div class="conversation-row">
+          <span class="conversation-name"></span>
+          <span class="conversation-time"></span>
+        </div>
+        <div class="conversation-row conversation-meta-row" style="margin-top:6px">
+          <span class="badge conversation-status"></span>
+        </div>
+        <div class="conversation-preview"></div>
+        <img class="conversation-channel-icon" src="" alt="" loading="lazy">
+      `;
+      return element;
+    }
+
+    function updateConversationAvatar(element, item) {
+      const avatar = element.querySelector('.conversation-avatar');
+      if (!avatar) return;
+      const avatarUrl = String(item.avatar_url || '').trim();
+      const avatarInitials = String(item.avatar_initials || 'C').trim() || 'C';
+      if (avatarUrl) {
+        let image = avatar.querySelector('img');
+        if (!image) {
+          avatar.textContent = '';
+          image = document.createElement('img');
+          image.alt = '';
+          avatar.appendChild(image);
+        }
+        setAttributeIfChanged(image, 'src', avatarUrl);
+        return;
+      }
+      if (avatar.querySelector('img')) avatar.innerHTML = '';
+      setTextIfChanged(avatar, avatarInitials);
+    }
+
+    function updateConversationMeta(element, item, unread) {
+      const metaRow = element.querySelector('.conversation-meta-row');
+      if (!metaRow) return;
+      const status = metaRow.querySelector('.conversation-status') || document.createElement('span');
+      status.className = 'badge conversation-status';
+      setTextIfChanged(status, item.status_label || 'Abierta');
+      if (!status.parentElement) metaRow.appendChild(status);
+
+      const replyWindow = item.reply_window || null;
+      const showWindow = replyWindow && replyWindow.status && replyWindow.status !== 'active';
+      let windowPill = metaRow.querySelector('.conversation-window');
+      if (showWindow) {
+        if (!windowPill) {
+          windowPill = document.createElement('span');
+          windowPill.className = 'window-pill conversation-window';
+          metaRow.appendChild(windowPill);
+        }
+        windowPill.className = `window-pill conversation-window ${replyWindow.status || 'unknown'}`;
+        setTextIfChanged(windowPill, replyWindow.label || 'Chat');
+      } else if (windowPill) {
+        windowPill.remove();
+      }
+
+      let unreadBadge = metaRow.querySelector('.conversation-unread');
+      if (unread > 0) {
+        if (!unreadBadge) {
+          unreadBadge = document.createElement('span');
+          unreadBadge.className = 'badge unread conversation-unread';
+          metaRow.appendChild(unreadBadge);
+        }
+        setTextIfChanged(unreadBadge, String(unread));
+      } else if (unreadBadge) {
+        unreadBadge.remove();
+      }
+    }
+
+    function updateConversationElement(element, item) {
+      const itemAccountId = Number(item.account_id || 0);
+      const active = Number(item.id) === Number(inboxState.conversationId)
+        && (!inboxState.selectedAccountId || !itemAccountId || itemAccountId === Number(inboxState.selectedAccountId));
+      const unread = active ? 0 : Number(item.unread_count || 0);
+      const channelIcon = item.channel_icon || 'images/icon_instagram.png';
+      const channelLabel = item.channel_label || 'Instagram';
+
+      element.dataset.conversationKey = conversationKey(item);
+      element.classList.toggle('is-active', active);
+      setAttributeIfChanged(element, 'href', conversationHref(item.id, item.account_slug || '', itemAccountId));
+      setTextIfChanged(element.querySelector('.conversation-name'), item.name || '');
+      setTextIfChanged(element.querySelector('.conversation-time'), item.time || '');
+      setTextIfChanged(element.querySelector('.conversation-preview'), item.preview || '');
+      updateConversationMeta(element, item, unread);
+      updateConversationAvatar(element, item);
+
+      const channelImage = element.querySelector('.conversation-channel-icon');
+      setAttributeIfChanged(channelImage, 'src', channelIcon);
+      setAttributeIfChanged(channelImage, 'alt', channelLabel);
+    }
+
     function renderConversations(items) {
       if (!conversationList || !Array.isArray(items)) return;
       if (!items.length) {
         conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram o Messenger.</div>';
         return;
       }
-      conversationList.innerHTML = items.map(item => {
-        const itemAccountId = Number(item.account_id || 0);
-        const active = Number(item.id) === Number(inboxState.conversationId)
-          && (!inboxState.selectedAccountId || !itemAccountId || itemAccountId === Number(inboxState.selectedAccountId));
-        const unread = active ? 0 : Number(item.unread_count || 0);
-        const channelIcon = item.channel_icon || 'images/icon_instagram.png';
-        const channelLabel = item.channel_label || 'Instagram';
-        const avatarUrl = item.avatar_url || '';
-        const avatarInitials = item.avatar_initials || 'C';
-        return `
-          <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id, item.account_slug || '', itemAccountId))}">
-            <span class="conversation-avatar" aria-hidden="true">
-              ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="">` : escapeHtml(avatarInitials)}
-            </span>
-            <div class="conversation-row">
-              <span class="conversation-name">${escapeHtml(item.name)}</span>
-              <span class="conversation-time">${escapeHtml(item.time)}</span>
-            </div>
-            <div class="conversation-row" style="margin-top:6px">
-              <span class="badge">${escapeHtml(item.status_label)}</span>
-              ${item.reply_window && item.reply_window.status !== 'active' ? `<span class="window-pill ${escapeHtml(item.reply_window.status || 'unknown')}">${escapeHtml(item.reply_window.label || 'Chat')}</span>` : ''}
-              ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
-            </div>
-            <div class="conversation-preview">${escapeHtml(item.preview)}</div>
-            <img class="conversation-channel-icon" src="${escapeHtml(channelIcon)}" alt="${escapeHtml(channelLabel)}" loading="lazy">
-          </a>
-        `;
-      }).join('');
+
+      const emptyState = conversationList.querySelector('.empty-state');
+      if (emptyState) emptyState.remove();
+
+      const existing = new Map();
+      conversationList.querySelectorAll('.conversation-item[data-conversation-key]').forEach(node => {
+        existing.set(node.dataset.conversationKey, node);
+      });
+      const nextKeys = new Set(items.map(conversationKey));
+      existing.forEach((node, key) => {
+        if (!nextKeys.has(key)) node.remove();
+      });
+
+      items.forEach(item => {
+        const key = conversationKey(item);
+        let node = existing.get(key);
+        if (!node || !node.isConnected) node = createConversationElement(item);
+        updateConversationElement(node, item);
+        conversationList.appendChild(node);
+      });
     }
 
     function appendMessage(message) {
