@@ -697,12 +697,13 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
                 <?php $conversationSlug = trim((string) ($conversation['account_slug'] ?? $requestSlug)); ?>
                 <?php $avatarUrl = inbox_avatar_url($conversation); ?>
+                <?php $avatarInitials = inbox_avatar_initials($conversation); ?>
                 <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" data-conversation-key="<?= (int) ($conversation['account_id'] ?? 0) ?>:<?= (int) conv_display_id($conversation) ?>" href="<?= h(account_url('inbox.php', ['id' => conv_display_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
-                  <span class="conversation-avatar" aria-hidden="true">
+                  <span class="conversation-avatar" data-initials="<?= h($avatarInitials) ?>" aria-hidden="true">
                     <?php if ($avatarUrl !== ''): ?>
                       <img src="<?= h($avatarUrl) ?>" alt="">
                     <?php else: ?>
-                      <?= h(inbox_avatar_initials($conversation)) ?>
+                      <?= h($avatarInitials) ?>
                     <?php endif; ?>
                   </span>
                   <div class="conversation-row">
@@ -1218,7 +1219,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       element.className = 'conversation-item';
       element.dataset.conversationKey = conversationKey(item);
       element.innerHTML = `
-        <span class="conversation-avatar" aria-hidden="true"></span>
+        <span class="conversation-avatar" data-initials="C" aria-hidden="true"></span>
         <div class="conversation-row">
           <span class="conversation-name"></span>
           <span class="conversation-time"></span>
@@ -1232,12 +1233,23 @@ function inbox_visible_message_text($value, array $attachments): string {
       return element;
     }
 
+    document.addEventListener('error', (event) => {
+      const image = event.target;
+      if (!(image instanceof HTMLImageElement)) return;
+      const avatar = image.closest('.conversation-avatar');
+      if (!avatar) return;
+      avatar.dataset.failedUrl = image.currentSrc || image.src || '';
+      image.remove();
+      setTextIfChanged(avatar, avatar.dataset.initials || 'C');
+    }, true);
+
     function updateConversationAvatar(element, item) {
       const avatar = element.querySelector('.conversation-avatar');
       if (!avatar) return;
       const avatarUrl = String(item.avatar_url || '').trim();
       const avatarInitials = String(item.avatar_initials || 'C').trim() || 'C';
-      if (avatarUrl) {
+      setAttributeIfChanged(avatar, 'data-initials', avatarInitials);
+      if (avatarUrl && avatar.dataset.failedUrl !== avatarUrl) {
         let image = avatar.querySelector('img');
         if (!image) {
           avatar.textContent = '';

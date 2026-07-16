@@ -289,7 +289,7 @@ function ig_profile_avatar_url(array $data): ?string {
     if (is_array($value)) {
       $value = $value['data']['url'] ?? $value['url'] ?? null;
     }
-    $url = ig_clean($value, 500);
+    $url = ig_clean($value, 2000);
     if ($url !== null && preg_match('#^https?://#i', $url)) return $url;
   }
   return null;
@@ -522,7 +522,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'display_name' => $profileName ?: $profileUsername,
       'username' => $profileUsername,
       'profile_url' => ig_clean($event['_profile_url'] ?? null, 255),
-      'avatar_url' => ig_clean($event['_avatar_url'] ?? null, 500),
+      'avatar_url' => ig_clean($event['_avatar_url'] ?? null, 2000),
       'last_seen_at' => $messageAt,
     ]);
     if ($contactId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar el contacto.'];
