@@ -283,6 +283,31 @@ function ig_referral_data(array $event): array {
   ];
 }
 
+function ig_profile_avatar_url(array $data): ?string {
+  foreach (['profile_pic', 'profile_picture_url', 'picture'] as $key) {
+    $value = $data[$key] ?? null;
+    if (is_array($value)) {
+      $value = $value['data']['url'] ?? $value['url'] ?? null;
+    }
+    $url = ig_clean($value, 500);
+    if ($url !== null && preg_match('#^https?://#i', $url)) return $url;
+  }
+  return null;
+}
+
+function ig_profile_payload(array $data, string $provider = 'instagram'): array {
+  $name = ig_clean($data['name'] ?? null, 120);
+  if ($provider === 'messenger' && $name === null) {
+    $name = ig_clean(trim((string) (($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? ''))), 120);
+  }
+  return [
+    'name' => $name,
+    'username' => $provider === 'messenger' ? null : ig_clean($data['username'] ?? null, 120),
+    'profile_url' => null,
+    'avatar_url' => ig_profile_avatar_url($data),
+  ];
+}
+
 function ig_contact_profile(?array $channel, ?string $senderId, string $provider = 'instagram'): array {
   $senderId = ig_clean($senderId, 120);
   $token = ig_clean($channel['page_access_token'] ?? null, 2000);
@@ -294,43 +319,39 @@ function ig_contact_profile(?array $channel, ?string $senderId, string $provider
       'access_token' => $token,
     ]);
     if (!($response['ok'] ?? false) || !isset($response['data']) || !is_array($response['data'])) return [];
-    $name = ig_clean($response['data']['name'] ?? trim((string) (($response['data']['first_name'] ?? '') . ' ' . ($response['data']['last_name'] ?? ''))), 120);
-    return [
-      'name' => $name,
-      'username' => null,
-      'profile_url' => null,
-      'avatar_url' => ig_clean($response['data']['profile_pic'] ?? null, 500),
-    ];
+    return ig_profile_payload($response['data'], $provider);
   }
 
   $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
   $bases = $isDirectLogin
     ? [ig_instagram_graph_base(), ig_graph_base()]
     : [ig_graph_base(), ig_instagram_graph_base()];
-  $response = null;
+  $fieldSets = [
+    'name,username,profile_pic',
+    'name,username,profile_picture_url',
+    'username,profile_pic',
+    'username,profile_picture_url',
+    'name,username',
+  ];
+  $fallbackProfile = null;
+
   foreach (array_values(array_unique($bases)) as $baseUrl) {
-    $candidate = ig_graph_request_base($baseUrl, 'GET', $senderId, [
-      'fields' => 'name,username,profile_picture_url',
-      'access_token' => $token,
-    ]);
-    if (!($candidate['ok'] ?? false)) {
+    foreach ($fieldSets as $fields) {
       $candidate = ig_graph_request_base($baseUrl, 'GET', $senderId, [
-        'fields' => 'name,username',
+        'fields' => $fields,
         'access_token' => $token,
       ]);
-    }
-    if (($candidate['ok'] ?? false) && isset($candidate['data']) && is_array($candidate['data'])) {
-      $response = $candidate;
-      break;
+      if (!($candidate['ok'] ?? false) || !isset($candidate['data']) || !is_array($candidate['data'])) continue;
+
+      $profile = ig_profile_payload($candidate['data'], $provider);
+      if (!empty($profile['avatar_url'])) return $profile;
+      if ($fallbackProfile === null && ($profile['name'] !== null || $profile['username'] !== null)) {
+        $fallbackProfile = $profile;
+      }
     }
   }
-  if (!$response) return [];
 
-  return [
-    'name' => ig_clean($response['data']['name'] ?? null, 120),
-    'username' => ig_clean($response['data']['username'] ?? null, 120),
-    'avatar_url' => ig_clean($response['data']['profile_picture_url'] ?? null, 500),
-  ];
+  return $fallbackProfile ?? [];
 }
 
 function ig_download_media(string $url, ?string $accessToken): array {
