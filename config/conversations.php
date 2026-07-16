@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS {$contactsTable} (
   display_name VARCHAR(180) NULL,
   username VARCHAR(180) NULL,
   profile_url VARCHAR(255) NULL,
+  avatar_url VARCHAR(500) NULL,
   last_seen_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -177,6 +178,7 @@ SQL);
   try { $pdo->exec("ALTER TABLE {$messagesTable} ADD UNIQUE KEY uniq_conversation_message_hash (conversation_id, external_message_hash)"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$logsTable} MODIFY external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$attachmentsTable} ADD COLUMN external_attachment_id VARCHAR(180) NULL AFTER filename"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$contactsTable} ADD COLUMN avatar_url VARCHAR(500) NULL AFTER profile_url"); } catch (Throwable $e) { /* no-op */ }
 }
 
 function conv_backfill_public_ids(PDO $pdo): void {
@@ -254,20 +256,22 @@ function conv_upsert_contact(PDO $pdo, array $data): int {
   $displayName = conv_clean($data['display_name'] ?? null, 180);
   $username = conv_clean($data['username'] ?? null, 180);
   $profileUrl = conv_clean($data['profile_url'] ?? conv_instagram_profile_url($username), 255);
+  $avatarUrl = conv_clean($data['avatar_url'] ?? null, 500);
   $lastSeenAt = conv_clean($data['last_seen_at'] ?? null, 30);
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  account_id, external_source, external_contact_id, display_name, username, profile_url, last_seen_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
+  account_id, external_source, external_contact_id, display_name, username, profile_url, avatar_url, last_seen_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
 ON DUPLICATE KEY UPDATE
   display_name = COALESCE(VALUES(display_name), display_name),
   username = COALESCE(VALUES(username), username),
   profile_url = COALESCE(VALUES(profile_url), profile_url),
+  avatar_url = COALESCE(VALUES(avatar_url), avatar_url),
   last_seen_at = COALESCE(VALUES(last_seen_at), last_seen_at),
   updated_at = NOW()
 SQL);
-  $stmt->execute([$accountId, $externalSource, $externalContactId, $displayName, $username, $profileUrl, $lastSeenAt]);
+  $stmt->execute([$accountId, $externalSource, $externalContactId, $displayName, $username, $profileUrl, $avatarUrl, $lastSeenAt]);
 
   $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
   $find->execute([$accountId, $externalSource, $externalContactId]);

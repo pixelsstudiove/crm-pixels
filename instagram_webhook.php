@@ -298,7 +298,8 @@ function ig_contact_profile(?array $channel, ?string $senderId, string $provider
     return [
       'name' => $name,
       'username' => null,
-      'profile_url' => ig_clean($response['data']['profile_pic'] ?? null, 255),
+      'profile_url' => null,
+      'avatar_url' => ig_clean($response['data']['profile_pic'] ?? null, 500),
     ];
   }
 
@@ -309,9 +310,15 @@ function ig_contact_profile(?array $channel, ?string $senderId, string $provider
   $response = null;
   foreach (array_values(array_unique($bases)) as $baseUrl) {
     $candidate = ig_graph_request_base($baseUrl, 'GET', $senderId, [
-      'fields' => 'name,username',
+      'fields' => 'name,username,profile_picture_url',
       'access_token' => $token,
     ]);
+    if (!($candidate['ok'] ?? false)) {
+      $candidate = ig_graph_request_base($baseUrl, 'GET', $senderId, [
+        'fields' => 'name,username',
+        'access_token' => $token,
+      ]);
+    }
     if (($candidate['ok'] ?? false) && isset($candidate['data']) && is_array($candidate['data'])) {
       $response = $candidate;
       break;
@@ -322,6 +329,7 @@ function ig_contact_profile(?array $channel, ?string $senderId, string $provider
   return [
     'name' => ig_clean($response['data']['name'] ?? null, 120),
     'username' => ig_clean($response['data']['username'] ?? null, 120),
+    'avatar_url' => ig_clean($response['data']['profile_picture_url'] ?? null, 500),
   ];
 }
 
@@ -493,6 +501,7 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'display_name' => $profileName ?: $profileUsername,
       'username' => $profileUsername,
       'profile_url' => ig_clean($event['_profile_url'] ?? null, 255),
+      'avatar_url' => ig_clean($event['_avatar_url'] ?? null, 500),
       'last_seen_at' => $messageAt,
     ]);
     if ($contactId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar el contacto.'];
@@ -605,6 +614,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $profileName = $profile['name'] ?? null;
   $profileUsername = $profile['username'] ?? null;
   if (!empty($profile['profile_url'])) $event['_profile_url'] = $profile['profile_url'];
+  if (!empty($profile['avatar_url'])) $event['_avatar_url'] = $profile['avatar_url'];
   $profileDisplayName = $profileName ?: $profileUsername;
 
   $contactKey = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;

@@ -37,6 +37,28 @@ function updates_contact_name(array $conversation): string {
   return conv_conversation_provider($conversation) === 'messenger' ? 'Contacto de Messenger' : 'Contacto de Instagram';
 }
 
+function updates_avatar_url(array $conversation): string {
+  $avatarUrl = trim((string) ($conversation['avatar_url'] ?? ''));
+  if ($avatarUrl !== '') return $avatarUrl;
+  $profileUrl = trim((string) ($conversation['profile_url'] ?? ''));
+  if (updates_channel_icon_source($conversation) === 'messenger' && str_starts_with($profileUrl, 'http')) return $profileUrl;
+  return '';
+}
+
+function updates_avatar_initials(array $conversation): string {
+  $name = trim(str_replace('@', '', updates_contact_name($conversation)));
+  if ($name === '') return 'C';
+  $parts = preg_split('/\s+/', $name) ?: [];
+  $initials = '';
+  foreach ($parts as $part) {
+    $part = trim((string) $part);
+    if ($part === '') continue;
+    $initials .= mb_substr($part, 0, 1);
+    if (mb_strlen($initials) >= 2) break;
+  }
+  return mb_strtoupper($initials !== '' ? $initials : mb_substr($name, 0, 1));
+}
+
 function updates_short($value, int $max = 92): string {
   $value = trim((string) $value);
   if ($value === '') return '—';
@@ -132,6 +154,7 @@ SELECT
   ct.display_name,
   ct.username,
   ct.profile_url,
+  ct.avatar_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,
@@ -170,6 +193,8 @@ SQL;
       'reply_window' => meta_reply_window_info($row['last_inbound_at'] ?? ''),
       'channel_icon' => updates_channel_icon_path($row),
       'channel_label' => updates_channel_icon_label($row),
+      'avatar_url' => updates_avatar_url($row),
+      'avatar_initials' => updates_avatar_initials($row),
     ];
   }
 
@@ -183,6 +208,7 @@ SELECT
   ct.display_name,
   ct.username,
   ct.profile_url,
+  ct.avatar_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,

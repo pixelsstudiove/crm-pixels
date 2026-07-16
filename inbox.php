@@ -234,6 +234,7 @@ SELECT
   ct.display_name,
   ct.username,
   ct.profile_url,
+  ct.avatar_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,
@@ -271,6 +272,7 @@ SELECT
   ct.display_name,
   ct.username,
   ct.profile_url,
+  ct.avatar_url,
   ch.page_name,
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,
@@ -374,6 +376,28 @@ function inbox_channel_icon_label(array $conversation): string {
   return 'Instagram';
 }
 
+function inbox_avatar_url(array $conversation): string {
+  $avatarUrl = trim((string) ($conversation['avatar_url'] ?? ''));
+  if ($avatarUrl !== '') return $avatarUrl;
+  $profileUrl = trim((string) ($conversation['profile_url'] ?? ''));
+  if (inbox_channel_icon_source($conversation) === 'messenger' && str_starts_with($profileUrl, 'http')) return $profileUrl;
+  return '';
+}
+
+function inbox_avatar_initials(array $conversation): string {
+  $name = trim(str_replace('@', '', inbox_contact_name($conversation)));
+  if ($name === '') return 'C';
+  $parts = preg_split('/\s+/', $name) ?: [];
+  $initials = '';
+  foreach ($parts as $part) {
+    $part = trim((string) $part);
+    if ($part === '') continue;
+    $initials .= mb_substr($part, 0, 1);
+    if (mb_strlen($initials) >= 2) break;
+  }
+  return mb_strtoupper($initials !== '' ? $initials : mb_substr($name, 0, 1));
+}
+
 function inbox_short($value, int $max = 70): string {
   $value = trim((string) $value);
   if ($value === '') return '—';
@@ -462,13 +486,15 @@ function inbox_visible_message_text($value, array $attachments): string {
     .conversation-filter-disclosure summary:hover { background:#151b2d; }
     .conversation-filter-options { display:grid; gap:9px; padding:10px; border-top:1px solid var(--inbox-line); background:#fbfcff; }
     .conversation-list { flex:1 1 auto; min-height:0; overflow:auto; padding:10px; background:#fbfcff; scrollbar-color:#c4cfdd transparent; }
-    .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 44px 12px 13px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
+    .conversation-item { position:relative; display:block; margin-bottom:8px; padding:13px 44px 12px 62px; min-height:96px; border:1px solid transparent; border-radius:14px; color:inherit; text-decoration:none; background:#fff; transition:border-color .18s ease, background .18s ease, transform .14s ease, box-shadow .18s ease; }
     .conversation-item:hover { transform:translateY(-1px); border-color:#c7d3e2; box-shadow:0 10px 24px rgba(15,23,42,.08); }
     .conversation-item.is-active { border-color:#c7d3e2; background:#f7f9fc; box-shadow:inset 4px 0 0 var(--inbox-cyan); }
     .conversation-row { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
     .conversation-name { font-weight:950; color:var(--inbox-ink); letter-spacing:-.02em; }
     .conversation-time { color:var(--inbox-muted); font-size:.76rem; font-weight:760; white-space:nowrap; }
     .conversation-preview { color:var(--inbox-muted); margin-top:7px; padding-right:4px; font-size:.9rem; line-height:1.35; }
+    .conversation-avatar { position:absolute; left:13px; top:14px; width:36px; height:36px; border-radius:50%; display:grid; place-items:center; overflow:hidden; background:#edf3ff; color:var(--inbox-navy); border:1px solid #d8e4f1; box-shadow:0 8px 18px rgba(15,23,42,.08); font-size:.78rem; font-weight:950; letter-spacing:.01em; }
+    .conversation-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
     .conversation-channel-icon { position:absolute; right:13px; bottom:13px; width:24px; height:24px; border-radius:999px; object-fit:contain; background:#fff; padding:3px; border:1px solid #d8e4f1; box-shadow:0 8px 18px rgba(15,23,42,.14); }
     .badge { display:inline-flex; align-items:center; min-height:24px; padding:0 8px; border-radius:999px; font-size:.72rem; font-weight:900; background:#eef9f0; color:#217a43; border:1px solid #a8e0ba; }
     .badge.unread { background:var(--inbox-navy); color:#fff; border-color:var(--inbox-navy); }
@@ -670,7 +696,15 @@ function inbox_visible_message_text($value, array $attachments): string {
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
                 <?php $conversationSlug = trim((string) ($conversation['account_slug'] ?? $requestSlug)); ?>
+                <?php $avatarUrl = inbox_avatar_url($conversation); ?>
                 <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" href="<?= h(account_url('inbox.php', ['id' => conv_display_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
+                  <span class="conversation-avatar" aria-hidden="true">
+                    <?php if ($avatarUrl !== ''): ?>
+                      <img src="<?= h($avatarUrl) ?>" alt="">
+                    <?php else: ?>
+                      <?= h(inbox_avatar_initials($conversation)) ?>
+                    <?php endif; ?>
+                  </span>
                   <div class="conversation-row">
                     <span class="conversation-name"><?= h(inbox_contact_name($conversation)) ?></span>
                     <span class="conversation-time"><?= h(inbox_time($conversation['last_message_at'] ?? $conversation['created_at'] ?? '')) ?></span>
@@ -1176,8 +1210,13 @@ function inbox_visible_message_text($value, array $attachments): string {
         const unread = active ? 0 : Number(item.unread_count || 0);
         const channelIcon = item.channel_icon || 'images/icon_instagram.png';
         const channelLabel = item.channel_label || 'Instagram';
+        const avatarUrl = item.avatar_url || '';
+        const avatarInitials = item.avatar_initials || 'C';
         return `
           <a class="conversation-item ${active ? 'is-active' : ''}" href="${escapeHtml(conversationHref(item.id, item.account_slug || '', itemAccountId))}">
+            <span class="conversation-avatar" aria-hidden="true">
+              ${avatarUrl ? `<img src="${escapeHtml(avatarUrl)}" alt="">` : escapeHtml(avatarInitials)}
+            </span>
             <div class="conversation-row">
               <span class="conversation-name">${escapeHtml(item.name)}</span>
               <span class="conversation-time">${escapeHtml(item.time)}</span>
