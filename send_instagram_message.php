@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/lead_status_history.php';
 require_permission('send_messages');
 
 conv_ensure_schema($pdo);
@@ -44,6 +45,44 @@ function send_media_label(string $type): string {
 
 function send_public_media_text(string $type): string {
   return $type === 'audio' ? 'Audio enviado' : 'Imagen enviada';
+}
+
+function send_conversation_has_outbound(PDO $pdo, int $conversationId): bool {
+  if ($conversationId <= 0) return false;
+  $messagesTable = conv_messages_table();
+  $stmt = $pdo->prepare("SELECT 1 FROM {$messagesTable} WHERE conversation_id=? AND direction='outbound' AND delivery_status='sent' LIMIT 1");
+  $stmt->execute([$conversationId]);
+  return (bool) $stmt->fetchColumn();
+}
+
+function send_auto_contact_lead_after_reply(PDO $pdo, string $leadsTable, int $leadId, int $accountId, bool $hadOutboundBefore, string $sentAt): ?array {
+  if ($leadId <= 0 || $accountId <= 0 || $hadOutboundBefore) return null;
+
+  $defaultStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
+  $targetStatus = 'contactado';
+  $allowedStatuses = array_keys((array) app_config('sales_funnel.statuses', []));
+  if (!in_array($targetStatus, $allowedStatuses, true)) return null;
+
+  $stmt = $pdo->prepare("SELECT sales_status FROM {$leadsTable} WHERE id=? AND account_id=? LIMIT 1");
+  $stmt->execute([$leadId, $accountId]);
+  $previousStatus = (string) ($stmt->fetchColumn() ?: '');
+  if ($previousStatus !== $defaultStatus) return null;
+
+  $update = $pdo->prepare("UPDATE {$leadsTable} SET sales_status=?, updated_at=NOW() WHERE id=? AND account_id=? AND sales_status=?");
+  $update->execute([$targetStatus, $leadId, $accountId, $previousStatus]);
+  if ($update->rowCount() < 1) return null;
+
+  $operator = trim((string) ($_SESSION['username'] ?? 'usuario'));
+  $when = app_datetime($sentAt, 'd/m/Y H:i', $sentAt);
+  $reason = "Conversacion respondida por {$operator} el {$when}. Status actualizado automaticamente de " . lead_status_label($previousStatus) . ' a ' . lead_status_label($targetStatus) . '.';
+  lead_status_history_record($pdo, $leadId, $previousStatus, $targetStatus, $reason, $accountId);
+
+  return [
+    'previous_status' => $previousStatus,
+    'sales_status' => $targetStatus,
+    'label' => lead_status_label($targetStatus),
+    'reason' => $reason,
+  ];
 }
 
 function send_normalize_uploads($upload): array {
@@ -123,6 +162,15 @@ $stmt->execute(is_super_admin() ? [$conversationId] : [$conversationId, $current
 $conversation = $stmt->fetch();
 if (!$conversation) send_redirect($conversationId, 'No se encontro la conversacion.', $conversationRouteId);
 
+$conversationAccountId = (int) (($conversation['account_id'] ?? $currentAccountId) ?: accounts_default_id($pdo));
+$leadId = (int) ($conversation['lead_id'] ?? 0);
+if ($leadId <= 0 && isset($TABLE_LEADS)) {
+  $leadId = conv_ensure_lead_for_conversation($pdo, $TABLE_LEADS, $conversationId);
+  if ($leadId > 0) $conversation['lead_id'] = $leadId;
+}
+$hadOutboundBefore = send_conversation_has_outbound($pdo, $conversationId);
+$autoContactResult = null;
+
 $replyWindow = meta_reply_window_info($conversation['last_inbound_at'] ?? '');
 if (!($replyWindow['can_reply'] ?? false)) {
   send_redirect($conversationId, 'Chat vencido. No se puede responder desde el CRM hasta recibir un nuevo mensaje del cliente.', $conversationRouteId);
@@ -192,6 +240,7 @@ if ($message !== '') {
     'sent_at' => $now,
     'delivery_status' => 'sent',
   ]);
+  $autoContactResult = $autoContactResult ?: send_auto_contact_lead_after_reply($pdo, $TABLE_LEADS, $leadId, $conversationAccountId, $hadOutboundBefore, $now);
   $responseMessages[] = [
     'id' => $messageId,
     'direction' => 'outbound',
@@ -228,6 +277,7 @@ if ($hasMedia) {
       'sent_at' => $now,
       'delivery_status' => 'sent',
     ]);
+    $autoContactResult = $autoContactResult ?: send_auto_contact_lead_after_reply($pdo, $TABLE_LEADS, $leadId, $conversationAccountId, $hadOutboundBefore, $now);
     $attachmentId = conv_add_attachment($pdo, [
       'conversation_id' => $conversationId,
       'message_id' => $mediaMessageId,
@@ -279,6 +329,7 @@ if (send_wants_json()) {
     'conversation_id' => $conversationRouteId,
     'message' => $responseMessages[0] ?? null,
     'messages' => $responseMessages,
+    'auto_status' => $autoContactResult,
   ]);
 }
 

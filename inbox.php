@@ -1632,6 +1632,16 @@ function inbox_visible_message_text($value, array $attachments): string {
         cleanupOptimisticUrls(tempMessages);
       }
 
+      function applyAutoSalesStatus(autoStatus) {
+        if (!autoStatus || !autoStatus.sales_status) return;
+        const select = document.querySelector('form[data-auto-status-form] select[name="sales_status"]');
+        if (!select) return;
+        select.value = autoStatus.sales_status;
+        select.dataset.previousValue = autoStatus.sales_status;
+        const target = document.getElementById('salesStatusLabel');
+        if (target && autoStatus.label) target.textContent = autoStatus.label;
+      }
+
       replyForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const textarea = replyForm.querySelector('textarea[name="message"]');
@@ -1683,6 +1693,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           const data = await response.json();
           if (!data.ok) throw new Error(data.error || 'No se pudo enviar el mensaje.');
           reconcileOptimisticMessages(optimisticMessages, Array.isArray(data.messages) ? data.messages : (data.message ? [data.message] : []));
+          applyAutoSalesStatus(data.auto_status);
           scrollMessagesToBottomSoon();
           showNotice(data.notice || 'Mensaje enviado.');
           pollInbox(true);
@@ -1700,8 +1711,10 @@ function inbox_visible_message_text($value, array $attachments): string {
       const select = form.querySelector('select');
       if (!select) return;
       let previousValue = select.value;
+      select.dataset.previousValue = previousValue;
 
       select.addEventListener('change', async () => {
+        previousValue = select.dataset.previousValue || previousValue;
         const nextValue = select.value;
         if (nextValue === previousValue) return;
         const isSalesStatus = String(form.querySelector('input[name="action"]')?.value || '') === 'update_sales_status';
@@ -1730,6 +1743,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           const data = await response.json();
           if (!response.ok || !data.ok) throw new Error(data.error || 'No se pudo actualizar.');
           previousValue = nextValue;
+          select.dataset.previousValue = nextValue;
           const targetId = form.getAttribute('data-status-target');
           const target = targetId ? document.getElementById(targetId) : null;
           if (target && data.label) target.textContent = data.label;

@@ -37,11 +37,12 @@ function lead_status_label(string $status): string {
   return (string) ($statuses[$status] ?? $status);
 }
 
-function lead_status_history_record(PDO $pdo, int $leadId, ?string $previousStatus, string $newStatus, string $reason): void {
+function lead_status_history_record(PDO $pdo, int $leadId, ?string $previousStatus, string $newStatus, string $reason, ?int $accountId = null): void {
   lead_status_history_ensure_schema($pdo);
   $table = lead_status_history_table();
   $reason = trim($reason);
   if ($leadId <= 0 || $newStatus === '' || $reason === '') return;
+  $accountId = $accountId !== null && $accountId > 0 ? $accountId : (int) (current_account_id() ?: accounts_default_id($pdo));
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
@@ -49,7 +50,7 @@ INSERT INTO {$table} (
 ) VALUES (?, ?, ?, ?, ?, ?, ?)
 SQL);
   $stmt->execute([
-    (int) (current_account_id() ?: accounts_default_id($pdo)),
+    $accountId,
     $leadId,
     isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null,
     isset($_SESSION['username']) ? mb_substr((string) $_SESSION['username'], 0, 120) : null,
