@@ -542,8 +542,8 @@ body{
 .config-page .logs-header{
   align-items:center!important;
   margin-bottom:22px!important;
-  padding-bottom:16px;
-  border-bottom:1px solid #dde8f3;
+  padding-bottom:0;
+  border-bottom:0;
 }
 .config-page .title{
   color:var(--config-ink);
@@ -553,26 +553,117 @@ body{
   color:#66758d;
   font-weight:700;
 }
+.config-page .app-nav-actions{
+  gap:10px;
+}
+.config-page .account-switch{
+  height:auto;
+}
+.config-page .menu-trigger{
+  min-height:44px;
+  height:auto;
+  padding:0 15px;
+  border-color:var(--config-line);
+  border-radius:999px;
+  background:#fff;
+  color:var(--config-ink);
+  box-shadow:0 1px 0 rgba(15, 23, 42, .04);
+  font-size:.88rem;
+  font-weight:850;
+  transition:background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, transform .06s ease;
+}
+.config-page .account-switch .menu-trigger{
+  min-width:210px;
+  justify-content:space-between;
+}
+.config-page .menu-trigger::after{
+  color:var(--config-cyan);
+}
+.config-page .menu-dropdown.is-open .menu-trigger,
+.config-page .menu-trigger:hover{
+  border-color:var(--config-navy);
+  background:var(--config-navy);
+  color:#fff;
+  box-shadow:0 12px 28px rgba(15, 23, 42, .14);
+}
+.config-page .menu-dropdown.is-open .menu-trigger::after,
+.config-page .menu-trigger:hover::after{
+  color:#fff;
+}
+.config-page .nav-direct-button{
+  border-color:var(--config-navy);
+  background:var(--config-navy);
+  color:#fff;
+}
+.config-page .nav-direct-button:hover{
+  border-color:#172033;
+  background:#172033;
+  color:#fff;
+}
+.config-page .menu-panel{
+  top:calc(100% + 10px);
+  min-width:240px;
+  border-color:var(--config-line);
+  border-radius:18px;
+  box-shadow:0 24px 60px rgba(15, 23, 42, .16);
+}
+.config-page .menu-panel-wide{
+  min-width:270px;
+}
+.config-page .menu-item{
+  min-height:42px;
+  border-radius:12px;
+  color:var(--config-ink);
+  font-size:.9rem;
+  font-weight:850;
+}
+.config-page .menu-item:hover,
+.config-page .menu-item.is-active{
+  background:#f8fafc;
+  color:var(--config-ink);
+}
+.config-page .menu-meta{
+  border-bottom-color:var(--config-line);
+}
+.config-page .menu-section-title{
+  color:#728198;
+}
+.config-page .menu-item-danger{
+  color:#be123c!important;
+}
 .config-page .admin-side-nav{
+  gap:6px;
+  padding:10px!important;
   border-color:var(--config-line)!important;
   border-radius:18px!important;
   background:#fff!important;
   box-shadow:0 16px 38px rgba(15, 23, 42, .06)!important;
 }
+.config-page .admin-side-title{
+  padding:10px 12px 8px;
+  color:var(--config-muted);
+  font-size:.72rem;
+  letter-spacing:.12em;
+}
 .config-page .admin-side-link{
-  min-height:44px;
-  border-radius:12px;
-  color:#273449;
+  min-height:42px;
+  padding:0 12px;
+  border-radius:999px;
+  color:var(--config-ink);
+  font-size:.88rem;
+  box-shadow:none;
+  transition:background .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease;
 }
 .config-page .admin-side-link:hover{
-  border-color:#b9d8ec!important;
-  background:#eef8fe!important;
-  color:#007ea8!important;
+  border-color:var(--config-line)!important;
+  background:#f8fafc!important;
+  color:var(--config-ink)!important;
 }
 .config-page .admin-side-link.is-active{
   border-color:var(--config-navy)!important;
   background:var(--config-navy)!important;
   color:#fff!important;
+  box-shadow:0 10px 24px rgba(15, 23, 42, .14);
 }
 .config-page .accounts-box,
 .config-page .users-box,
@@ -696,6 +787,22 @@ body{
   background:var(--config-navy)!important;
   border-color:var(--config-navy)!important;
   color:#fff!important;
+}
+.config-page .channel-link.is-disabled,
+.config-page .channel-link.primary.is-disabled{
+  border-color:#cbd5e1!important;
+  background:#e5e7eb!important;
+  color:#64748b!important;
+  cursor:not-allowed!important;
+  opacity:1!important;
+  transform:none!important;
+}
+.config-page .channel-link.is-disabled:hover,
+.config-page .channel-link.primary.is-disabled:hover{
+  border-color:#cbd5e1!important;
+  background:#e5e7eb!important;
+  color:#64748b!important;
+  transform:none!important;
 }
 .config-page .accounts-link.danger,
 .config-page .channel-btn.danger{
