@@ -190,13 +190,11 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
   $hasInstagram = is_array($ig) && !empty($ig['id']);
   if ($wantsInstagram && !$hasInstagram && !$wantsMessenger) continue;
 
-  // Intenta suscribir la pagina a la app. Si ya estaba suscrita, Meta responde OK o no bloquea la conexion local.
-  if ($wantsMessenger) {
-    ig_graph_request('POST', $pageId . '/subscribed_apps', [
-      'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
-      'access_token' => $pageToken,
-    ]);
-  }
+  // Mantiene la fanpage suscrita a la app. El CRM decide si procesa Instagram, Messenger o ambos por canal.
+  ig_graph_request('POST', $pageId . '/subscribed_apps', [
+    'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
+    'access_token' => $pageToken,
+  ]);
 
   try {
     ig_channel_upsert($pdo, $channelsTable, [

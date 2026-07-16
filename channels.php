@@ -28,6 +28,13 @@ $webhookUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'http
 $canConnectInstagram = $instagramAppId !== '' && $instagramAppSecret !== '';
 $canConnectFacebook = $facebookAppId !== '' && $facebookAppSecret !== '';
 $canConnect = $canConnectInstagram || $canConnectFacebook;
+$metaConfigStatus = [
+  'facebook_app_id' => $facebookAppId !== '',
+  'facebook_app_secret' => $facebookAppSecret !== '',
+  'instagram_app_id' => $instagramAppId !== '',
+  'instagram_app_secret' => $instagramAppSecret !== '',
+  'verify_token' => trim((string) app_config('instagram.webhook_verify_token', '')) !== '',
+];
 
 $connectProvider = strtolower(trim((string) ($_GET['connect'] ?? '')));
 if (in_array($connectProvider, ['facebook', 'instagram'], true)) {
@@ -218,6 +225,9 @@ try {
           <h2>Webhook de Meta</h2>
           <p><strong>URL Instagram/Messenger:</strong> <?= h($webhookUrl) ?></p>
           <p><strong>Redirect OAuth:</strong> <?= h($callbackUrl) ?></p>
+          <p><strong>Facebook App ID:</strong> <?= $metaConfigStatus['facebook_app_id'] ? 'Configurado' : 'Falta configurar' ?></p>
+          <p><strong>Facebook App Secret:</strong> <?= $metaConfigStatus['facebook_app_secret'] ? 'Configurado' : 'Falta configurar' ?></p>
+          <p><strong>Verify Token:</strong> <?= $metaConfigStatus['verify_token'] ? 'Configurado' : 'Falta configurar' ?></p>
         </div>
 
         <div class="channel-grid">
