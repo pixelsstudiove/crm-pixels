@@ -169,15 +169,25 @@ function ig_channel_upsert(PDO $pdo, string $table, array $channel): void {
     trim($instagramUserId),
   ], static fn($value) => $value !== '')));
   $existingChannelId = 0;
+  $existingChannel = null;
   if ($identifiers) {
     $placeholders = implode(',', array_fill(0, count($identifiers), '?'));
-    $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND (page_id IN ({$placeholders}) OR instagram_user_id IN ({$placeholders})) ORDER BY id DESC LIMIT 1");
+    $find = $pdo->prepare("SELECT * FROM {$table} WHERE account_id=? AND (page_id IN ({$placeholders}) OR instagram_user_id IN ({$placeholders})) ORDER BY id DESC LIMIT 1");
     $find->execute(array_merge([$accountId], $identifiers, $identifiers));
-    $existingChannelId = (int) ($find->fetchColumn() ?: 0);
+    $existingChannel = $find->fetch() ?: null;
+    $existingChannelId = (int) ($existingChannel['id'] ?? 0);
   }
   if ($existingChannelId <= 0 && !accounts_can_add_channel($pdo, $accountId)) {
     $message = accounts_limit_error($pdo, $accountId, 'channels');
     throw new RuntimeException($message !== '' ? $message : 'Esta cuenta ya alcanzó su límite de canales.');
+  }
+  if (
+    $existingChannelId > 0
+    && $connectionType === 'instagram_login'
+    && (string) ($existingChannel['connection_type'] ?? '') === 'facebook'
+    && !empty($existingChannel['receive_messenger'])
+  ) {
+    throw new RuntimeException('Este Instagram ya está conectado junto a Messenger mediante Facebook. Para conectarlo solo por Instagram, primero desvincula el canal actual.');
   }
 
   $stmt = $pdo->prepare(<<<SQL
@@ -186,20 +196,10 @@ INSERT INTO {$table} (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
 ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
-  connection_type = CASE
-    WHEN connection_type = 'facebook' AND VALUES(connection_type) = 'instagram_login' THEN connection_type
-    ELSE VALUES(connection_type)
-  END,
-  page_id = CASE
-    WHEN VALUES(connection_type) = 'facebook' THEN VALUES(page_id)
-    WHEN connection_type = 'facebook' THEN page_id
-    ELSE VALUES(page_id)
-  END,
+  connection_type = VALUES(connection_type),
+  page_id = VALUES(page_id),
   page_name = VALUES(page_name),
-  instagram_user_id = CASE
-    WHEN VALUES(instagram_user_id) LIKE 'messenger:%' AND instagram_user_id NOT LIKE 'messenger:%' THEN instagram_user_id
-    ELSE VALUES(instagram_user_id)
-  END,
+  instagram_user_id = VALUES(instagram_user_id),
   instagram_username = CASE
     WHEN COALESCE(VALUES(instagram_username), '') = '' AND COALESCE(instagram_username, '') <> '' THEN instagram_username
     ELSE VALUES(instagram_username)
