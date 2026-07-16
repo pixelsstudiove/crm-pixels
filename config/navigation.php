@@ -70,8 +70,8 @@ function nav_fetch_account_options(PDO $pdo): array {
 function nav_render_config_top_nav(PDO $pdo, string $accountTargetScript = 'dashboard.php', int $selectedAccountId = 0, array $allParams = [], array $accountParams = []): void {
   ?>
   <div class="app-nav-actions">
-    <?php nav_render_account_switch($pdo, nav_fetch_account_options($pdo), $selectedAccountId, $accountTargetScript, $allParams, $accountParams); ?>
     <?php nav_render_view_dropdown(); ?>
+    <?php nav_render_account_switch($pdo, nav_fetch_account_options($pdo), $selectedAccountId, $accountTargetScript, $allParams, $accountParams); ?>
     <?php nav_render_user_menu(false); ?>
   </div>
   <?php

@@ -1498,8 +1498,8 @@ function dash_channel_label(array $channel): string {
             <h1 class="title"><?= h(app_config('ui.dashboard_heading', 'Dashboard')) ?></h1>
           </div>
           <div class="topbar-right app-nav-actions">
-            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'sales_status' => $filterSalesStatus], ['q' => $q, 'sales_status' => $filterSalesStatus]); ?>
             <?php nav_render_view_button('dashboard'); ?>
+            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'sales_status' => $filterSalesStatus], ['q' => $q, 'sales_status' => $filterSalesStatus]); ?>
             <?php nav_render_user_menu(true); ?>
           </div>
         </div>
