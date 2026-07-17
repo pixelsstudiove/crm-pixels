@@ -261,13 +261,17 @@ function ig_event_text(array $event, string $provider = 'instagram'): string {
   $attachments = $event['message']['attachments'] ?? [];
   if (is_array($attachments) && $attachments) {
     $types = [];
+    $supportedTypes = [];
     foreach ($attachments as $attachment) {
       $type = ig_clean($attachment['type'] ?? 'adjunto', 60) ?? 'adjunto';
       $types[] = $type;
+      $payload = is_array($attachment['payload'] ?? null) ? $attachment['payload'] : [];
+      $hasDownloadUrl = trim((string) ($payload['url'] ?? '')) !== '';
+      if (in_array($type, ['image', 'audio'], true) && $hasDownloadUrl) $supportedTypes[] = $type;
     }
-    return 'Adjunto recibido: ' . implode(', ', array_unique($types));
+    if ($supportedTypes) return 'Adjunto recibido: ' . implode(', ', array_unique($supportedTypes));
   }
-  return 'Mensaje recibido desde ' . ig_provider_label($provider) . '.';
+  return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
 }
 
 function ig_referral_data(array $event): array {

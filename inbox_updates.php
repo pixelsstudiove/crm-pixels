@@ -60,9 +60,23 @@ function updates_avatar_initials(array $conversation): string {
 }
 
 function updates_short($value, int $max = 92): string {
-  $value = trim((string) $value);
+  $value = updates_normalize_message_text($value);
   if ($value === '') return '—';
   return mb_strlen($value) > $max ? mb_substr($value, 0, max(1, $max - 1)) . '…' : $value;
+}
+
+function updates_unsupported_message_text(): string {
+  return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
+}
+
+function updates_normalize_message_text($value): string {
+  $text = trim((string) $value);
+  $legacyUnsupported = [
+    'Mensaje recibido desde Instagram DM.',
+    'Mensaje recibido desde Facebook Messenger.',
+    'Adjunto recibido: unsupported_type',
+  ];
+  return in_array($text, $legacyUnsupported, true) ? updates_unsupported_message_text() : $text;
 }
 
 function updates_time($value): string {
@@ -255,7 +269,7 @@ SQL;
         $messages[] = [
           'id' => $messageId,
           'direction' => $direction === 'outbound' ? 'outbound' : 'inbound',
-          'text' => (string) ($message['message_text'] ?: 'Mensaje sin texto'),
+          'text' => updates_normalize_message_text((string) ($message['message_text'] ?: 'Mensaje sin texto')),
           'attachments' => $attachmentsByMessage[$messageId] ?? [],
           'time' => updates_time($message['sent_at'] ?? ''),
           'sent_by_username' => (string) ($message['sent_by_username'] ?? ''),

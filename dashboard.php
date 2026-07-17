@@ -473,10 +473,22 @@ function business_type_display(array $lead): string {
 function updated_display(array $lead): string {
   return dash_value($lead['updated_at'] ?? null) !== '—' ? app_datetime($lead['updated_at']) : 'Sin cambios';
 }
+function dashboard_unsupported_message_text(): string {
+  return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
+}
+function dashboard_normalize_message_text($value): string {
+  $text = trim((string) $value);
+  $legacyUnsupported = [
+    'Mensaje recibido desde Instagram DM.',
+    'Mensaje recibido desde Facebook Messenger.',
+    'Adjunto recibido: unsupported_type',
+  ];
+  return in_array($text, $legacyUnsupported, true) ? dashboard_unsupported_message_text() : $text;
+}
 function lead_message_display(array $lead): string {
-  $last = dash_value($lead['last_inbound_message'] ?? null);
+  $last = dash_value(dashboard_normalize_message_text($lead['last_inbound_message'] ?? null));
   if ($last !== '—') return $last;
-  return dash_value($lead['message'] ?? null);
+  return dash_value(dashboard_normalize_message_text($lead['message'] ?? null));
 }
 function lead_contact_display(array $lead): string {
   $phone = dash_value($lead['phone'] ?? null);

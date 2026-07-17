@@ -399,9 +399,23 @@ function inbox_avatar_initials(array $conversation): string {
 }
 
 function inbox_short($value, int $max = 70): string {
-  $value = trim((string) $value);
+  $value = inbox_normalize_message_text($value);
   if ($value === '') return '—';
   return mb_strlen($value) > $max ? mb_substr($value, 0, max(1, $max - 1)) . '…' : $value;
+}
+
+function inbox_unsupported_message_text(): string {
+  return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
+}
+
+function inbox_normalize_message_text($value): string {
+  $text = trim((string) $value);
+  $legacyUnsupported = [
+    'Mensaje recibido desde Instagram DM.',
+    'Mensaje recibido desde Facebook Messenger.',
+    'Adjunto recibido: unsupported_type',
+  ];
+  return in_array($text, $legacyUnsupported, true) ? inbox_unsupported_message_text() : $text;
 }
 
 function inbox_time($value): string {
@@ -424,7 +438,7 @@ function inbox_has_displayable_attachment(array $attachments): bool {
 }
 
 function inbox_visible_message_text($value, array $attachments): string {
-  $text = trim((string) $value);
+  $text = inbox_normalize_message_text($value);
   $hasAttachment = inbox_has_displayable_attachment($attachments);
   $attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Imagen enviada', 'Audio enviado', 'Imagen', 'Audio'];
   if ($hasAttachment && in_array($text, $attachmentOnlyLabels, true)) return '';
@@ -676,7 +690,7 @@ function inbox_visible_message_text($value, array $attachments): string {
             <?php $activeFilterCount = ($filterChannelId > 0 ? 1 : 0) + ($filterStatus !== '' ? 1 : 0); ?>
             <form class="conversation-filters" method="get" action="inbox.php">
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar conversación">
-              <details class="conversation-filter-disclosure" <?= $activeFilterCount > 0 ? 'open' : '' ?>>
+              <details class="conversation-filter-disclosure" data-filter-disclosure <?= $activeFilterCount > 0 ? 'open' : '' ?>>
                 <summary aria-label="Mostrar u ocultar filtros de conversaciones"></summary>
                 <div class="conversation-filter-options">
                   <select name="channel_id" onchange="this.form.submit()" aria-label="Filtrar por canal">
@@ -1124,7 +1138,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     }
 
     function visibleMessageText(message) {
-      const text = String(message?.text ?? '').trim();
+      const unsupportedText = 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
+      const legacyUnsupportedTexts = [
+        'Mensaje recibido desde Instagram DM.',
+        'Mensaje recibido desde Facebook Messenger.',
+        'Adjunto recibido: unsupported_type'
+      ];
+      let text = String(message?.text ?? '').trim();
+      if (legacyUnsupportedTexts.includes(text)) text = unsupportedText;
       const attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Imagen enviada', 'Audio enviado', 'Imagen', 'Audio'];
       if (hasDisplayableAttachment(message?.attachments) && attachmentOnlyLabels.includes(text)) return '';
       if (text) return text;
@@ -2055,6 +2076,22 @@ function inbox_visible_message_text($value, array $attachments): string {
         setSidePanelCollapsed(nextCollapsed);
         try {
           window.localStorage.setItem(sidePanelKey, nextCollapsed ? '1' : '0');
+        } catch (error) {}
+      });
+    }
+
+    const filterDisclosure = document.querySelector('[data-filter-disclosure]');
+    if (filterDisclosure) {
+      const filterDisclosureKey = 'crm_pixels_inbox_filters_open';
+      try {
+        const storedFilterState = window.localStorage.getItem(filterDisclosureKey);
+        if (storedFilterState === '1') filterDisclosure.open = true;
+        if (storedFilterState === '0') filterDisclosure.open = false;
+      } catch (error) {}
+
+      filterDisclosure.addEventListener('toggle', () => {
+        try {
+          window.localStorage.setItem(filterDisclosureKey, filterDisclosure.open ? '1' : '0');
         } catch (error) {}
       });
     }
