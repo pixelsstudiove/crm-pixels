@@ -84,7 +84,7 @@ try {
   }
   if ($_SERVER['REQUEST_METHOD'] === 'GET' && current_user_role() !== 'super_admin' && !$requestAccount) {
     $script = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-    if (in_array($script, ['dashboard.php', 'inbox.php', 'channels.php', 'webhook_logs.php', 'stats.php'], true)) {
+    if (in_array($script, ['dashboard.php', 'inbox.php', 'channels.php', 'webhook_logs.php', 'stats.php', 'stats_advanced.php'], true)) {
       $slug = accounts_slug_for_id($pdo, (int) $_SESSION['account_id']);
       if ($slug !== '') {
         $params = $_GET;

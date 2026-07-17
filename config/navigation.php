@@ -44,9 +44,15 @@ function nav_render_view_button(string $activeView): void {
   } elseif ($activeView === 'stats') {
     if (can('view_dashboard')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('dashboard.php')) . '">Embudo</a>';
     if (can('view_conversations')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('inbox.php')) . '">Inbox</a>';
+    if (can('view_reports')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('stats_advanced.php')) . '">Stats Pro</a>';
+    return;
+  } elseif ($activeView === 'stats_advanced') {
+    if (can('view_dashboard')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('dashboard.php')) . '">Embudo</a>';
+    if (can('view_conversations')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('inbox.php')) . '">Inbox</a>';
+    if (can('view_reports')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('stats.php')) . '">Stats actual</a>';
     return;
   }
-  if ($activeView !== 'stats' && can('view_reports')) {
+  if (!in_array($activeView, ['stats', 'stats_advanced'], true) && can('view_reports')) {
     echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('stats.php')) . '">Estadísticas</a>';
   }
 }
@@ -60,6 +66,7 @@ function nav_render_view_dropdown(): void {
       <?php if (can('view_dashboard')): ?><a class="menu-item" href="<?= h(account_url('dashboard.php')) ?>">Embudo</a><?php endif; ?>
       <?php if (can('view_conversations')): ?><a class="menu-item" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
       <?php if (can('view_reports')): ?><a class="menu-item" href="<?= h(account_url('stats.php')) ?>">Estadísticas</a><?php endif; ?>
+      <?php if (can('view_reports')): ?><a class="menu-item" href="<?= h(account_url('stats_advanced.php')) ?>">Stats Pro</a><?php endif; ?>
     </div>
   </div>
   <?php
@@ -102,6 +109,7 @@ function nav_render_user_menu(bool $includeProfileModal = true): void {
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('channels.php')) ?>">Gestión de canales</a><?php endif; ?>
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('webhook_logs.php')) ?>">Ver eventos</a><?php endif; ?>
       <?php if (can('view_reports')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('stats.php')) ?>">Estadísticas</a><?php endif; ?>
+      <?php if (can('view_reports')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('stats_advanced.php')) ?>">Stats Pro</a><?php endif; ?>
       <form class="menu-form" action="/logout.php" method="post">
         <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
         <button class="menu-item menu-item-danger" type="submit">Cerrar sesión</button>
@@ -119,6 +127,7 @@ function nav_admin_items(): array {
   if (can('manage_integrations')) $items[] = ['key' => 'channels', 'label' => 'Gestión de canales', 'href' => account_url('channels.php')];
   if (can('manage_integrations')) $items[] = ['key' => 'events', 'label' => 'Ver eventos', 'href' => account_url('webhook_logs.php')];
   if (can('view_reports')) $items[] = ['key' => 'stats', 'label' => 'Estadísticas', 'href' => account_url('stats.php')];
+  if (can('view_reports')) $items[] = ['key' => 'stats_advanced', 'label' => 'Stats Pro', 'href' => account_url('stats_advanced.php')];
   return $items;
 }
 
