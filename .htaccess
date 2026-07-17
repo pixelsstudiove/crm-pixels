@@ -3,7 +3,7 @@ Options -Indexes
 RewriteEngine On
 
 RewriteRule ^([a-z0-9-]+)/(css|js|images)/(.*)$ $2/$3 [L]
-RewriteRule ^([a-z0-9-]+)/(dashboard|inbox|channels|webhook_logs|conversation_debug|inbox_updates|send_instagram_message|update_lead_notes|update_sales_status|lead_status_history|account_update|media|logout)\.php$ $2.php?account_slug=$1 [QSA,L]
+RewriteRule ^([a-z0-9-]+)/(dashboard|inbox|channels|webhook_logs|stats|conversation_debug|inbox_updates|send_instagram_message|update_lead_notes|update_sales_status|lead_status_history|account_update|media|logout)\.php$ $2.php?account_slug=$1 [QSA,L]
 
 <FilesMatch "\.(sql|md|log|json|bak|env)$">
   Require all denied
