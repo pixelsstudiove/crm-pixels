@@ -846,6 +846,18 @@ function dash_channel_label(array $channel): string {
     .summary-card[data-tone="won"] { --tone:#159a61; }
     .summary-card[data-tone="lost"] { --tone:var(--dash-red); }
     .summary-card[data-tone="muted"] { --tone:#667085; }
+    .summary-card[data-tone="total"]:hover {
+      background:var(--dash-navy);
+      border-color:var(--dash-navy);
+    }
+    .summary-card[data-tone="total"]:hover::after {
+      background:#fff;
+      box-shadow:0 0 0 5px rgba(255,255,255,.16);
+    }
+    .summary-card[data-tone="total"]:hover strong,
+    .summary-card[data-tone="total"]:hover span {
+      color:#fff;
+    }
     .lead-filters {
       width:100%;
       max-width:100%;
