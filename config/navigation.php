@@ -41,17 +41,25 @@ function nav_render_view_button(string $activeView): void {
     echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('inbox.php')) . '">Inbox</a>';
   } elseif ($activeView === 'inbox' && can('view_dashboard')) {
     echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('dashboard.php')) . '">Embudo</a>';
+  } elseif ($activeView === 'stats') {
+    if (can('view_dashboard')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('dashboard.php')) . '">Embudo</a>';
+    if (can('view_conversations')) echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('inbox.php')) . '">Inbox</a>';
+    return;
+  }
+  if ($activeView !== 'stats' && can('view_reports')) {
+    echo '<a class="menu-trigger nav-direct-button" href="' . h(account_url('stats.php')) . '">Estadísticas</a>';
   }
 }
 
 function nav_render_view_dropdown(): void {
-  if (!can('view_dashboard') && !can('view_conversations')) return;
+  if (!can('view_dashboard') && !can('view_conversations') && !can('view_reports')) return;
   ?>
   <div class="menu-dropdown" data-menu>
     <button class="menu-trigger" type="button" data-menu-trigger aria-expanded="false">Cambiar vista</button>
     <div class="menu-panel" role="menu">
       <?php if (can('view_dashboard')): ?><a class="menu-item" href="<?= h(account_url('dashboard.php')) ?>">Embudo</a><?php endif; ?>
       <?php if (can('view_conversations')): ?><a class="menu-item" href="<?= h(account_url('inbox.php')) ?>">Inbox</a><?php endif; ?>
+      <?php if (can('view_reports')): ?><a class="menu-item" href="<?= h(account_url('stats.php')) ?>">Estadísticas</a><?php endif; ?>
     </div>
   </div>
   <?php
@@ -93,6 +101,7 @@ function nav_render_user_menu(bool $includeProfileModal = true): void {
       <?php if (can('manage_users')): ?><a class="menu-item menu-item-nested" href="/users.php">Gestión de usuarios</a><?php endif; ?>
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('channels.php')) ?>">Gestión de canales</a><?php endif; ?>
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('webhook_logs.php')) ?>">Ver eventos</a><?php endif; ?>
+      <?php if (can('view_reports')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('stats.php')) ?>">Estadísticas</a><?php endif; ?>
       <form class="menu-form" action="/logout.php" method="post">
         <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
         <button class="menu-item menu-item-danger" type="submit">Cerrar sesión</button>
@@ -109,6 +118,7 @@ function nav_admin_items(): array {
   if (can('manage_users')) $items[] = ['key' => 'users', 'label' => 'Gestión de usuarios', 'href' => '/users.php'];
   if (can('manage_integrations')) $items[] = ['key' => 'channels', 'label' => 'Gestión de canales', 'href' => account_url('channels.php')];
   if (can('manage_integrations')) $items[] = ['key' => 'events', 'label' => 'Ver eventos', 'href' => account_url('webhook_logs.php')];
+  if (can('view_reports')) $items[] = ['key' => 'stats', 'label' => 'Estadísticas', 'href' => account_url('stats.php')];
   return $items;
 }
 

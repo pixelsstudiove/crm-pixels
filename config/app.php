@@ -59,6 +59,13 @@ $app = [
     'timezone' => (string) env_value('APP_TIMEZONE', 'America/Caracas'),
   ],
 
+  'business_hours' => [
+    'timezone' => (string) env_value('BUSINESS_TIMEZONE', env_value('APP_TIMEZONE', 'America/Caracas')),
+    'start' => (string) env_value('BUSINESS_START_TIME', '09:00'),
+    'end' => (string) env_value('BUSINESS_END_TIME', '18:00'),
+    'workdays' => [1, 2, 3, 4, 5],
+  ],
+
   'accounts' => [
     'default_name' => (string) env_value('DEFAULT_ACCOUNT_NAME', 'Pixels Studio'),
     'default_slug' => (string) env_value('DEFAULT_ACCOUNT_SLUG', 'pixels-studio'),
