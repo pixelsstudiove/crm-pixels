@@ -567,7 +567,8 @@ $totalWon = array_sum(array_map(static fn($g) => (int) $g['won'], $campaignGroup
 $allResponses = [];
 foreach ($campaignGroups as $group) $allResponses = array_merge($allResponses, $group['response_seconds']);
 $avgResponse = $allResponses ? (int) round(array_sum($allResponses) / count($allResponses)) : null;
-$maxCampaignConversations = max(1, ...array_map(static fn($g) => (int) $g['conversations'], $campaignGroups ?: [['conversations' => 1]]));
+$campaignConversationTotals = array_values(array_map(static fn($g) => (int) $g['conversations'], $campaignGroups ?: [['conversations' => 1]]));
+$maxCampaignConversations = max(1, ...$campaignConversationTotals);
 
 $selectedAccountParamsAll = ['from' => $fromInput, 'to' => $toInput, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null];
 $selectedAccountParamsAccount = $selectedAccountParamsAll;
