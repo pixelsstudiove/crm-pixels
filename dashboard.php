@@ -265,7 +265,7 @@ $campaignOptions = [];
 try {
   $campaignsTable = ads_campaigns_table();
   $accountsTableForCampaigns = accounts_table();
-  $campaignWhere = [];
+  $campaignWhere = ["UPPER(TRIM(COALESCE(ac.campaign_name, ''))) NOT IN ('ADS', 'AD')"];
   $campaignParams = [];
   if (!is_super_admin()) {
     $campaignWhere[] = 'ac.account_id = ?';

@@ -439,10 +439,12 @@ function inbox_ad_attribution_rows(array $row): array {
   $adset = inbox_pick($row, ['adset_name', 'adset_id']);
   $ad = inbox_pick($row, ['ad_name', 'ad_id']);
   $source = inbox_pick($row, ['ad_referral_source']);
+  $error = inbox_pick($row, ['ad_enrichment_error']);
   if ($campaign !== '') $rows[] = ['Campaña', $campaign];
   if ($adset !== '') $rows[] = ['Conjunto', $adset];
   if ($ad !== '') $rows[] = ['Anuncio', $ad];
   if ($source !== '') $rows[] = ['Referencia', $source];
+  if ($campaign === '' && $error !== '') $rows[] = ['Atribución', $error];
   return $rows;
 }
 

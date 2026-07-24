@@ -286,6 +286,7 @@ foreach (($pagesResp['data']['data'] ?? []) as $page) {
     'instagram_user_id' => $hasInstagram ? $igId : 'messenger:' . $pageId,
     'instagram_username' => $hasInstagram ? (string) ($ig['username'] ?? $ig['name'] ?? '') : '',
     'page_access_token' => $pageToken,
+    'user_access_token' => $userToken,
     'scopes' => (string) app_config('instagram.oauth_scopes', ''),
     'receive_instagram' => $receiveInstagram ? 1 : 0,
     'receive_messenger' => $receiveMessenger ? 1 : 0,

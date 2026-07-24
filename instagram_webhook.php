@@ -311,14 +311,17 @@ function ig_referral_data(array $event): array {
   $ads = is_array($ads) ? $ads : [];
   $source = ig_clean($referral['source'] ?? null, 80);
   $refParam = ig_clean($referral['ref'] ?? null, 180);
-  $sourceIsAds = strtoupper((string) $source) === 'ADS';
+  $sourceIsAds = ads_is_generic_meta_source($source);
+  $refIsAds = ads_is_generic_meta_source($refParam);
   $campaignId = ig_clean($ads['campaign_id'] ?? $ads['campaign']['id'] ?? $referral['campaign_id'] ?? $referral['campaign']['id'] ?? null, 120);
   $campaignName = ig_clean($ads['campaign_name'] ?? $ads['campaign']['name'] ?? $referral['campaign_name'] ?? $referral['campaign']['name'] ?? null, 180);
+  if (ads_is_generic_meta_source($campaignName)) $campaignName = null;
   $adsetId = ig_clean($ads['adset_id'] ?? $ads['ad_set_id'] ?? $ads['adset']['id'] ?? $ads['ad_set']['id'] ?? $referral['adset_id'] ?? $referral['ad_set_id'] ?? $referral['adset']['id'] ?? null, 120);
   $adsetName = ig_clean($ads['adset_name'] ?? $ads['ad_set_name'] ?? $ads['adset']['name'] ?? $ads['ad_set']['name'] ?? $referral['adset_name'] ?? $referral['ad_set_name'] ?? null, 180);
   $adId = ig_clean($referral['ad_id'] ?? $ads['ad_id'] ?? $ads['ad']['id'] ?? $referral['ad']['id'] ?? null, 120);
   $adName = ig_clean($ads['ad_title'] ?? $ads['ad_name'] ?? $ads['ad']['name'] ?? null, 180);
-  $campaignFallback = $campaignName ?: (!$sourceIsAds ? ($refParam ?: $source) : null);
+  $campaignFallback = $campaignName ?: ((!$sourceIsAds && !$refIsAds) ? ($refParam ?: $source) : null);
+  if (ads_is_generic_meta_source($campaignFallback)) $campaignFallback = null;
   $payloadJson = ($referral || $ads)
     ? ig_clean(json_encode(['referral' => $referral, 'ads_context_data' => $ads], JSON_UNESCAPED_UNICODE), 5000)
     : null;
@@ -335,34 +338,117 @@ function ig_referral_data(array $event): array {
     'referral_type' => ig_clean($referral['type'] ?? $ads['type'] ?? null, 80),
     'payload_json' => $payloadJson,
     'enrichment_error' => null,
+    'campaign_was_generic' => $sourceIsAds || $refIsAds,
   ];
+}
+
+function ig_ad_attribution_token(?array $channel): ?string {
+  $userToken = ig_clean($channel['user_access_token'] ?? null, 2000);
+  if ($userToken !== null) return $userToken;
+  $configuredToken = ig_clean(app_config('instagram.ads_access_token', ''), 2000);
+  if ($configuredToken !== null) return $configuredToken;
+  return ig_clean($channel['page_access_token'] ?? null, 2000);
 }
 
 function ig_enrich_ad_attribution(?array $channel, array $ref): array {
   $adId = ig_clean($ref['ad_id'] ?? null, 120);
-  $token = ig_clean($channel['page_access_token'] ?? null, 2000);
-  if ($adId === null || $token === null) return $ref;
-
-  $response = ig_graph_request_base(ig_graph_base(), 'GET', $adId, [
-    'fields' => 'id,name,adset{id,name},campaign{id,name}',
-    'access_token' => $token,
-  ]);
-  if (!($response['ok'] ?? false) || !isset($response['data']) || !is_array($response['data'])) {
-    $ref['enrichment_error'] = ig_clean($response['error'] ?? 'Meta no devolvió datos del anuncio.', 255);
+  $adsetId = ig_clean($ref['adset_id'] ?? null, 120);
+  $campaignId = ig_clean($ref['campaign_id'] ?? null, 120);
+  $token = ig_ad_attribution_token($channel);
+  $needsEnrichment = $adId !== null || $adsetId !== null || $campaignId !== null || !empty($ref['campaign_was_generic']);
+  if (!$needsEnrichment) return $ref;
+  if ($token === null) {
+    $ref['enrichment_error'] = 'No se pudo consultar Meta Ads: el canal no tiene token activo.';
     return $ref;
   }
 
-  $ad = $response['data'];
-  $adset = is_array($ad['adset'] ?? null) ? $ad['adset'] : [];
-  $campaign = is_array($ad['campaign'] ?? null) ? $ad['campaign'] : [];
-  $ref['ad_id'] = ig_clean($ad['id'] ?? $ref['ad_id'] ?? null, 120);
-  $ref['ad_name'] = ig_clean($ad['name'] ?? $ref['ad_name'] ?? null, 180);
-  $ref['adset_id'] = ig_clean($adset['id'] ?? $ref['adset_id'] ?? null, 120);
-  $ref['adset_name'] = ig_clean($adset['name'] ?? $ref['adset_name'] ?? null, 180);
-  $ref['campaign_id'] = ig_clean($campaign['id'] ?? $ref['campaign_id'] ?? null, 120);
-  $ref['campaign_name'] = ig_clean($campaign['name'] ?? $ref['campaign_name'] ?? null, 180);
+  if ($adId !== null) {
+    $response = ig_graph_request_base(ig_graph_base(), 'GET', $adId, [
+      'fields' => 'id,name,adset{id,name},campaign{id,name}',
+      'access_token' => $token,
+    ]);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      $ad = $response['data'];
+      $adset = is_array($ad['adset'] ?? null) ? $ad['adset'] : [];
+      $campaign = is_array($ad['campaign'] ?? null) ? $ad['campaign'] : [];
+      $ref['ad_id'] = ig_clean($ad['id'] ?? $ref['ad_id'] ?? null, 120);
+      $ref['ad_name'] = ig_clean($ad['name'] ?? $ref['ad_name'] ?? null, 180);
+      $ref['adset_id'] = ig_clean($adset['id'] ?? $ref['adset_id'] ?? null, 120);
+      $ref['adset_name'] = ig_clean($adset['name'] ?? $ref['adset_name'] ?? null, 180);
+      $ref['campaign_id'] = ig_clean($campaign['id'] ?? $ref['campaign_id'] ?? null, 120);
+      $ref['campaign_name'] = ig_clean($campaign['name'] ?? $ref['campaign_name'] ?? null, 180);
+      if (($ref['campaign'] ?? null) === null && ($ref['campaign_name'] ?? null) !== null) $ref['campaign'] = ig_clean($ref['campaign_name'], 120);
+      return $ref;
+    }
+    $ref['enrichment_error'] = ig_clean($response['error'] ?? 'Meta no devolvió datos del anuncio.', 255);
+  }
+
+  $adsetId = ig_clean($ref['adset_id'] ?? null, 120);
+  if ($adsetId !== null && ($ref['campaign_name'] ?? null) === null) {
+    $response = ig_graph_request_base(ig_graph_base(), 'GET', $adsetId, [
+      'fields' => 'id,name,campaign{id,name}',
+      'access_token' => $token,
+    ]);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      $adset = $response['data'];
+      $campaign = is_array($adset['campaign'] ?? null) ? $adset['campaign'] : [];
+      $ref['adset_id'] = ig_clean($adset['id'] ?? $ref['adset_id'] ?? null, 120);
+      $ref['adset_name'] = ig_clean($adset['name'] ?? $ref['adset_name'] ?? null, 180);
+      $ref['campaign_id'] = ig_clean($campaign['id'] ?? $ref['campaign_id'] ?? null, 120);
+      $ref['campaign_name'] = ig_clean($campaign['name'] ?? $ref['campaign_name'] ?? null, 180);
+    } elseif (($ref['enrichment_error'] ?? null) === null) {
+      $ref['enrichment_error'] = ig_clean($response['error'] ?? 'Meta no devolvió datos del conjunto de anuncios.', 255);
+    }
+  }
+
+  $campaignId = ig_clean($ref['campaign_id'] ?? null, 120);
+  if ($campaignId !== null && ($ref['campaign_name'] ?? null) === null) {
+    $response = ig_graph_request_base(ig_graph_base(), 'GET', $campaignId, [
+      'fields' => 'id,name',
+      'access_token' => $token,
+    ]);
+    if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+      $campaign = $response['data'];
+      $ref['campaign_id'] = ig_clean($campaign['id'] ?? $ref['campaign_id'] ?? null, 120);
+      $ref['campaign_name'] = ig_clean($campaign['name'] ?? $ref['campaign_name'] ?? null, 180);
+    } elseif (($ref['enrichment_error'] ?? null) === null) {
+      $ref['enrichment_error'] = ig_clean($response['error'] ?? 'Meta no devolvió datos de la campaña.', 255);
+    }
+  }
+
   if (($ref['campaign'] ?? null) === null && ($ref['campaign_name'] ?? null) !== null) $ref['campaign'] = ig_clean($ref['campaign_name'], 120);
+  if (($ref['campaign_name'] ?? null) === null && ($ref['campaign_id'] ?? null) === null && !empty($ref['campaign_was_generic']) && ($ref['enrichment_error'] ?? null) === null) {
+    $ref['enrichment_error'] = 'Meta indicó que el mensaje viene de Ads, pero no envió campaign_id ni ad_id para resolver el nombre.';
+  }
   return $ref;
+}
+
+function ig_clear_generic_campaign_values(PDO $pdo, string $table, int $leadId): void {
+  if ($leadId <= 0) return;
+  $campaignsTable = ads_campaigns_table();
+  try {
+    $stmt = $pdo->prepare(<<<SQL
+UPDATE {$table} l
+LEFT JOIN {$campaignsTable} ac ON ac.id = l.campaign_ref_id
+SET
+  l.utm_campaign = CASE
+    WHEN UPPER(TRIM(COALESCE(l.utm_campaign, ''))) IN ('ADS', 'AD') THEN NULL
+    ELSE l.utm_campaign
+  END,
+  l.campaign_name = CASE
+    WHEN UPPER(TRIM(COALESCE(l.campaign_name, ''))) IN ('ADS', 'AD') THEN NULL
+    ELSE l.campaign_name
+  END,
+  l.campaign_ref_id = CASE
+    WHEN UPPER(TRIM(COALESCE(ac.campaign_name, ''))) IN ('ADS', 'AD') THEN NULL
+    ELSE l.campaign_ref_id
+  END
+WHERE l.id = ?
+SQL);
+    $stmt->execute([$leadId]);
+  } catch (Throwable $e) {
+    /* La limpieza no debe bloquear el procesamiento del webhook. */
+  }
 }
 
 function ig_profile_avatar_url(array $data): ?string {
@@ -837,6 +923,7 @@ SQL);
       $ref['enrichment_error'], $ref['enrichment_error'],
       $leadId,
     ]);
+    ig_clear_generic_campaign_values($pdo, $table, $leadId);
     if ($channel) {
       try {
         $stamp = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
@@ -852,6 +939,7 @@ SQL);
     }
     $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
     $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
+    $attributionError = ig_clean($ref['enrichment_error'] ?? null, 255);
     conv_log_webhook_event($pdo, [
       'source' => $provider,
       'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
@@ -865,7 +953,7 @@ SQL);
       'lead_id' => $leadId,
       'conversation_id' => $conversationId > 0 ? $conversationId : null,
       'message_preview' => $messageText,
-      'error_message' => $conversationMessageId > 0 ? $attachmentError : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'),
+      'error_message' => $conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'),
       'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
     ]);
     return $leadId;
@@ -934,6 +1022,7 @@ SQL);
   }
 
   $leadId = (int) $pdo->lastInsertId();
+  ig_clear_generic_campaign_values($pdo, $table, $leadId);
   $sync = ig_sync_conversation($pdo, $channel ?: null, $customerId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider, $direction);
   $conversationId = (int) ($sync['conversation_id'] ?? 0);
   $conversationMessageId = (int) ($sync['message_id'] ?? 0);
@@ -943,6 +1032,7 @@ SQL);
   }
   $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
   $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
+  $attributionError = ig_clean($ref['enrichment_error'] ?? null, 255);
   conv_log_webhook_event($pdo, [
     'source' => $provider,
     'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
@@ -956,7 +1046,7 @@ SQL);
     'lead_id' => $leadId,
     'conversation_id' => $conversationId > 0 ? $conversationId : null,
     'message_preview' => $messageText,
-    'error_message' => $conversationMessageId > 0 ? $attachmentError : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'),
+    'error_message' => $conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'),
     'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
   ]);
   return $leadId;

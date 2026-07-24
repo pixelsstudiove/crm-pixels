@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS {$table} (
   instagram_user_id VARCHAR(120) NOT NULL,
   instagram_username VARCHAR(180) NULL,
   page_access_token TEXT NULL,
+  user_access_token TEXT NULL,
   token_expires_at DATETIME NULL,
   scopes TEXT NULL,
   receive_instagram TINYINT(1) NOT NULL DEFAULT 1,
@@ -38,6 +39,7 @@ SQL);
   try { accounts_add_account_column($pdo, (string) ($DB_NAME ?? ''), $table, $defaultAccountId); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN connection_type VARCHAR(40) NOT NULL DEFAULT 'facebook' AFTER account_id"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN token_expires_at DATETIME NULL AFTER page_access_token"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN user_access_token TEXT NULL AFTER page_access_token"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN scopes TEXT NULL AFTER token_expires_at"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_instagram TINYINT(1) NOT NULL DEFAULT 1 AFTER scopes"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_messenger TINYINT(1) NOT NULL DEFAULT 0 AFTER receive_instagram"); } catch (Throwable $e) { /* no-op */ }
@@ -192,8 +194,8 @@ function ig_channel_upsert(PDO $pdo, string $table, array $channel): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, token_expires_at, scopes, receive_instagram, receive_messenger, connected_by, is_active, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+  account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, user_access_token, token_expires_at, scopes, receive_instagram, receive_messenger, connected_by, is_active, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
 ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
   connection_type = VALUES(connection_type),
@@ -205,6 +207,7 @@ ON DUPLICATE KEY UPDATE
     ELSE VALUES(instagram_username)
   END,
   page_access_token = VALUES(page_access_token),
+  user_access_token = COALESCE(VALUES(user_access_token), user_access_token),
   token_expires_at = VALUES(token_expires_at),
   scopes = VALUES(scopes),
   receive_instagram = VALUES(receive_instagram),
@@ -221,6 +224,7 @@ SQL);
     $instagramUserId,
     $channel['instagram_username'] ?? null,
     $channel['page_access_token'] ?? null,
+    $channel['user_access_token'] ?? null,
     $channel['token_expires_at'] ?? null,
     $channel['scopes'] ?? null,
     $receiveInstagram,
