@@ -421,9 +421,21 @@ function inbox_pick(array $row, array $keys): string {
   return '';
 }
 
+function inbox_is_generic_meta_source($value): bool {
+  return in_array(strtoupper(trim((string) $value)), ['ADS', 'AD'], true);
+}
+
+function inbox_pick_campaign(array $row): string {
+  foreach (['campaign_name', 'utm_campaign', 'campaign_id'] as $key) {
+    $value = trim((string) ($row[$key] ?? ''));
+    if ($value !== '' && !inbox_is_generic_meta_source($value)) return $value;
+  }
+  return '';
+}
+
 function inbox_ad_attribution_rows(array $row): array {
   $rows = [];
-  $campaign = inbox_pick($row, ['campaign_name', 'utm_campaign', 'campaign_id']);
+  $campaign = inbox_pick_campaign($row);
   $adset = inbox_pick($row, ['adset_name', 'adset_id']);
   $ad = inbox_pick($row, ['ad_name', 'ad_id']);
   $source = inbox_pick($row, ['ad_referral_source']);

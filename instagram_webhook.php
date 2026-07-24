@@ -309,19 +309,29 @@ function ig_referral_data(array $event): array {
   $referral = is_array($referral) ? $referral : [];
   $ads = $referral['ads_context_data'] ?? [];
   $ads = is_array($ads) ? $ads : [];
+  $source = ig_clean($referral['source'] ?? null, 80);
+  $refParam = ig_clean($referral['ref'] ?? null, 180);
+  $sourceIsAds = strtoupper((string) $source) === 'ADS';
+  $campaignId = ig_clean($ads['campaign_id'] ?? $ads['campaign']['id'] ?? $referral['campaign_id'] ?? $referral['campaign']['id'] ?? null, 120);
+  $campaignName = ig_clean($ads['campaign_name'] ?? $ads['campaign']['name'] ?? $referral['campaign_name'] ?? $referral['campaign']['name'] ?? null, 180);
+  $adsetId = ig_clean($ads['adset_id'] ?? $ads['ad_set_id'] ?? $ads['adset']['id'] ?? $ads['ad_set']['id'] ?? $referral['adset_id'] ?? $referral['ad_set_id'] ?? $referral['adset']['id'] ?? null, 120);
+  $adsetName = ig_clean($ads['adset_name'] ?? $ads['ad_set_name'] ?? $ads['adset']['name'] ?? $ads['ad_set']['name'] ?? $referral['adset_name'] ?? $referral['ad_set_name'] ?? null, 180);
+  $adId = ig_clean($referral['ad_id'] ?? $ads['ad_id'] ?? $ads['ad']['id'] ?? $referral['ad']['id'] ?? null, 120);
+  $adName = ig_clean($ads['ad_title'] ?? $ads['ad_name'] ?? $ads['ad']['name'] ?? null, 180);
+  $campaignFallback = $campaignName ?: (!$sourceIsAds ? ($refParam ?: $source) : null);
   $payloadJson = ($referral || $ads)
     ? ig_clean(json_encode(['referral' => $referral, 'ads_context_data' => $ads], JSON_UNESCAPED_UNICODE), 5000)
     : null;
   return [
-    'campaign' => ig_clean($ads['campaign_name'] ?? $referral['ref'] ?? $referral['source'] ?? null, 120),
-    'campaign_id' => ig_clean($ads['campaign_id'] ?? $referral['campaign_id'] ?? null, 120),
-    'campaign_name' => ig_clean($ads['campaign_name'] ?? null, 180),
-    'adset_id' => ig_clean($ads['adset_id'] ?? $ads['ad_set_id'] ?? $referral['adset_id'] ?? $referral['ad_set_id'] ?? null, 120),
-    'adset_name' => ig_clean($ads['adset_name'] ?? $ads['ad_set_name'] ?? null, 180),
-    'ad_name' => ig_clean($ads['ad_title'] ?? $ads['ad_name'] ?? $ads['source'] ?? null, 180),
-    'ad_id' => ig_clean($referral['ad_id'] ?? $ads['ad_id'] ?? null, 120),
+    'campaign' => ig_clean($campaignFallback, 120),
+    'campaign_id' => $campaignId,
+    'campaign_name' => $campaignName,
+    'adset_id' => $adsetId,
+    'adset_name' => $adsetName,
+    'ad_name' => $adName,
+    'ad_id' => $adId,
     'content' => ig_clean($ads['post_id'] ?? $ads['photo_url'] ?? $ads['video_url'] ?? null, 160),
-    'referral_source' => ig_clean($referral['source'] ?? null, 80),
+    'referral_source' => $source,
     'referral_type' => ig_clean($referral['type'] ?? $ads['type'] ?? null, 80),
     'payload_json' => $payloadJson,
     'enrichment_error' => null,

@@ -44,6 +44,11 @@ function ads_normalized_key(?string $externalId, ?string $name, string $prefix):
   return $prefix . ':name:' . sha1(mb_strtolower($name));
 }
 
+function ads_is_generic_meta_source($value): bool {
+  $value = strtoupper(trim((string) $value));
+  return in_array($value, ['ADS', 'AD'], true);
+}
+
 function ads_ensure_schema(PDO $pdo, ?string $leadsTable = null): void {
   global $DB_NAME, $TABLE_LEADS;
   $dbName = (string) ($DB_NAME ?? '');
@@ -158,6 +163,7 @@ function ads_upsert_from_ref(PDO $pdo, int $accountId, array $ref, string $provi
 
   $campaignId = ads_clean($ref['campaign_id'] ?? null, 120);
   $campaignName = ads_clean($ref['campaign_name'] ?? $ref['campaign'] ?? null, 180);
+  if ($campaignId === null && ads_is_generic_meta_source($campaignName)) $campaignName = null;
   $campaignKey = ads_normalized_key($campaignId, $campaignName, 'campaign');
   $campaignRefId = 0;
   if ($campaignKey !== null) {
@@ -253,8 +259,8 @@ SQL;
   foreach ($stmt->fetchAll() ?: [] as $lead) {
     $refs = ads_upsert_from_ref($pdo, (int) ($lead['account_id'] ?? 0), [
       'campaign_id' => $lead['campaign_id'] ?? null,
-      'campaign_name' => $lead['campaign_name'] ?? $lead['utm_campaign'] ?? null,
-      'campaign' => $lead['utm_campaign'] ?? null,
+      'campaign_name' => ads_is_generic_meta_source($lead['campaign_name'] ?? null) ? null : ($lead['campaign_name'] ?? null),
+      'campaign' => ads_is_generic_meta_source($lead['utm_campaign'] ?? null) ? null : ($lead['utm_campaign'] ?? null),
       'adset_id' => $lead['adset_id'] ?? null,
       'adset_name' => $lead['adset_name'] ?? null,
       'ad_name' => $lead['ad_name'] ?? null,

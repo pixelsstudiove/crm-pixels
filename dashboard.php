@@ -528,9 +528,19 @@ function dash_pick(array $lead, array $keys): string {
   foreach ($keys as $key) if (isset($lead[$key]) && trim((string) $lead[$key]) !== '') return (string) $lead[$key];
   return '—';
 }
+function dash_is_generic_meta_source($value): bool {
+  return in_array(strtoupper(trim((string) $value)), ['ADS', 'AD'], true);
+}
+function dash_pick_campaign(array $lead): string {
+  foreach (['campaign_name', 'utm_campaign', 'campaign_id'] as $key) {
+    $value = trim((string) ($lead[$key] ?? ''));
+    if ($value !== '' && !dash_is_generic_meta_source($value)) return $value;
+  }
+  return '—';
+}
 function lead_ad_attribution_lines(array $lead): array {
   $lines = [];
-  $campaign = dash_pick($lead, ['campaign_name', 'utm_campaign', 'campaign_id']);
+  $campaign = dash_pick_campaign($lead);
   $adset = dash_pick($lead, ['adset_name', 'adset_id']);
   $ad = dash_pick($lead, ['ad_name', 'ad_id', 'utm_content']);
   if ($campaign !== '—') $lines[] = 'Campaña: ' . $campaign;

@@ -76,6 +76,17 @@ function adv_format_percent(float $value): string {
   return number_format($value, 1, ',', '.') . '%';
 }
 
+function adv_campaign_detail(array $row): string {
+  $parts = [];
+  $adsets = trim((string) ($row['adset_labels'] ?? ''));
+  $ads = trim((string) ($row['ad_labels'] ?? ''));
+  $adsetCount = (int) ($row['adset_count'] ?? 0);
+  $adCount = (int) ($row['ad_count'] ?? 0);
+  if ($adsets !== '') $parts[] = ($adsetCount > 1 ? 'Conjuntos: ' : 'Conjunto: ') . $adsets . ($adsetCount > 3 ? ' +' . ($adsetCount - 3) : '');
+  if ($ads !== '') $parts[] = ($adCount > 1 ? 'Anuncios: ' : 'Anuncio: ') . $ads . ($adCount > 3 ? ' +' . ($adCount - 3) : '');
+  return $parts ? implode(' · ', $parts) : 'Sin conjunto ni anuncio disponible';
+}
+
 function adv_status_label(string $status): string {
   return (string) (app_config('sales_funnel.statuses.' . $status, $status) ?: $status);
 }
@@ -382,29 +393,48 @@ $adsetsTable = ads_adsets_table();
 $adsTable = ads_ads_table();
 $campaignRows = adv_fetch_all($pdo, <<<SQL
 SELECT
-  COALESCE(NULLIF(ac.campaign_name, ''), NULLIF(l.campaign_name, ''), NULLIF(l.utm_campaign, ''), 'Sin campaña') AS campaign_label,
-  COALESCE(NULLIF(adst.adset_name, ''), NULLIF(l.adset_name, ''), 'Sin conjunto') AS adset_label,
-  COALESCE(NULLIF(ad.ad_name, ''), NULLIF(l.ad_name, ''), NULLIF(l.ad_id, ''), 'Sin anuncio') AS ad_label,
-  COUNT(DISTINCT c.id) AS conversations_count,
-  SUM(CASE WHEN l.sales_status = 'cliente_ganado' THEN 1 ELSE 0 END) AS won_count,
-  SUM(CASE WHEN l.sales_status IN ('cliente_perdido', 'no_califica') THEN 1 ELSE 0 END) AS lost_count
-FROM {$conversationsTable} c
-LEFT JOIN {$leadsTable} l ON l.id = c.lead_id
-LEFT JOIN {$campaignsTable} ac ON ac.id = l.campaign_ref_id
-LEFT JOIN {$adsetsTable} adst ON adst.id = l.adset_ref_id
-LEFT JOIN {$adsTable} ad ON ad.id = l.ad_ref_id
-{$convScope['sql']}
-  AND (
-    ac.id IS NOT NULL
-    OR NULLIF(l.campaign_name, '') IS NOT NULL
-    OR NULLIF(l.utm_campaign, '') IS NOT NULL
-    OR adst.id IS NOT NULL
-    OR NULLIF(l.adset_name, '') IS NOT NULL
-    OR ad.id IS NOT NULL
-    OR NULLIF(l.ad_name, '') IS NOT NULL
-    OR NULLIF(l.ad_id, '') IS NOT NULL
-  )
-GROUP BY campaign_label, adset_label, ad_label
+  campaign_label,
+  COUNT(DISTINCT conversation_id) AS conversations_count,
+  SUM(won_flag) AS won_count,
+  SUM(lost_flag) AS lost_count,
+  COUNT(DISTINCT NULLIF(adset_label, 'Sin conjunto')) AS adset_count,
+  COUNT(DISTINCT NULLIF(ad_label, 'Sin anuncio')) AS ad_count,
+  SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT NULLIF(adset_label, 'Sin conjunto') ORDER BY adset_label SEPARATOR ', '), ', ', 3) AS adset_labels,
+  SUBSTRING_INDEX(GROUP_CONCAT(DISTINCT NULLIF(ad_label, 'Sin anuncio') ORDER BY ad_label SEPARATOR ', '), ', ', 3) AS ad_labels
+FROM (
+  SELECT
+    c.id AS conversation_id,
+    CASE WHEN l.sales_status = 'cliente_ganado' THEN 1 ELSE 0 END AS won_flag,
+    CASE WHEN l.sales_status IN ('cliente_perdido', 'no_califica') THEN 1 ELSE 0 END AS lost_flag,
+    COALESCE(
+      NULLIF(CASE WHEN UPPER(TRIM(COALESCE(ac.campaign_name, ''))) IN ('ADS', 'AD') THEN '' ELSE ac.campaign_name END, ''),
+      NULLIF(CASE WHEN UPPER(TRIM(COALESCE(l.campaign_name, ''))) IN ('ADS', 'AD') THEN '' ELSE l.campaign_name END, ''),
+      NULLIF(CASE WHEN UPPER(TRIM(COALESCE(l.utm_campaign, ''))) IN ('ADS', 'AD') THEN '' ELSE l.utm_campaign END, ''),
+      NULLIF(l.campaign_id, ''),
+      'Campaña no disponible'
+    ) AS campaign_label,
+    COALESCE(NULLIF(adst.adset_name, ''), NULLIF(l.adset_name, ''), NULLIF(l.adset_id, ''), 'Sin conjunto') AS adset_label,
+    COALESCE(NULLIF(ad.ad_name, ''), NULLIF(l.ad_name, ''), NULLIF(l.ad_id, ''), 'Sin anuncio') AS ad_label
+  FROM {$conversationsTable} c
+  LEFT JOIN {$leadsTable} l ON l.id = c.lead_id
+  LEFT JOIN {$campaignsTable} ac ON ac.id = l.campaign_ref_id
+  LEFT JOIN {$adsetsTable} adst ON adst.id = l.adset_ref_id
+  LEFT JOIN {$adsTable} ad ON ad.id = l.ad_ref_id
+  {$convScope['sql']}
+    AND (
+      ac.id IS NOT NULL
+      OR NULLIF(l.campaign_name, '') IS NOT NULL
+      OR NULLIF(l.utm_campaign, '') IS NOT NULL
+      OR NULLIF(l.campaign_id, '') IS NOT NULL
+      OR adst.id IS NOT NULL
+      OR NULLIF(l.adset_name, '') IS NOT NULL
+      OR NULLIF(l.adset_id, '') IS NOT NULL
+      OR ad.id IS NOT NULL
+      OR NULLIF(l.ad_name, '') IS NOT NULL
+      OR NULLIF(l.ad_id, '') IS NOT NULL
+    )
+) attributed
+GROUP BY campaign_label
 ORDER BY conversations_count DESC, won_count DESC
 LIMIT 10
 SQL, $convScope['params']);
@@ -911,8 +941,8 @@ $selectedAccountParamsAccount = $selectedAccountParamsAll;
                   $winRate = $closed > 0 ? round(($won / $closed) * 100, 1) : 0;
                   $width = round(($count / $maxCampaign) * 100, 2);
                 ?>
-                <div class="bar-row" title="<?= h((string) ($row['ad_label'] ?? 'Sin anuncio')) ?>">
-                  <span class="bar-name"><?= h((string) ($row['campaign_label'] ?? 'Sin campaña')) ?><small><?= h((string) ($row['adset_label'] ?? 'Sin conjunto')) ?></small></span>
+                <div class="bar-row" title="<?= h(adv_campaign_detail($row)) ?>">
+                  <span class="bar-name"><?= h((string) ($row['campaign_label'] ?? 'Campaña no disponible')) ?><small><?= h(adv_campaign_detail($row)) ?></small></span>
                   <span class="track"><span class="fill" style="--w:<?= h((string) $width) ?>%;--tone:var(--pro-violet)"></span></span>
                   <span class="bar-value"><?= $count ?> <small><?= h(adv_format_percent($winRate)) ?></small></span>
                 </div>
