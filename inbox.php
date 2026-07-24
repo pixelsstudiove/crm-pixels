@@ -279,6 +279,15 @@ SELECT
   l.fullname AS lead_fullname,
   l.sales_status AS lead_sales_status,
   l.notes AS lead_notes,
+  l.utm_campaign,
+  l.campaign_id,
+  l.campaign_name,
+  l.adset_id,
+  l.adset_name,
+  l.ad_name,
+  l.ad_id,
+  l.ad_referral_source,
+  l.ad_enrichment_error,
   (
     SELECT MAX(im.sent_at)
     FROM {$messagesTable} im
@@ -402,6 +411,27 @@ function inbox_short($value, int $max = 70): string {
   $value = inbox_normalize_message_text($value);
   if ($value === '') return '—';
   return mb_strlen($value) > $max ? mb_substr($value, 0, max(1, $max - 1)) . '…' : $value;
+}
+
+function inbox_pick(array $row, array $keys): string {
+  foreach ($keys as $key) {
+    $value = trim((string) ($row[$key] ?? ''));
+    if ($value !== '') return $value;
+  }
+  return '';
+}
+
+function inbox_ad_attribution_rows(array $row): array {
+  $rows = [];
+  $campaign = inbox_pick($row, ['campaign_name', 'utm_campaign', 'campaign_id']);
+  $adset = inbox_pick($row, ['adset_name', 'adset_id']);
+  $ad = inbox_pick($row, ['ad_name', 'ad_id']);
+  $source = inbox_pick($row, ['ad_referral_source']);
+  if ($campaign !== '') $rows[] = ['Campaña', $campaign];
+  if ($adset !== '') $rows[] = ['Conjunto', $adset];
+  if ($ad !== '') $rows[] = ['Anuncio', $ad];
+  if ($source !== '') $rows[] = ['Referencia', $source];
+  return $rows;
 }
 
 function inbox_unsupported_message_text(): string {
@@ -870,6 +900,9 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <div class="info-row"><span><?= h(inbox_source_label($selected)) ?></span><strong><?= inbox_source_contact_html($selected) ?></strong></div>
                 <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Canal Meta')) ?></strong></div>
                 <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
+                <?php foreach (inbox_ad_attribution_rows($selected) as [$adLabel, $adValue]): ?>
+                  <div class="info-row"><span><?= h($adLabel) ?></span><strong><?= h(inbox_short($adValue, 72)) ?></strong></div>
+                <?php endforeach; ?>
 
                 <?php if (!empty($selected['lead_id'])): ?>
                 <label class="side-notes-field">

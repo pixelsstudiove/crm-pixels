@@ -192,6 +192,48 @@ SQL, $msgScope['params']);
   ];
 }
 
+function adv_column_exists(PDO $pdo, string $dbName, string $table, string $column): bool {
+  $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?");
+  $stmt->execute([$dbName, $table, $column]);
+  return (int) $stmt->fetchColumn() > 0;
+}
+
+function adv_index_exists(PDO $pdo, string $dbName, string $table, string $index): bool {
+  $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ?");
+  $stmt->execute([$dbName, $table, $index]);
+  return (int) $stmt->fetchColumn() > 0;
+}
+
+function adv_ensure_ad_attribution_schema(PDO $pdo, string $dbName, string $table): void {
+  $columns = [
+    'campaign_id' => "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign",
+    'campaign_name' => "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id",
+    'adset_id' => "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term",
+    'adset_name' => "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id",
+    'ad_referral_source' => "ALTER TABLE {$table} ADD COLUMN ad_referral_source VARCHAR(80) NULL AFTER ad_id",
+    'ad_referral_type' => "ALTER TABLE {$table} ADD COLUMN ad_referral_type VARCHAR(80) NULL AFTER ad_referral_source",
+    'ad_referral_payload' => "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type",
+    'ad_enrichment_error' => "ALTER TABLE {$table} ADD COLUMN ad_enrichment_error VARCHAR(255) NULL AFTER ad_referral_payload",
+  ];
+  foreach ($columns as $column => $sql) {
+    if (!adv_column_exists($pdo, $dbName, $table, $column)) {
+      try { $pdo->exec($sql); } catch (Throwable $e) { /* no-op */ }
+    }
+  }
+  $indexes = [
+    'idx_campaign_name' => "ALTER TABLE {$table} ADD KEY idx_campaign_name (campaign_name)",
+    'idx_adset_name' => "ALTER TABLE {$table} ADD KEY idx_adset_name (adset_name)",
+    'idx_ad_id' => "ALTER TABLE {$table} ADD KEY idx_ad_id (ad_id)",
+  ];
+  foreach ($indexes as $index => $sql) {
+    if (!adv_index_exists($pdo, $dbName, $table, $index)) {
+      try { $pdo->exec($sql); } catch (Throwable $e) { /* no-op */ }
+    }
+  }
+}
+
+adv_ensure_ad_attribution_schema($pdo, (string) ($DB_NAME ?? ''), $leadsTable);
+
 $requestSlug = accounts_request_slug();
 $requestAccount = accounts_request_account($pdo);
 if ($requestSlug !== '' && !$requestAccount) {
@@ -331,6 +373,30 @@ SQL, $previousScope['params']);
 $previousChannelMap = [];
 foreach ($previousChannelRows as $row) $previousChannelMap[(int) ($row['channel_id'] ?? 0)] = (int) ($row['conversations_count'] ?? 0);
 $maxChannel = max(1, ...array_map(static fn($row) => (int) ($row['conversations_count'] ?? 0), $currentChannelRows ?: [['conversations_count' => 1]]));
+
+$campaignRows = adv_fetch_all($pdo, <<<SQL
+SELECT
+  COALESCE(NULLIF(l.campaign_name, ''), NULLIF(l.utm_campaign, ''), 'Sin campaña') AS campaign_label,
+  COALESCE(NULLIF(l.adset_name, ''), 'Sin conjunto') AS adset_label,
+  COALESCE(NULLIF(l.ad_name, ''), NULLIF(l.ad_id, ''), 'Sin anuncio') AS ad_label,
+  COUNT(DISTINCT c.id) AS conversations_count,
+  SUM(CASE WHEN l.sales_status = 'cliente_ganado' THEN 1 ELSE 0 END) AS won_count,
+  SUM(CASE WHEN l.sales_status IN ('cliente_perdido', 'no_califica') THEN 1 ELSE 0 END) AS lost_count
+FROM {$conversationsTable} c
+LEFT JOIN {$leadsTable} l ON l.id = c.lead_id
+{$convScope['sql']}
+  AND (
+    NULLIF(l.campaign_name, '') IS NOT NULL
+    OR NULLIF(l.utm_campaign, '') IS NOT NULL
+    OR NULLIF(l.adset_name, '') IS NOT NULL
+    OR NULLIF(l.ad_name, '') IS NOT NULL
+    OR NULLIF(l.ad_id, '') IS NOT NULL
+  )
+GROUP BY campaign_label, adset_label, ad_label
+ORDER BY conversations_count DESC, won_count DESC
+LIMIT 10
+SQL, $convScope['params']);
+$maxCampaign = max(1, ...array_map(static fn($row) => (int) ($row['conversations_count'] ?? 0), $campaignRows ?: [['conversations_count' => 1]]));
 
 $firstResponseRows = adv_first_response_rows($pdo, $conversationsTable, $messagesTable, $fromUtc, $toUtc, $filterAccountId, $filterChannelId);
 $operatorResponse = [];
@@ -524,6 +590,7 @@ $selectedAccountParamsAccount = $selectedAccountParamsAll;
     .funnel-list,.channel-list,.transition-list { display:grid; gap:12px; }
     .bar-row { display:grid; grid-template-columns:minmax(130px,220px) 1fr auto; gap:12px; align-items:center; }
     .bar-name { font-weight:950; color:var(--pro-ink); }
+    .bar-name small { display:block; margin-top:3px; color:var(--pro-muted); font-size:.76rem; font-weight:850; line-height:1.25; }
     .track { height:15px; overflow:hidden; border-radius:999px; background:#edf3f9; }
     .fill { display:block; height:100%; width:var(--w); border-radius:999px; background:var(--tone,var(--pro-cyan)); transform-origin:left; animation:growx .82s ease both; }
     @keyframes growx { from { transform:scaleX(0); } to { transform:scaleX(1); } }
@@ -627,6 +694,7 @@ $selectedAccountParamsAccount = $selectedAccountParamsAll;
           <a href="#embudo">Embudo</a>
           <a href="#operadores">Operadores</a>
           <a href="#canales">Canales</a>
+          <a href="#campanas">Campañas</a>
           <a href="#status">Status</a>
           <a href="#lectura">Lectura rápida</a>
         </aside>
@@ -810,6 +878,31 @@ $selectedAccountParamsAccount = $selectedAccountParamsAll;
                   <span class="bar-name"><?= h((string) ($row['channel_label'] ?? 'Canal')) ?></span>
                   <span class="track"><span class="fill" style="--w:<?= h((string) $width) ?>%;--tone:var(--pro-cyan)"></span></span>
                   <span class="bar-value"><?= $count ?> <small class="delta <?= h($delta['tone']) ?>"><?= h($delta['label']) ?></small></span>
+                </div>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+        </article>
+
+        <article id="campanas" class="chart-card stats-section">
+          <div class="chart-head"><div><h2>Campañas y anuncios</h2><p>Conversaciones atribuidas a campañas de Meta en este periodo.</p></div></div>
+          <?php if (!$campaignRows): ?>
+            <div class="empty">Todavía no hay conversaciones con atribución de campaña.</div>
+          <?php else: ?>
+            <div class="channel-list">
+              <?php foreach ($campaignRows as $row): ?>
+                <?php
+                  $count = (int) ($row['conversations_count'] ?? 0);
+                  $won = (int) ($row['won_count'] ?? 0);
+                  $lost = (int) ($row['lost_count'] ?? 0);
+                  $closed = $won + $lost;
+                  $winRate = $closed > 0 ? round(($won / $closed) * 100, 1) : 0;
+                  $width = round(($count / $maxCampaign) * 100, 2);
+                ?>
+                <div class="bar-row" title="<?= h((string) ($row['ad_label'] ?? 'Sin anuncio')) ?>">
+                  <span class="bar-name"><?= h((string) ($row['campaign_label'] ?? 'Sin campaña')) ?><small><?= h((string) ($row['adset_label'] ?? 'Sin conjunto')) ?></small></span>
+                  <span class="track"><span class="fill" style="--w:<?= h((string) $width) ?>%;--tone:var(--pro-violet)"></span></span>
+                  <span class="bar-value"><?= $count ?> <small><?= h(adv_format_percent($winRate)) ?></small></span>
                 </div>
               <?php endforeach; ?>
             </div>

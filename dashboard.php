@@ -36,10 +36,18 @@ CREATE TABLE IF NOT EXISTS {$table} (
   utm_source VARCHAR(80) NULL,
   utm_medium VARCHAR(80) NULL,
   utm_campaign VARCHAR(120) NULL,
+  campaign_id VARCHAR(120) NULL,
+  campaign_name VARCHAR(180) NULL,
   utm_content VARCHAR(160) NULL,
   utm_term VARCHAR(160) NULL,
+  adset_id VARCHAR(120) NULL,
+  adset_name VARCHAR(180) NULL,
   ad_name VARCHAR(180) NULL,
   ad_id VARCHAR(120) NULL,
+  ad_referral_source VARCHAR(80) NULL,
+  ad_referral_type VARCHAR(80) NULL,
+  ad_referral_payload TEXT NULL,
+  ad_enrichment_error VARCHAR(255) NULL,
   gclid VARCHAR(180) NULL,
   fbclid VARCHAR(180) NULL,
   landing_url TEXT NULL,
@@ -70,8 +78,11 @@ CREATE TABLE IF NOT EXISTS {$table} (
   KEY idx_main_objective (main_objective),
   KEY idx_source_platform (source_platform),
   KEY idx_utm_campaign (utm_campaign),
+  KEY idx_campaign_name (campaign_name),
+  KEY idx_adset_name (adset_name),
   KEY idx_utm_content (utm_content),
   KEY idx_ad_name (ad_name),
+  KEY idx_ad_id (ad_id),
   KEY idx_sales_status (sales_status),
   KEY idx_status (status),
   KEY idx_created_at (created_at)
@@ -94,10 +105,18 @@ SQL);
     'utm_source' => "ALTER TABLE {$table} ADD COLUMN utm_source VARCHAR(80) NULL AFTER source_platform",
     'utm_medium' => "ALTER TABLE {$table} ADD COLUMN utm_medium VARCHAR(80) NULL AFTER utm_source",
     'utm_campaign' => "ALTER TABLE {$table} ADD COLUMN utm_campaign VARCHAR(120) NULL AFTER utm_medium",
+    'campaign_id' => "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign",
+    'campaign_name' => "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id",
     'utm_content' => "ALTER TABLE {$table} ADD COLUMN utm_content VARCHAR(160) NULL AFTER utm_campaign",
     'utm_term' => "ALTER TABLE {$table} ADD COLUMN utm_term VARCHAR(160) NULL AFTER utm_content",
+    'adset_id' => "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term",
+    'adset_name' => "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id",
     'ad_name' => "ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL AFTER utm_term",
     'ad_id' => "ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL AFTER ad_name",
+    'ad_referral_source' => "ALTER TABLE {$table} ADD COLUMN ad_referral_source VARCHAR(80) NULL AFTER ad_id",
+    'ad_referral_type' => "ALTER TABLE {$table} ADD COLUMN ad_referral_type VARCHAR(80) NULL AFTER ad_referral_source",
+    'ad_referral_payload' => "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type",
+    'ad_enrichment_error' => "ALTER TABLE {$table} ADD COLUMN ad_enrichment_error VARCHAR(255) NULL AFTER ad_referral_payload",
     'gclid' => "ALTER TABLE {$table} ADD COLUMN gclid VARCHAR(180) NULL AFTER ad_id",
     'fbclid' => "ALTER TABLE {$table} ADD COLUMN fbclid VARCHAR(180) NULL AFTER gclid",
     'landing_url' => "ALTER TABLE {$table} ADD COLUMN landing_url TEXT NULL AFTER fbclid",
@@ -148,8 +167,11 @@ SQL);
     'idx_main_objective' => "ALTER TABLE {$table} ADD KEY idx_main_objective (main_objective)",
     'idx_source_platform' => "ALTER TABLE {$table} ADD KEY idx_source_platform (source_platform)",
     'idx_utm_campaign' => "ALTER TABLE {$table} ADD KEY idx_utm_campaign (utm_campaign)",
+    'idx_campaign_name' => "ALTER TABLE {$table} ADD KEY idx_campaign_name (campaign_name)",
+    'idx_adset_name' => "ALTER TABLE {$table} ADD KEY idx_adset_name (adset_name)",
     'idx_utm_content' => "ALTER TABLE {$table} ADD KEY idx_utm_content (utm_content)",
     'idx_ad_name' => "ALTER TABLE {$table} ADD KEY idx_ad_name (ad_name)",
+    'idx_ad_id' => "ALTER TABLE {$table} ADD KEY idx_ad_id (ad_id)",
     'idx_sales_status' => "ALTER TABLE {$table} ADD KEY idx_sales_status (sales_status)",
     'idx_reminder_at' => "ALTER TABLE {$table} ADD KEY idx_reminder_at (reminder_at)",
     'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
@@ -247,7 +269,7 @@ if ($filterChannelId > 0) {
 }
 if ($q !== '') {
   $digits = preg_replace('/\D+/', '', $q) ?: $q;
-  $whereConditions[] = "(c.public_id LIKE :q OR l.id LIKE :q OR ct.display_name LIKE :q OR ct.username LIKE :q OR ct.external_contact_id LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q OR l.fullname LIKE :q OR l.phone LIKE :q OR REPLACE(COALESCE(l.phone,''),'-','') LIKE :qd OR l.email LIKE :q OR l.brand_instagram LIKE :q OR l.business_type LIKE :q OR l.business_type_other LIKE :q OR l.services_needed LIKE :q OR l.main_objective LIKE :q OR l.message LIKE :q OR l.last_inbound_message LIKE :q OR l.source_platform LIKE :q OR l.utm_source LIKE :q OR l.utm_medium LIKE :q OR l.utm_campaign LIKE :q OR l.utm_content LIKE :q OR l.utm_term LIKE :q OR l.ad_name LIKE :q OR l.ad_id LIKE :q OR l.external_contact_id LIKE :q OR l.sales_status LIKE :q OR l.notes LIKE :q OR l.reminder_note LIKE :q)";
+  $whereConditions[] = "(c.public_id LIKE :q OR l.id LIKE :q OR ct.display_name LIKE :q OR ct.username LIKE :q OR ct.external_contact_id LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q OR l.fullname LIKE :q OR l.phone LIKE :q OR REPLACE(COALESCE(l.phone,''),'-','') LIKE :qd OR l.email LIKE :q OR l.brand_instagram LIKE :q OR l.business_type LIKE :q OR l.business_type_other LIKE :q OR l.services_needed LIKE :q OR l.main_objective LIKE :q OR l.message LIKE :q OR l.last_inbound_message LIKE :q OR l.source_platform LIKE :q OR l.utm_source LIKE :q OR l.utm_medium LIKE :q OR l.utm_campaign LIKE :q OR l.campaign_name LIKE :q OR l.campaign_id LIKE :q OR l.adset_name LIKE :q OR l.adset_id LIKE :q OR l.utm_content LIKE :q OR l.utm_term LIKE :q OR l.ad_name LIKE :q OR l.ad_id LIKE :q OR l.ad_referral_source LIKE :q OR l.external_contact_id LIKE :q OR l.sales_status LIKE :q OR l.notes LIKE :q OR l.reminder_note LIKE :q)";
   $whereParams[':q'] = '%' . $q . '%';
   $whereParams[':qd'] = '%' . $digits . '%';
 }
@@ -369,9 +391,15 @@ SELECT
   l.message,
   COALESCE(l.source_platform, c.external_source) AS source_platform,
   l.utm_campaign,
+  l.campaign_id,
+  l.campaign_name,
   l.utm_content,
+  l.adset_id,
+  l.adset_name,
   l.ad_name,
   l.ad_id,
+  l.ad_referral_source,
+  l.ad_enrichment_error,
   COALESCE(l.sales_status, :default_sales_status_select) AS sales_status,
   l.notes,
   l.reminder_at,
@@ -448,6 +476,16 @@ function short_value($value, int $max = 46): string {
 function dash_pick(array $lead, array $keys): string {
   foreach ($keys as $key) if (isset($lead[$key]) && trim((string) $lead[$key]) !== '') return (string) $lead[$key];
   return '—';
+}
+function lead_ad_attribution_lines(array $lead): array {
+  $lines = [];
+  $campaign = dash_pick($lead, ['campaign_name', 'utm_campaign', 'campaign_id']);
+  $adset = dash_pick($lead, ['adset_name', 'adset_id']);
+  $ad = dash_pick($lead, ['ad_name', 'ad_id', 'utm_content']);
+  if ($campaign !== '—') $lines[] = 'Campaña: ' . $campaign;
+  if ($adset !== '—') $lines[] = 'Conjunto: ' . $adset;
+  if ($ad !== '—') $lines[] = 'Anuncio: ' . $ad;
+  return $lines;
 }
 function sales_status_options(): array { return (array) app_config('sales_funnel.statuses', []); }
 function instagram_handle($value): string {
@@ -1602,7 +1640,7 @@ function dash_channel_label(array $channel): string {
                       $isMessengerLead = is_messenger_lead($lead);
                       $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
                       $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
-                      $adValue = dash_pick($lead, ['ad_name','utm_content','ad_id']);
+                      $adLines = lead_ad_attribution_lines($lead);
                       $igUrl = instagram_url($lead['brand_instagram'] ?? '');
                       $igHandle = instagram_handle($lead['brand_instagram'] ?? '');
                       $replyWindow = meta_reply_window_info($lead['last_inbound_at'] ?? '');
@@ -1629,7 +1667,7 @@ function dash_channel_label(array $channel): string {
                         </span>
                         <span>Actualizado: <?= h(updated_display($lead)) ?></span>
                         <span class="reply-window-badge <?= h((string) ($replyWindow['status'] ?? 'unknown')) ?>" title="<?= h((string) ($replyWindow['detail'] ?? '')) ?>"><?= h((string) ($replyWindow['label'] ?? 'Chat')) ?></span>
-                        <?php if ($adValue !== '—'): ?><span><?= h(short_value($adValue, 46)) ?></span><?php endif; ?>
+                        <?php foreach (array_slice($adLines, 0, 2) as $adLine): ?><span><?= h(short_value($adLine, 54)) ?></span><?php endforeach; ?>
                       </div>
                       <?php if (lead_message_display($lead) !== '—'): ?>
                         <div class="funnel-note"><?= h(short_value(lead_message_display($lead), 130)) ?></div>

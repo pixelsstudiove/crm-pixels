@@ -135,10 +135,18 @@ CREATE TABLE IF NOT EXISTS {$table} (
   utm_source VARCHAR(80) NULL,
   utm_medium VARCHAR(80) NULL,
   utm_campaign VARCHAR(120) NULL,
+  campaign_id VARCHAR(120) NULL,
+  campaign_name VARCHAR(180) NULL,
   utm_content VARCHAR(160) NULL,
   utm_term VARCHAR(160) NULL,
+  adset_id VARCHAR(120) NULL,
+  adset_name VARCHAR(180) NULL,
   ad_name VARCHAR(180) NULL,
   ad_id VARCHAR(120) NULL,
+  ad_referral_source VARCHAR(80) NULL,
+  ad_referral_type VARCHAR(80) NULL,
+  ad_referral_payload TEXT NULL,
+  ad_enrichment_error VARCHAR(255) NULL,
   gclid VARCHAR(180) NULL,
   fbclid VARCHAR(180) NULL,
   landing_url TEXT NULL,
@@ -188,10 +196,18 @@ SQL);
     'utm_source' => "ALTER TABLE {$table} ADD COLUMN utm_source VARCHAR(80) NULL AFTER source_platform",
     'utm_medium' => "ALTER TABLE {$table} ADD COLUMN utm_medium VARCHAR(80) NULL AFTER utm_source",
     'utm_campaign' => "ALTER TABLE {$table} ADD COLUMN utm_campaign VARCHAR(120) NULL AFTER utm_medium",
+    'campaign_id' => "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign",
+    'campaign_name' => "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id",
     'utm_content' => "ALTER TABLE {$table} ADD COLUMN utm_content VARCHAR(160) NULL AFTER utm_campaign",
     'utm_term' => "ALTER TABLE {$table} ADD COLUMN utm_term VARCHAR(160) NULL AFTER utm_content",
+    'adset_id' => "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term",
+    'adset_name' => "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id",
     'ad_name' => "ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL AFTER utm_term",
     'ad_id' => "ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL AFTER ad_name",
+    'ad_referral_source' => "ALTER TABLE {$table} ADD COLUMN ad_referral_source VARCHAR(80) NULL AFTER ad_id",
+    'ad_referral_type' => "ALTER TABLE {$table} ADD COLUMN ad_referral_type VARCHAR(80) NULL AFTER ad_referral_source",
+    'ad_referral_payload' => "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type",
+    'ad_enrichment_error' => "ALTER TABLE {$table} ADD COLUMN ad_enrichment_error VARCHAR(255) NULL AFTER ad_referral_payload",
     'gclid' => "ALTER TABLE {$table} ADD COLUMN gclid VARCHAR(180) NULL AFTER ad_id",
     'fbclid' => "ALTER TABLE {$table} ADD COLUMN fbclid VARCHAR(180) NULL AFTER gclid",
     'landing_url' => "ALTER TABLE {$table} ADD COLUMN landing_url TEXT NULL AFTER fbclid",
@@ -234,6 +250,9 @@ SQL);
   $indexes = [
     'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
     'idx_account_id' => "ALTER TABLE {$table} ADD KEY idx_account_id (account_id)",
+    'idx_campaign_name' => "ALTER TABLE {$table} ADD KEY idx_campaign_name (campaign_name)",
+    'idx_adset_name' => "ALTER TABLE {$table} ADD KEY idx_adset_name (adset_name)",
+    'idx_ad_id' => "ALTER TABLE {$table} ADD KEY idx_ad_id (ad_id)",
     'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
   ];
   foreach ($indexes as $index => $sql) {
@@ -279,12 +298,50 @@ function ig_referral_data(array $event): array {
   $referral = is_array($referral) ? $referral : [];
   $ads = $referral['ads_context_data'] ?? [];
   $ads = is_array($ads) ? $ads : [];
+  $payloadJson = ($referral || $ads)
+    ? ig_clean(json_encode(['referral' => $referral, 'ads_context_data' => $ads], JSON_UNESCAPED_UNICODE), 5000)
+    : null;
   return [
-    'campaign' => ig_clean($referral['ref'] ?? $referral['source'] ?? null, 120),
-    'ad_name' => ig_clean($ads['ad_title'] ?? $ads['source'] ?? null, 180),
+    'campaign' => ig_clean($ads['campaign_name'] ?? $referral['ref'] ?? $referral['source'] ?? null, 120),
+    'campaign_id' => ig_clean($ads['campaign_id'] ?? $referral['campaign_id'] ?? null, 120),
+    'campaign_name' => ig_clean($ads['campaign_name'] ?? null, 180),
+    'adset_id' => ig_clean($ads['adset_id'] ?? $ads['ad_set_id'] ?? $referral['adset_id'] ?? $referral['ad_set_id'] ?? null, 120),
+    'adset_name' => ig_clean($ads['adset_name'] ?? $ads['ad_set_name'] ?? null, 180),
+    'ad_name' => ig_clean($ads['ad_title'] ?? $ads['ad_name'] ?? $ads['source'] ?? null, 180),
     'ad_id' => ig_clean($referral['ad_id'] ?? $ads['ad_id'] ?? null, 120),
     'content' => ig_clean($ads['post_id'] ?? $ads['photo_url'] ?? $ads['video_url'] ?? null, 160),
+    'referral_source' => ig_clean($referral['source'] ?? null, 80),
+    'referral_type' => ig_clean($referral['type'] ?? $ads['type'] ?? null, 80),
+    'payload_json' => $payloadJson,
+    'enrichment_error' => null,
   ];
+}
+
+function ig_enrich_ad_attribution(?array $channel, array $ref): array {
+  $adId = ig_clean($ref['ad_id'] ?? null, 120);
+  $token = ig_clean($channel['page_access_token'] ?? null, 2000);
+  if ($adId === null || $token === null) return $ref;
+
+  $response = ig_graph_request_base(ig_graph_base(), 'GET', $adId, [
+    'fields' => 'id,name,adset{id,name},campaign{id,name}',
+    'access_token' => $token,
+  ]);
+  if (!($response['ok'] ?? false) || !isset($response['data']) || !is_array($response['data'])) {
+    $ref['enrichment_error'] = ig_clean($response['error'] ?? 'Meta no devolvió datos del anuncio.', 255);
+    return $ref;
+  }
+
+  $ad = $response['data'];
+  $adset = is_array($ad['adset'] ?? null) ? $ad['adset'] : [];
+  $campaign = is_array($ad['campaign'] ?? null) ? $ad['campaign'] : [];
+  $ref['ad_id'] = ig_clean($ad['id'] ?? $ref['ad_id'] ?? null, 120);
+  $ref['ad_name'] = ig_clean($ad['name'] ?? $ref['ad_name'] ?? null, 180);
+  $ref['adset_id'] = ig_clean($adset['id'] ?? $ref['adset_id'] ?? null, 120);
+  $ref['adset_name'] = ig_clean($adset['name'] ?? $ref['adset_name'] ?? null, 180);
+  $ref['campaign_id'] = ig_clean($campaign['id'] ?? $ref['campaign_id'] ?? null, 120);
+  $ref['campaign_name'] = ig_clean($campaign['name'] ?? $ref['campaign_name'] ?? null, 180);
+  if (($ref['campaign'] ?? null) === null && ($ref['campaign_name'] ?? null) !== null) $ref['campaign'] = ig_clean($ref['campaign_name'], 120);
+  return $ref;
 }
 
 function ig_profile_avatar_url(array $data): ?string {
@@ -635,6 +692,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
   $ref = ig_referral_data($event);
+  $ref = ig_enrich_ad_attribution($channel ?: null, $ref);
   $profile = ig_contact_profile($channel ?: null, $senderId, $provider);
   $profileName = $profile['name'] ?? null;
   $profileUsername = $profile['username'] ?? null;
@@ -662,14 +720,37 @@ SET
   last_message_at = ?,
   last_inbound_message = ?,
   message = COALESCE(message, ?),
-  utm_campaign = COALESCE(utm_campaign, ?),
-  ad_name = COALESCE(ad_name, ?),
-  ad_id = COALESCE(ad_id, ?),
-  utm_content = COALESCE(utm_content, ?),
+  utm_campaign = CASE WHEN ? IS NOT NULL THEN ? ELSE utm_campaign END,
+  campaign_id = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_id END,
+  campaign_name = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_name END,
+  adset_id = CASE WHEN ? IS NOT NULL THEN ? ELSE adset_id END,
+  adset_name = CASE WHEN ? IS NOT NULL THEN ? ELSE adset_name END,
+  ad_name = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_name END,
+  ad_id = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_id END,
+  utm_content = CASE WHEN ? IS NOT NULL THEN ? ELSE utm_content END,
+  ad_referral_source = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_referral_source END,
+  ad_referral_type = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_referral_type END,
+  ad_referral_payload = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_referral_payload END,
+  ad_enrichment_error = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_enrichment_error END,
   updated_at = NOW()
 WHERE id = ?
 SQL);
-    $update->execute([$profileDisplayName, $profileDisplayName, $profileUsername, $profileUsername, $threadId, $messageId, $messageAt, $messageText, $messageText, $ref['campaign'], $ref['ad_name'], $ref['ad_id'], $ref['content'], $leadId]);
+    $update->execute([
+      $profileDisplayName, $profileDisplayName, $profileUsername, $profileUsername, $threadId, $messageId, $messageAt, $messageText, $messageText,
+      $ref['campaign'], $ref['campaign'],
+      $ref['campaign_id'], $ref['campaign_id'],
+      $ref['campaign_name'], $ref['campaign_name'],
+      $ref['adset_id'], $ref['adset_id'],
+      $ref['adset_name'], $ref['adset_name'],
+      $ref['ad_name'], $ref['ad_name'],
+      $ref['ad_id'], $ref['ad_id'],
+      $ref['content'], $ref['content'],
+      $ref['referral_source'], $ref['referral_source'],
+      $ref['referral_type'], $ref['referral_type'],
+      $ref['payload_json'], $ref['payload_json'],
+      $ref['enrichment_error'], $ref['enrichment_error'],
+      $leadId,
+    ]);
     if ($channel) {
       try {
         $stamp = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
@@ -708,12 +789,14 @@ SQL);
   $insert = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
   account_id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
-  source_platform, utm_source, utm_medium, utm_campaign, utm_content, ad_name, ad_id,
+  source_platform, utm_source, utm_medium, utm_campaign, campaign_id, campaign_name, utm_content,
+  adset_id, adset_name, ad_name, ad_id, ad_referral_source, ad_referral_type, ad_referral_payload, ad_enrichment_error,
   sales_status, status, whatsapp_sent, whatsapp_status, external_source, external_contact_id, external_thread_id,
   last_external_message_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
   ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
   ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?, ?, ?,
   ?, 'pending', 0, 'disabled', ?, ?, ?,
   ?, ?, ?, ?
 )
@@ -730,9 +813,17 @@ SQL);
     ig_provider_source($provider),
     ig_provider_medium($provider),
     $ref['campaign'],
+    $ref['campaign_id'],
+    $ref['campaign_name'],
     $ref['content'],
+    $ref['adset_id'],
+    $ref['adset_name'],
     $ref['ad_name'],
     $ref['ad_id'],
+    $ref['referral_source'],
+    $ref['referral_type'],
+    $ref['payload_json'],
+    $ref['enrichment_error'],
     $defaultSalesStatus,
     $provider,
     $contactKey,
