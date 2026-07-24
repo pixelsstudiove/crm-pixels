@@ -532,6 +532,10 @@ $inboundDelta = adv_delta((float) $current['inbound'], (float) $previous['inboun
 $winRateDelta = adv_delta((float) $current['win_rate'], (float) $previous['win_rate']);
 $selectedAccountParamsAll = ['from' => $fromInput, 'to' => $toInput, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null];
 $selectedAccountParamsAccount = $selectedAccountParamsAll;
+$campaignStatsParams = $selectedAccountParamsAll;
+if (is_super_admin() && $requestSlug === '' && $filterAccountId > 0) {
+  $campaignStatsParams['account_id'] = $filterAccountId;
+}
 ?>
 <!doctype html>
 <html lang="es">
@@ -737,6 +741,7 @@ $selectedAccountParamsAccount = $selectedAccountParamsAll;
           <a href="#operadores">Operadores</a>
           <a href="#canales">Canales</a>
           <a href="#campanas">Campañas</a>
+          <a href="<?= h(account_url('campaigns_stats.php', $campaignStatsParams)) ?>">Ver campañas</a>
           <a href="#status">Status</a>
           <a href="#lectura">Lectura rápida</a>
         </aside>
@@ -927,7 +932,10 @@ $selectedAccountParamsAccount = $selectedAccountParamsAll;
         </article>
 
         <article id="campanas" class="chart-card stats-section">
-          <div class="chart-head"><div><h2>Campañas y anuncios</h2><p>Conversaciones atribuidas a campañas de Meta en este periodo.</p></div></div>
+          <div class="chart-head">
+            <div><h2>Campañas y anuncios</h2><p>Conversaciones atribuidas a campañas de Meta en este periodo.</p></div>
+            <a class="pro-btn" href="<?= h(account_url('campaigns_stats.php', $campaignStatsParams)) ?>">Ver campañas</a>
+          </div>
           <?php if (!$campaignRows): ?>
             <div class="empty">Todavía no hay conversaciones con atribución de campaña.</div>
           <?php else: ?>
