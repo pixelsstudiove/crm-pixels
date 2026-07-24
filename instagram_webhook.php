@@ -679,7 +679,7 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
   return $result;
 }
 
-function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event, string $provider = 'instagram', string $direction = 'inbound'): array {
+function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event, string $provider = 'instagram', string $direction = 'inbound', bool $storeMessage = true): array {
   try {
     conv_ensure_schema($pdo);
     $direction = $direction === 'outbound' ? 'outbound' : 'inbound';
@@ -703,11 +703,22 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'lead_id' => $leadId > 0 ? $leadId : null,
       'external_source' => $provider,
       'external_thread_id' => $threadId,
-      'last_message_preview' => $messageText,
-      'last_message_at' => $messageAt,
+      'last_message_preview' => $storeMessage ? $messageText : null,
+      'last_message_at' => $storeMessage ? $messageAt : null,
       'unread_increment' => 0,
     ]);
     if ($conversationId <= 0) return ['conversation_id' => 0, 'message_id' => 0, 'message_inserted' => false, 'error' => 'No se pudo guardar la conversacion.'];
+    if (!$storeMessage) {
+      return [
+        'conversation_id' => $conversationId,
+        'message_id' => 0,
+        'message_inserted' => false,
+        'attachments_total' => 0,
+        'attachments_stored' => 0,
+        'attachment_errors' => [],
+        'had_outbound_before' => false,
+      ];
+    }
 
     $messageType = isset($event['message']['text']) ? 'text' : (isset($event['postback']) ? 'postback' : 'attachment');
     $messagesTable = conv_messages_table();
@@ -794,7 +805,9 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
   $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 2000);
-  $messageText = ig_event_text($event, $provider);
+  $hasVisibleMessage = isset($event['message']) || isset($event['postback']);
+  $hasReferralOnly = !$hasVisibleMessage && isset($event['referral']) && is_array($event['referral']);
+  $messageText = $hasVisibleMessage ? ig_event_text($event, $provider) : 'Referencia de anuncio recibida desde Meta.';
   $isOfficialEcho = !empty($event['message']['is_echo']);
   if ($recipientId === null) {
     conv_log_webhook_event($pdo, [
@@ -870,6 +883,8 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $existing = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
   $existing->execute([$accountId, $provider, $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
+  $shouldStoreMessage = $hasVisibleMessage;
+  $shouldUpdateLeadMessage = $direction === 'inbound' && $hasVisibleMessage;
 
   if ($leadId > 0) {
     $update = $pdo->prepare(<<<SQL
@@ -883,8 +898,8 @@ SET
   external_thread_id = ?,
   last_external_message_id = ?,
   last_message_at = ?,
-  last_inbound_message = CASE WHEN ? = 'inbound' THEN ? ELSE last_inbound_message END,
-  message = CASE WHEN ? = 'inbound' THEN COALESCE(message, ?) ELSE message END,
+  last_inbound_message = CASE WHEN ? = 1 THEN ? ELSE last_inbound_message END,
+  message = CASE WHEN ? = 1 THEN COALESCE(message, ?) ELSE message END,
   utm_campaign = CASE WHEN ? IS NOT NULL THEN ? ELSE utm_campaign END,
   campaign_id = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_id END,
   campaign_name = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_name END,
@@ -905,7 +920,7 @@ WHERE id = ?
 SQL);
     $update->execute([
       $profileDisplayName, $profileDisplayName, $profileUsername, $profileUsername, $threadId, $messageId, $messageAt,
-      $direction, $messageText, $direction, $messageText,
+      $shouldUpdateLeadMessage ? 1 : 0, $messageText, $shouldUpdateLeadMessage ? 1 : 0, $messageText,
       $ref['campaign'], $ref['campaign'],
       $ref['campaign_id'], $ref['campaign_id'],
       $ref['campaign_name'], $ref['campaign_name'],
@@ -930,7 +945,7 @@ SQL);
         $stamp->execute([$messageAt, (int) $channel['id']]);
       } catch (Throwable $e) { /* no-op */ }
     }
-    $sync = ig_sync_conversation($pdo, $channel ?: null, $customerId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider, $direction);
+    $sync = ig_sync_conversation($pdo, $channel ?: null, $customerId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider, $direction, $shouldStoreMessage);
     $conversationId = (int) ($sync['conversation_id'] ?? 0);
     $conversationMessageId = (int) ($sync['message_id'] ?? 0);
     $messageInserted = (bool) ($sync['message_inserted'] ?? false);
@@ -942,9 +957,9 @@ SQL);
     $attributionError = ig_clean($ref['enrichment_error'] ?? null, 255);
     conv_log_webhook_event($pdo, [
       'source' => $provider,
-      'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
+      'status' => $hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only'),
       'account_id' => $accountId,
-      'event_type' => $direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')),
+      'event_type' => $hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'))),
       'recipient_id' => $businessId,
       'sender_id' => $customerId,
       'channel_id' => (int) $channel['id'],
@@ -953,7 +968,7 @@ SQL);
       'lead_id' => $leadId,
       'conversation_id' => $conversationId > 0 ? $conversationId : null,
       'message_preview' => $messageText,
-      'error_message' => $conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'),
+      'error_message' => $hasReferralOnly ? $attributionError : ($conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.')),
       'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
     ]);
     return $leadId;
@@ -985,7 +1000,7 @@ SQL);
     ig_provider_default_business_type($provider),
     ig_provider_default_service($provider),
     ig_provider_default_objective($provider),
-    $direction === 'inbound' ? $messageText : null,
+    $shouldUpdateLeadMessage ? $messageText : null,
     ig_provider_label($provider),
     ig_provider_source($provider),
     ig_provider_medium($provider),
@@ -1011,7 +1026,7 @@ SQL);
     $messageId,
     $messageAt,
     $messageAt,
-    $direction === 'inbound' ? $messageText : null,
+    $shouldUpdateLeadMessage ? $messageText : null,
   ]);
 
   if ($channel) {
@@ -1023,7 +1038,7 @@ SQL);
 
   $leadId = (int) $pdo->lastInsertId();
   ig_clear_generic_campaign_values($pdo, $table, $leadId);
-  $sync = ig_sync_conversation($pdo, $channel ?: null, $customerId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider, $direction);
+  $sync = ig_sync_conversation($pdo, $channel ?: null, $customerId, $threadId, $messageId, $messageText, $messageAt, $profileName, $profileUsername, $leadId, $event, $provider, $direction, $shouldStoreMessage);
   $conversationId = (int) ($sync['conversation_id'] ?? 0);
   $conversationMessageId = (int) ($sync['message_id'] ?? 0);
   $messageInserted = (bool) ($sync['message_inserted'] ?? false);
@@ -1035,9 +1050,9 @@ SQL);
   $attributionError = ig_clean($ref['enrichment_error'] ?? null, 255);
   conv_log_webhook_event($pdo, [
     'source' => $provider,
-    'status' => $conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only',
+    'status' => $hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only'),
     'account_id' => $accountId,
-    'event_type' => $direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')),
+    'event_type' => $hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'))),
     'recipient_id' => $businessId,
     'sender_id' => $customerId,
     'channel_id' => (int) $channel['id'],
@@ -1046,7 +1061,7 @@ SQL);
     'lead_id' => $leadId,
     'conversation_id' => $conversationId > 0 ? $conversationId : null,
     'message_preview' => $messageText,
-    'error_message' => $conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'),
+    'error_message' => $hasReferralOnly ? $attributionError : ($conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.')),
     'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
   ]);
   return $leadId;
@@ -1092,7 +1107,10 @@ try {
     if (!is_array($entry)) continue;
     foreach (($entry['messaging'] ?? []) as $event) {
       if (!is_array($event)) continue;
-      if (!isset($event['message']) && !isset($event['postback'])) continue;
+      $hasProcessableEvent = isset($event['message'])
+        || isset($event['postback'])
+        || (isset($event['referral']) && is_array($event['referral']));
+      if (!$hasProcessableEvent) continue;
       $leadId = ig_upsert_lead($pdo, $TABLE_LEADS, $channelsTable, $event, $provider);
       if ($leadId > 0) $createdOrUpdated[] = $leadId;
       else $ignoredEvents++;
