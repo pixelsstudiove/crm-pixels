@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/instagram_channels.php';
+require_once __DIR__ . '/config/conversations.php';
 require_permission('manage_integrations');
 
 $channelsTable = ig_channels_table();
@@ -189,7 +190,7 @@ if ($provider === 'instagram') {
   $name = (string) ($profile['name'] ?? 'Instagram Login');
 
   try {
-    ig_channel_upsert($pdo, $channelsTable, [
+    $channelPayload = [
       'account_id' => $targetAccountId,
       'connection_type' => 'instagram_login',
       'page_id' => $instagramUserId,
@@ -202,7 +203,12 @@ if ($provider === 'instagram') {
       'receive_instagram' => 1,
       'receive_messenger' => 0,
       'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
-    ]);
+    ];
+    $savedChannelId = ig_channel_upsert($pdo, $channelsTable, $channelPayload);
+    if ($savedChannelId > 0) {
+      $channelPayload['id'] = $savedChannelId;
+      try { conv_sync_meta_recent_history($pdo, $channelPayload, $TABLE_LEADS, 10); } catch (Throwable $e) { /* La conexion no debe fallar si Meta no entrega historial. */ }
+    }
   } catch (RuntimeException $e) {
     oauth_fail($e->getMessage());
   }

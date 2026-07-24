@@ -559,6 +559,8 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message { max-width:min(74%, 620px); border:1px solid var(--inbox-line); border-radius:16px; padding:10px 12px; background:#fff; color:var(--inbox-ink); box-shadow:0 8px 22px rgba(15,23,42,.06); }
     .message.outbound { align-self:flex-end; background:var(--inbox-navy); border-color:var(--inbox-navy); color:#fff; border-bottom-right-radius:6px; }
     .message.inbound { align-self:flex-start; border-bottom-left-radius:6px; }
+    .message.system { align-self:center; max-width:min(82%, 720px); background:#eef6ff; border-color:#cfe8ff; color:#52627a; text-align:center; box-shadow:none; font-size:.84rem; font-weight:750; }
+    .message.system .message-meta { display:none; }
     .message.is-pending { opacity:.78; }
     .message.is-failed { background:#fff3f3; border-color:#f4a6a6; color:#7e1e1e; }
     .message-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
@@ -800,7 +802,8 @@ function inbox_visible_message_text($value, array $attachments): string {
               <div class="message-list" id="messageList" data-last-id="<?= (int) $lastMessageId ?>">
                 <?php if ($messages): foreach ($messages as $message): ?>
                   <?php $direction = (string) ($message['direction'] ?? 'inbound'); ?>
-                  <article class="message <?= $direction === 'outbound' ? 'outbound' : 'inbound' ?>" data-message-id="<?= (int) $message['id'] ?>">
+                  <?php $messageClass = $direction === 'outbound' ? 'outbound' : ($direction === 'system' ? 'system' : 'inbound'); ?>
+                  <article class="message <?= h($messageClass) ?>" data-message-id="<?= (int) $message['id'] ?>">
                     <?php $messageAttachments = $attachmentsByMessage[(int) $message['id']] ?? []; ?>
                     <?php $visibleText = inbox_visible_message_text($message['message_text'] ?? '', $messageAttachments); ?>
                     <?php if ($messageAttachments): ?>
@@ -818,7 +821,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <?php endif; ?>
                     <?php if ($visibleText !== ''): ?><div class="message-text"><?= h($visibleText) ?></div><?php endif; ?>
                     <div class="message-meta">
-                      <?= $direction === 'outbound' ? 'Enviado' : 'Recibido' ?> · <?= h(inbox_time($message['sent_at'] ?? '')) ?>
+                      <?= $direction === 'outbound' ? 'Enviado' : ($direction === 'system' ? 'Sistema' : 'Recibido') ?> · <?= h(inbox_time($message['sent_at'] ?? '')) ?>
                       <?php if ($direction === 'outbound' && !empty($message['sent_by_username'])): ?> · <?= h($message['sent_by_username']) ?><?php endif; ?>
                     </div>
                   </article>
@@ -1405,8 +1408,8 @@ function inbox_visible_message_text($value, array $attachments): string {
       if (messageList.querySelector(`[data-message-id="${Number(message.id)}"]`)) return;
       const emptyState = messageList.querySelector('.empty-state');
       if (emptyState) emptyState.remove();
-      const direction = message.direction === 'outbound' ? 'outbound' : 'inbound';
-      const metaLabel = direction === 'outbound' ? 'Enviado' : 'Recibido';
+      const direction = message.direction === 'outbound' ? 'outbound' : (message.direction === 'system' ? 'system' : 'inbound');
+      const metaLabel = direction === 'outbound' ? 'Enviado' : (direction === 'system' ? 'Sistema' : 'Recibido');
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
       const article = document.createElement('article');
       article.className = `message ${direction}`;
@@ -1488,8 +1491,8 @@ function inbox_visible_message_text($value, array $attachments): string {
     }
 
     function messageMarkup(message) {
-      const direction = message.direction === 'outbound' ? 'outbound' : 'inbound';
-      const metaLabel = direction === 'outbound' ? 'Enviado' : 'Recibido';
+      const direction = message.direction === 'outbound' ? 'outbound' : (message.direction === 'system' ? 'system' : 'inbound');
+      const metaLabel = direction === 'outbound' ? 'Enviado' : (direction === 'system' ? 'Sistema' : 'Recibido');
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
       const visibleText = visibleMessageText(message);
       return `

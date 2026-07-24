@@ -550,6 +550,248 @@ function conv_provider_label(string $provider): string {
   return $provider === 'messenger' ? 'Facebook Messenger' : 'Instagram';
 }
 
+function conv_meta_history_notice_text(string $provider): string {
+  $label = $provider === 'messenger' ? 'Facebook Messenger' : 'Instagram';
+  return 'Para acceder a todo el historial de esta conversación, abre el chat con el cliente desde ' . $label . '.';
+}
+
+function conv_meta_history_time($value): string {
+  $raw = trim((string) $value);
+  if ($raw === '') return gmdate('Y-m-d H:i:s');
+  $timestamp = strtotime($raw);
+  if ($timestamp === false) return gmdate('Y-m-d H:i:s');
+  return gmdate('Y-m-d H:i:s', $timestamp);
+}
+
+function conv_meta_channel_business_ids(array $channel, string $provider): array {
+  $ids = [];
+  if ($provider === 'messenger') {
+    $pageId = trim((string) ($channel['page_id'] ?? ''));
+    if ($pageId !== '') {
+      $ids[] = $pageId;
+      $ids[] = 'messenger:' . $pageId;
+    }
+  } else {
+    foreach (['instagram_user_id', 'page_id'] as $key) {
+      $id = trim((string) ($channel[$key] ?? ''));
+      if ($id !== '') $ids[] = $id;
+    }
+  }
+  return array_values(array_unique($ids));
+}
+
+function conv_meta_history_message_text(array $message): string {
+  $text = conv_clean($message['message'] ?? $message['text'] ?? null, 5000);
+  if ($text !== null) return $text;
+
+  $attachments = $message['attachments']['data'] ?? $message['attachments'] ?? [];
+  if (is_array($attachments) && $attachments) {
+    $types = [];
+    foreach ($attachments as $attachment) {
+      if (!is_array($attachment)) continue;
+      $type = conv_clean($attachment['mime_type'] ?? $attachment['type'] ?? 'adjunto', 60) ?? 'adjunto';
+      $types[] = $type;
+    }
+    if ($types) return 'Adjunto recibido: ' . implode(', ', array_unique($types));
+  }
+
+  return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
+}
+
+function conv_meta_history_participants(array $thread): array {
+  $participants = $thread['participants']['data'] ?? $thread['participants'] ?? [];
+  return is_array($participants) ? array_values(array_filter($participants, 'is_array')) : [];
+}
+
+function conv_meta_history_customer(array $thread, array $messages, array $businessIds): ?array {
+  foreach (conv_meta_history_participants($thread) as $participant) {
+    $id = trim((string) ($participant['id'] ?? ''));
+    if ($id !== '' && !in_array($id, $businessIds, true)) return $participant;
+  }
+
+  foreach ($messages as $message) {
+    if (!is_array($message)) continue;
+    $from = is_array($message['from'] ?? null) ? $message['from'] : [];
+    $fromId = trim((string) ($from['id'] ?? ''));
+    if ($fromId !== '' && !in_array($fromId, $businessIds, true)) return $from;
+
+    $toData = $message['to']['data'] ?? $message['to'] ?? [];
+    if (!is_array($toData)) continue;
+    foreach ($toData as $to) {
+      if (!is_array($to)) continue;
+      $toId = trim((string) ($to['id'] ?? ''));
+      if ($toId !== '' && !in_array($toId, $businessIds, true)) return $to;
+    }
+  }
+
+  return null;
+}
+
+function conv_meta_history_request_candidates(array $channel, string $provider): array {
+  $token = trim((string) ($channel['page_access_token'] ?? ''));
+  if ($token === '') return [];
+
+  $pageId = trim((string) ($channel['page_id'] ?? ''));
+  $instagramId = trim((string) ($channel['instagram_user_id'] ?? ''));
+  $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login';
+  $fields = 'id,updated_time,participants,messages.limit(10){id,created_time,from,to,message}';
+  $common = ['fields' => $fields, 'limit' => 25, 'access_token' => $token];
+  $candidates = [];
+
+  if ($provider === 'messenger' && $pageId !== '') {
+    $candidates[] = [ig_graph_base(), $pageId . '/conversations', $common];
+    return $candidates;
+  }
+
+  if ($provider === 'instagram') {
+    if ($isDirectLogin) {
+      $candidates[] = [ig_instagram_graph_base(), 'me/conversations', $common];
+      if ($instagramId !== '') $candidates[] = [ig_instagram_graph_base(), $instagramId . '/conversations', $common];
+      if ($instagramId !== '') $candidates[] = [ig_graph_base(), $instagramId . '/conversations', $common];
+    } else {
+      if ($instagramId !== '') $candidates[] = [ig_graph_base(), $instagramId . '/conversations', $common];
+      if ($pageId !== '') $candidates[] = [ig_graph_base(), $pageId . '/conversations', $common + ['platform' => 'instagram']];
+    }
+  }
+
+  return $candidates;
+}
+
+function conv_sync_meta_recent_history(PDO $pdo, array $channel, string $leadsTable, int $messageLimit = 10): array {
+  conv_ensure_schema($pdo);
+  $messageLimit = max(1, min(10, $messageLimit));
+  $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
+  $providers = [];
+  if (!empty($channel['receive_instagram'])) $providers[] = 'instagram';
+  if (!empty($channel['receive_messenger'])) $providers[] = 'messenger';
+  $providers = array_values(array_unique($providers));
+  $summary = ['threads' => 0, 'messages' => 0, 'notices' => 0, 'errors' => []];
+  foreach ($providers as $provider) {
+    $businessIds = conv_meta_channel_business_ids($channel, $provider);
+    if (!$businessIds) continue;
+    $threads = [];
+    $lastError = null;
+
+    foreach (conv_meta_history_request_candidates($channel, $provider) as $candidate) {
+      [$baseUrl, $path, $params] = $candidate;
+      $response = ig_graph_request_base($baseUrl, 'GET', $path, $params);
+      if (!($response['ok'] ?? false)) {
+        $lastError = (string) ($response['error'] ?? 'Meta no devolvió historial.');
+        continue;
+      }
+      $data = $response['data']['data'] ?? [];
+      if (is_array($data)) {
+        $threads = array_values(array_filter($data, 'is_array'));
+        break;
+      }
+    }
+
+    if (!$threads) {
+      if ($lastError !== null) $summary['errors'][] = $provider . ': ' . $lastError;
+      continue;
+    }
+
+    foreach ($threads as $thread) {
+      $messages = $thread['messages']['data'] ?? [];
+      if (!is_array($messages) || !$messages) continue;
+      $messages = array_values(array_filter($messages, 'is_array'));
+      usort($messages, static function (array $a, array $b): int {
+        $at = strtotime((string) ($a['created_time'] ?? '')) ?: 0;
+        $bt = strtotime((string) ($b['created_time'] ?? '')) ?: 0;
+        return $at <=> $bt;
+      });
+      $messages = array_slice($messages, -$messageLimit);
+
+      $customer = conv_meta_history_customer($thread, $messages, $businessIds);
+      $customerId = conv_clean($customer['id'] ?? null, 160);
+      if ($customerId === null) continue;
+
+      $displayName = conv_clean($customer['name'] ?? $customer['username'] ?? null, 180);
+      $username = $provider === 'instagram' ? conv_clean($customer['username'] ?? null, 180) : null;
+      $lastMessage = $messages ? $messages[count($messages) - 1] : [];
+      $lastAt = conv_meta_history_time($lastMessage['created_time'] ?? ($thread['updated_time'] ?? null));
+      $lastText = conv_meta_history_message_text($lastMessage);
+      $threadId = $businessIds[0] . ':' . $customerId;
+
+      $contactId = conv_upsert_contact($pdo, [
+        'account_id' => $accountId,
+        'external_source' => $provider,
+        'external_contact_id' => $customerId,
+        'display_name' => $displayName,
+        'username' => $username,
+        'last_seen_at' => $lastAt,
+      ]);
+      if ($contactId <= 0) continue;
+
+      $conversationId = conv_upsert_conversation($pdo, [
+        'account_id' => $accountId,
+        'channel_id' => (int) ($channel['id'] ?? 0) ?: null,
+        'contact_id' => $contactId,
+        'external_source' => $provider,
+        'external_thread_id' => $threadId,
+        'last_message_preview' => $lastText,
+        'last_message_at' => $lastAt,
+        'unread_increment' => 0,
+      ]);
+      if ($conversationId <= 0) continue;
+
+      $leadId = conv_ensure_lead_for_conversation($pdo, $leadsTable, $conversationId);
+      if ($leadId > 0) {
+        conv_upsert_conversation($pdo, [
+          'account_id' => $accountId,
+          'channel_id' => (int) ($channel['id'] ?? 0) ?: null,
+          'contact_id' => $contactId,
+          'lead_id' => $leadId,
+          'external_source' => $provider,
+          'external_thread_id' => $threadId,
+          'unread_increment' => 0,
+        ]);
+      }
+
+      $firstAt = conv_meta_history_time($messages[0]['created_time'] ?? $lastAt);
+      $noticeAt = gmdate('Y-m-d H:i:s', max(1, (strtotime($firstAt) ?: time()) - 1));
+      $noticeId = 'crm-history-notice:' . hash('sha256', $provider . '|' . $threadId);
+      $noticeMessageId = conv_add_message($pdo, [
+        'account_id' => $accountId,
+        'conversation_id' => $conversationId,
+        'external_message_id' => $noticeId,
+        'direction' => 'system',
+        'sender_external_id' => null,
+        'message_type' => 'system',
+        'message_text' => conv_meta_history_notice_text($provider),
+        'payload_json' => json_encode(['source' => 'meta_recent_history_notice', 'provider' => $provider], JSON_UNESCAPED_UNICODE),
+        'sent_at' => $noticeAt,
+        'delivery_status' => 'imported',
+      ]);
+      if ($noticeMessageId > 0) $summary['notices']++;
+
+      foreach ($messages as $message) {
+        $messageId = conv_clean($message['id'] ?? null, 2000);
+        $from = is_array($message['from'] ?? null) ? $message['from'] : [];
+        $fromId = conv_clean($from['id'] ?? null, 160);
+        $direction = ($fromId !== null && in_array($fromId, $businessIds, true)) ? 'outbound' : 'inbound';
+        $inserted = conv_add_message($pdo, [
+          'account_id' => $accountId,
+          'conversation_id' => $conversationId,
+          'external_message_id' => $messageId,
+          'direction' => $direction,
+          'sender_external_id' => $fromId,
+          'message_type' => 'text',
+          'message_text' => conv_meta_history_message_text($message),
+          'payload_json' => json_encode(['source' => 'meta_recent_history', 'provider' => $provider, 'message' => $message], JSON_UNESCAPED_UNICODE),
+          'sent_at' => conv_meta_history_time($message['created_time'] ?? null),
+          'delivery_status' => 'imported',
+        ]);
+        if ($inserted > 0) $summary['messages']++;
+      }
+
+      $summary['threads']++;
+    }
+  }
+
+  return $summary;
+}
+
 function conv_instagram_channel_for_conversation(PDO $pdo, array $conversation): ?array {
   $channelsTable = ig_channels_table();
   $channelId = (int) ($conversation['channel_id'] ?? 0);

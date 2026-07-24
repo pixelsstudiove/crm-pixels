@@ -146,7 +146,7 @@ function ig_channel_existing_account_message(array $channel): string {
   return "{$channelLabel} ya está integrado en la cuenta {$accountName}. Para integrarlo en esta cuenta, primero debes desvincularlo de la otra cuenta.";
 }
 
-function ig_channel_upsert(PDO $pdo, string $table, array $channel): void {
+function ig_channel_upsert(PDO $pdo, string $table, array $channel): int {
   $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $connectionType = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) ($channel['connection_type'] ?? 'facebook')) ?: 'facebook';
   $pageId = (string) $channel['page_id'];
@@ -227,4 +227,15 @@ SQL);
     $receiveMessenger,
     $channel['connected_by'] ?? null,
   ]);
+
+  $identifiers = array_values(array_unique(array_filter([
+    trim($pageId),
+    trim($instagramUserId),
+  ], static fn($value) => $value !== '')));
+  if (!$identifiers) return 0;
+
+  $placeholders = implode(',', array_fill(0, count($identifiers), '?'));
+  $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND (page_id IN ({$placeholders}) OR instagram_user_id IN ({$placeholders})) ORDER BY updated_at DESC, id DESC LIMIT 1");
+  $find->execute(array_merge([$accountId], $identifiers, $identifiers));
+  return (int) ($find->fetchColumn() ?: 0);
 }

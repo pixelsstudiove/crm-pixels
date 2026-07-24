@@ -301,14 +301,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 	          try {
 	            if ((string) ($pendingChannel['connection_type'] ?? '') === 'facebook') {
 	              $subscribeResp = ig_graph_request('POST', (string) ($pendingChannel['page_id'] ?? '') . '/subscribed_apps', [
-	                'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
+	                'subscribed_fields' => 'messages,message_echoes,messaging_postbacks,messaging_optins,message_deliveries,message_reads',
 	                'access_token' => (string) ($pendingChannel['page_access_token'] ?? ''),
 	              ]);
 	              if (!($subscribeResp['ok'] ?? false)) {
 	                throw new RuntimeException('Meta no permitió suscribir la fanpage al webhook.');
 	              }
 	            }
-	            ig_channel_upsert($pdo, $channelsTable, $pendingChannel);
+	            $savedChannelId = ig_channel_upsert($pdo, $channelsTable, $pendingChannel);
+	            if ($savedChannelId > 0) {
+	              $pendingChannel['id'] = $savedChannelId;
+	              try { conv_sync_meta_recent_history($pdo, $pendingChannel, $TABLE_LEADS, 10); } catch (Throwable $e) { /* La conexion no debe fallar si Meta no entrega historial. */ }
+	            }
 	            $saved++;
 	          } catch (RuntimeException $e) {
 	            $blocked[] = $e->getMessage();

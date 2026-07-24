@@ -268,7 +268,7 @@ SQL;
         $messageId = (int) $message['id'];
         $messages[] = [
           'id' => $messageId,
-          'direction' => $direction === 'outbound' ? 'outbound' : 'inbound',
+          'direction' => $direction === 'outbound' ? 'outbound' : ($direction === 'system' ? 'system' : 'inbound'),
           'text' => updates_normalize_message_text((string) ($message['message_text'] ?: 'Mensaje sin texto')),
           'attachments' => $attachmentsByMessage[$messageId] ?? [],
           'time' => updates_time($message['sent_at'] ?? ''),
