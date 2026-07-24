@@ -7,6 +7,47 @@ require_once __DIR__ . '/config/lead_status_history.php';
 require_once __DIR__ . '/config/navigation.php';
 require_once __DIR__ . '/config/ad_attribution.php';
 
+function camp_log_runtime_error(Throwable $e): void {
+  $storageDir = __DIR__ . '/storage';
+  if (!is_dir($storageDir)) {
+    @mkdir($storageDir, 0775, true);
+  }
+  $context = [
+    'time' => gmdate('c'),
+    'uri' => (string) ($_SERVER['REQUEST_URI'] ?? ''),
+    'method' => (string) ($_SERVER['REQUEST_METHOD'] ?? ''),
+    'message' => $e->getMessage(),
+    'file' => $e->getFile(),
+    'line' => $e->getLine(),
+  ];
+  $line = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: $e->getMessage();
+  @file_put_contents($storageDir . '/campaigns_stats_errors.log', $line . PHP_EOL, FILE_APPEND);
+}
+
+set_exception_handler(static function (Throwable $e): void {
+  camp_log_runtime_error($e);
+  if (!headers_sent()) {
+    http_response_code(200);
+    header('Content-Type: text/html; charset=utf-8');
+  }
+
+  $showDetails = false;
+  try {
+    $showDetails = function_exists('is_super_admin') && is_super_admin();
+  } catch (Throwable $ignored) {
+    $showDetails = false;
+  }
+
+  $message = htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8');
+  $file = htmlspecialchars($e->getFile() . ':' . $e->getLine(), ENT_QUOTES, 'UTF-8');
+  echo '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Campañas - Error controlado</title><style>body{margin:0;background:#f4f7fb;color:#09111f;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}.card{max-width:760px;width:100%;background:#fff;border:1px solid #dbe7f4;border-radius:28px;box-shadow:0 22px 58px rgba(15,23,42,.08);padding:32px}.eyebrow{margin:0 0 10px;color:#12c7e8;font-weight:950;letter-spacing:.14em;text-transform:uppercase;font-size:.76rem}.card h1{margin:0 0 12px;font-size:clamp(2rem,4vw,3.5rem);line-height:.95;letter-spacing:-.05em}.card p{margin:0 0 16px;color:#69758d;font-weight:750;line-height:1.45}.card code{display:block;white-space:pre-wrap;word-break:break-word;background:#fff5f5;border:1px solid #fecaca;border-radius:16px;padding:14px;color:#9f1239;font-weight:800}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}.actions a{min-height:46px;padding:0 18px;border-radius:16px;background:#050b18;color:#fff;text-decoration:none;display:inline-flex;align-items:center;font-weight:950}</style></head><body><main class="wrap"><section class="card"><p class="eyebrow">Pixels Studio</p><h1>No se pudieron cargar las estadísticas de campañas</h1><p>Registré el error técnico en <strong>storage/campaigns_stats_errors.log</strong>. Esto evita que la ruta quede en 500 y nos permite ver exactamente qué está fallando en el hosting.</p>';
+  if ($showDetails) {
+    echo '<code>' . $message . "\n" . $file . '</code>';
+  }
+  echo '<div class="actions"><a href="stats.php">Volver a estadísticas</a></div></section></main></body></html>';
+  exit;
+});
+
 require_permission('view_reports');
 conv_ensure_schema($pdo);
 lead_status_history_ensure_schema($pdo);
