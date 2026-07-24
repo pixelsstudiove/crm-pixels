@@ -6,6 +6,7 @@ require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/lead_status_history.php';
 require_once __DIR__ . '/config/navigation.php';
+require_once __DIR__ . '/config/ad_attribution.php';
 
 require_permission('view_reports');
 conv_ensure_schema($pdo);
@@ -233,6 +234,8 @@ function adv_ensure_ad_attribution_schema(PDO $pdo, string $dbName, string $tabl
 }
 
 adv_ensure_ad_attribution_schema($pdo, (string) ($DB_NAME ?? ''), $leadsTable);
+ads_ensure_schema($pdo, $leadsTable);
+try { ads_backfill_from_leads($pdo, $leadsTable, 500); } catch (Throwable $e) { /* no-op */ }
 
 $requestSlug = accounts_request_slug();
 $requestAccount = accounts_request_account($pdo);
@@ -374,21 +377,30 @@ $previousChannelMap = [];
 foreach ($previousChannelRows as $row) $previousChannelMap[(int) ($row['channel_id'] ?? 0)] = (int) ($row['conversations_count'] ?? 0);
 $maxChannel = max(1, ...array_map(static fn($row) => (int) ($row['conversations_count'] ?? 0), $currentChannelRows ?: [['conversations_count' => 1]]));
 
+$campaignsTable = ads_campaigns_table();
+$adsetsTable = ads_adsets_table();
+$adsTable = ads_ads_table();
 $campaignRows = adv_fetch_all($pdo, <<<SQL
 SELECT
-  COALESCE(NULLIF(l.campaign_name, ''), NULLIF(l.utm_campaign, ''), 'Sin campaña') AS campaign_label,
-  COALESCE(NULLIF(l.adset_name, ''), 'Sin conjunto') AS adset_label,
-  COALESCE(NULLIF(l.ad_name, ''), NULLIF(l.ad_id, ''), 'Sin anuncio') AS ad_label,
+  COALESCE(NULLIF(ac.campaign_name, ''), NULLIF(l.campaign_name, ''), NULLIF(l.utm_campaign, ''), 'Sin campaña') AS campaign_label,
+  COALESCE(NULLIF(adst.adset_name, ''), NULLIF(l.adset_name, ''), 'Sin conjunto') AS adset_label,
+  COALESCE(NULLIF(ad.ad_name, ''), NULLIF(l.ad_name, ''), NULLIF(l.ad_id, ''), 'Sin anuncio') AS ad_label,
   COUNT(DISTINCT c.id) AS conversations_count,
   SUM(CASE WHEN l.sales_status = 'cliente_ganado' THEN 1 ELSE 0 END) AS won_count,
   SUM(CASE WHEN l.sales_status IN ('cliente_perdido', 'no_califica') THEN 1 ELSE 0 END) AS lost_count
 FROM {$conversationsTable} c
 LEFT JOIN {$leadsTable} l ON l.id = c.lead_id
+LEFT JOIN {$campaignsTable} ac ON ac.id = l.campaign_ref_id
+LEFT JOIN {$adsetsTable} adst ON adst.id = l.adset_ref_id
+LEFT JOIN {$adsTable} ad ON ad.id = l.ad_ref_id
 {$convScope['sql']}
   AND (
-    NULLIF(l.campaign_name, '') IS NOT NULL
+    ac.id IS NOT NULL
+    OR NULLIF(l.campaign_name, '') IS NOT NULL
     OR NULLIF(l.utm_campaign, '') IS NOT NULL
+    OR adst.id IS NOT NULL
     OR NULLIF(l.adset_name, '') IS NOT NULL
+    OR ad.id IS NOT NULL
     OR NULLIF(l.ad_name, '') IS NOT NULL
     OR NULLIF(l.ad_id, '') IS NOT NULL
   )

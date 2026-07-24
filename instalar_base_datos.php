@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/ad_attribution.php';
 
 $installKey = (string) app_config('security.install_key', '');
 $providedKey = (string) ($_GET['key'] ?? $_POST['key'] ?? '');
@@ -129,12 +130,15 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'utm_campaign' => '`utm_campaign` VARCHAR(120) NULL',
     'campaign_id' => '`campaign_id` VARCHAR(120) NULL',
     'campaign_name' => '`campaign_name` VARCHAR(180) NULL',
+    'campaign_ref_id' => '`campaign_ref_id` INT UNSIGNED NULL',
     'utm_content' => '`utm_content` VARCHAR(160) NULL',
     'utm_term' => '`utm_term` VARCHAR(160) NULL',
     'adset_id' => '`adset_id` VARCHAR(120) NULL',
     'adset_name' => '`adset_name` VARCHAR(180) NULL',
+    'adset_ref_id' => '`adset_ref_id` INT UNSIGNED NULL',
     'ad_name' => '`ad_name` VARCHAR(180) NULL',
     'ad_id' => '`ad_id` VARCHAR(120) NULL',
+    'ad_ref_id' => '`ad_ref_id` INT UNSIGNED NULL',
     'ad_referral_source' => '`ad_referral_source` VARCHAR(80) NULL',
     'ad_referral_type' => '`ad_referral_type` VARCHAR(80) NULL',
     'ad_referral_payload' => '`ad_referral_payload` TEXT NULL',
@@ -204,10 +208,13 @@ function ensure_latest_schema(PDO $pdo, string $leadsTable, string $usersTable, 
     'idx_source_platform' => 'KEY `idx_source_platform` (`source_platform`)',
     'idx_utm_campaign' => 'KEY `idx_utm_campaign` (`utm_campaign`)',
     'idx_campaign_name' => 'KEY `idx_campaign_name` (`campaign_name`)',
+    'idx_campaign_ref_id' => 'KEY `idx_campaign_ref_id` (`campaign_ref_id`)',
     'idx_adset_name' => 'KEY `idx_adset_name` (`adset_name`)',
+    'idx_adset_ref_id' => 'KEY `idx_adset_ref_id` (`adset_ref_id`)',
     'idx_utm_content' => 'KEY `idx_utm_content` (`utm_content`)',
     'idx_ad_name' => 'KEY `idx_ad_name` (`ad_name`)',
     'idx_ad_id' => 'KEY `idx_ad_id` (`ad_id`)',
+    'idx_ad_ref_id' => 'KEY `idx_ad_ref_id` (`ad_ref_id`)',
     'idx_sales_status' => 'KEY `idx_sales_status` (`sales_status`)',
     'idx_reminder_at' => 'KEY `idx_reminder_at` (`reminder_at`)',
     'idx_account_id' => 'KEY `idx_account_id` (`account_id`)',
@@ -294,6 +301,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       accounts_ensure_runtime_schema($pdo, $DB_NAME);
       $log[] = ['ok', 'Cuenta por defecto y columnas multi-cuenta verificadas.'];
       ensure_latest_schema($pdo, $TABLE_LEADS, $TABLE_USERS, $log);
+      ads_ensure_schema($pdo, $TABLE_LEADS);
+      $backfilledAds = ads_backfill_from_leads($pdo, $TABLE_LEADS, 5000);
+      $log[] = ['ok', 'Campañas, conjuntos y anuncios verificados. Leads enlazados: ' . $backfilledAds . '.'];
       normalize_sales_funnel_statuses($pdo, $TABLE_LEADS, $log);
       ensure_instagram_channels_schema($pdo, safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'), $log);
       conv_ensure_schema($pdo);

@@ -6,6 +6,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/instagram_channels.php';
 require_once __DIR__ . '/config/conversations.php';
+require_once __DIR__ . '/config/ad_attribution.php';
 
 function ig_json(array $payload, int $status = 200): void {
   if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
@@ -137,12 +138,15 @@ CREATE TABLE IF NOT EXISTS {$table} (
   utm_campaign VARCHAR(120) NULL,
   campaign_id VARCHAR(120) NULL,
   campaign_name VARCHAR(180) NULL,
+  campaign_ref_id INT UNSIGNED NULL,
   utm_content VARCHAR(160) NULL,
   utm_term VARCHAR(160) NULL,
   adset_id VARCHAR(120) NULL,
   adset_name VARCHAR(180) NULL,
+  adset_ref_id INT UNSIGNED NULL,
   ad_name VARCHAR(180) NULL,
   ad_id VARCHAR(120) NULL,
+  ad_ref_id INT UNSIGNED NULL,
   ad_referral_source VARCHAR(80) NULL,
   ad_referral_type VARCHAR(80) NULL,
   ad_referral_payload TEXT NULL,
@@ -198,12 +202,15 @@ SQL);
     'utm_campaign' => "ALTER TABLE {$table} ADD COLUMN utm_campaign VARCHAR(120) NULL AFTER utm_medium",
     'campaign_id' => "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign",
     'campaign_name' => "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id",
+    'campaign_ref_id' => "ALTER TABLE {$table} ADD COLUMN campaign_ref_id INT UNSIGNED NULL AFTER campaign_name",
     'utm_content' => "ALTER TABLE {$table} ADD COLUMN utm_content VARCHAR(160) NULL AFTER utm_campaign",
     'utm_term' => "ALTER TABLE {$table} ADD COLUMN utm_term VARCHAR(160) NULL AFTER utm_content",
     'adset_id' => "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term",
     'adset_name' => "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id",
+    'adset_ref_id' => "ALTER TABLE {$table} ADD COLUMN adset_ref_id INT UNSIGNED NULL AFTER adset_name",
     'ad_name' => "ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL AFTER utm_term",
     'ad_id' => "ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL AFTER ad_name",
+    'ad_ref_id' => "ALTER TABLE {$table} ADD COLUMN ad_ref_id INT UNSIGNED NULL AFTER ad_id",
     'ad_referral_source' => "ALTER TABLE {$table} ADD COLUMN ad_referral_source VARCHAR(80) NULL AFTER ad_id",
     'ad_referral_type' => "ALTER TABLE {$table} ADD COLUMN ad_referral_type VARCHAR(80) NULL AFTER ad_referral_source",
     'ad_referral_payload' => "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type",
@@ -251,8 +258,11 @@ SQL);
     'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
     'idx_account_id' => "ALTER TABLE {$table} ADD KEY idx_account_id (account_id)",
     'idx_campaign_name' => "ALTER TABLE {$table} ADD KEY idx_campaign_name (campaign_name)",
+    'idx_campaign_ref_id' => "ALTER TABLE {$table} ADD KEY idx_campaign_ref_id (campaign_ref_id)",
     'idx_adset_name' => "ALTER TABLE {$table} ADD KEY idx_adset_name (adset_name)",
+    'idx_adset_ref_id' => "ALTER TABLE {$table} ADD KEY idx_adset_ref_id (adset_ref_id)",
     'idx_ad_id' => "ALTER TABLE {$table} ADD KEY idx_ad_id (ad_id)",
+    'idx_ad_ref_id' => "ALTER TABLE {$table} ADD KEY idx_ad_ref_id (ad_ref_id)",
     'idx_last_message_at' => "ALTER TABLE {$table} ADD KEY idx_last_message_at (last_message_at)",
   ];
   foreach ($indexes as $index => $sql) {
@@ -693,6 +703,13 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $threadId = $recipientId !== null ? $recipientId . ':' . $senderId : $senderId;
   $ref = ig_referral_data($event);
   $ref = ig_enrich_ad_attribution($channel ?: null, $ref);
+  try {
+    $ref = array_merge($ref, ads_upsert_from_ref($pdo, $accountId, $ref, 'meta', $messageAt, $table));
+  } catch (Throwable $e) {
+    $ref['campaign_ref_id'] = null;
+    $ref['adset_ref_id'] = null;
+    $ref['ad_ref_id'] = null;
+  }
   $profile = ig_contact_profile($channel ?: null, $senderId, $provider);
   $profileName = $profile['name'] ?? null;
   $profileUsername = $profile['username'] ?? null;
@@ -723,10 +740,13 @@ SET
   utm_campaign = CASE WHEN ? IS NOT NULL THEN ? ELSE utm_campaign END,
   campaign_id = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_id END,
   campaign_name = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_name END,
+  campaign_ref_id = CASE WHEN ? IS NOT NULL THEN ? ELSE campaign_ref_id END,
   adset_id = CASE WHEN ? IS NOT NULL THEN ? ELSE adset_id END,
   adset_name = CASE WHEN ? IS NOT NULL THEN ? ELSE adset_name END,
+  adset_ref_id = CASE WHEN ? IS NOT NULL THEN ? ELSE adset_ref_id END,
   ad_name = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_name END,
   ad_id = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_id END,
+  ad_ref_id = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_ref_id END,
   utm_content = CASE WHEN ? IS NOT NULL THEN ? ELSE utm_content END,
   ad_referral_source = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_referral_source END,
   ad_referral_type = CASE WHEN ? IS NOT NULL THEN ? ELSE ad_referral_type END,
@@ -740,10 +760,13 @@ SQL);
       $ref['campaign'], $ref['campaign'],
       $ref['campaign_id'], $ref['campaign_id'],
       $ref['campaign_name'], $ref['campaign_name'],
+      $ref['campaign_ref_id'], $ref['campaign_ref_id'],
       $ref['adset_id'], $ref['adset_id'],
       $ref['adset_name'], $ref['adset_name'],
+      $ref['adset_ref_id'], $ref['adset_ref_id'],
       $ref['ad_name'], $ref['ad_name'],
       $ref['ad_id'], $ref['ad_id'],
+      $ref['ad_ref_id'], $ref['ad_ref_id'],
       $ref['content'], $ref['content'],
       $ref['referral_source'], $ref['referral_source'],
       $ref['referral_type'], $ref['referral_type'],
@@ -790,13 +813,13 @@ SQL);
 INSERT INTO {$table} (
   account_id, fullname, phone, email, brand_instagram, business_type, business_type_other, services_needed, main_objective, message,
   source_platform, utm_source, utm_medium, utm_campaign, campaign_id, campaign_name, utm_content,
-  adset_id, adset_name, ad_name, ad_id, ad_referral_source, ad_referral_type, ad_referral_payload, ad_enrichment_error,
+  campaign_ref_id, adset_id, adset_name, adset_ref_id, ad_name, ad_id, ad_ref_id, ad_referral_source, ad_referral_type, ad_referral_payload, ad_enrichment_error,
   sales_status, status, whatsapp_sent, whatsapp_status, external_source, external_contact_id, external_thread_id,
   last_external_message_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
   ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
   ?, ?, ?, ?, ?, ?, ?,
-  ?, ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
   ?, 'pending', 0, 'disabled', ?, ?, ?,
   ?, ?, ?, ?
 )
@@ -816,10 +839,13 @@ SQL);
     $ref['campaign_id'],
     $ref['campaign_name'],
     $ref['content'],
+    $ref['campaign_ref_id'],
     $ref['adset_id'],
     $ref['adset_name'],
+    $ref['adset_ref_id'],
     $ref['ad_name'],
     $ref['ad_id'],
+    $ref['ad_ref_id'],
     $ref['referral_source'],
     $ref['referral_type'],
     $ref['payload_json'],

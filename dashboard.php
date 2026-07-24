@@ -5,6 +5,7 @@ require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/lead_status_history.php';
 require_once __DIR__ . '/config/navigation.php';
+require_once __DIR__ . '/config/ad_attribution.php';
 
 function column_exists_dash(PDO $pdo, string $dbName, string $table, string $column): bool {
   $stmt = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?");
@@ -38,12 +39,15 @@ CREATE TABLE IF NOT EXISTS {$table} (
   utm_campaign VARCHAR(120) NULL,
   campaign_id VARCHAR(120) NULL,
   campaign_name VARCHAR(180) NULL,
+  campaign_ref_id INT UNSIGNED NULL,
   utm_content VARCHAR(160) NULL,
   utm_term VARCHAR(160) NULL,
   adset_id VARCHAR(120) NULL,
   adset_name VARCHAR(180) NULL,
+  adset_ref_id INT UNSIGNED NULL,
   ad_name VARCHAR(180) NULL,
   ad_id VARCHAR(120) NULL,
+  ad_ref_id INT UNSIGNED NULL,
   ad_referral_source VARCHAR(80) NULL,
   ad_referral_type VARCHAR(80) NULL,
   ad_referral_payload TEXT NULL,
@@ -107,12 +111,15 @@ SQL);
     'utm_campaign' => "ALTER TABLE {$table} ADD COLUMN utm_campaign VARCHAR(120) NULL AFTER utm_medium",
     'campaign_id' => "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign",
     'campaign_name' => "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id",
+    'campaign_ref_id' => "ALTER TABLE {$table} ADD COLUMN campaign_ref_id INT UNSIGNED NULL AFTER campaign_name",
     'utm_content' => "ALTER TABLE {$table} ADD COLUMN utm_content VARCHAR(160) NULL AFTER utm_campaign",
     'utm_term' => "ALTER TABLE {$table} ADD COLUMN utm_term VARCHAR(160) NULL AFTER utm_content",
     'adset_id' => "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term",
     'adset_name' => "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id",
+    'adset_ref_id' => "ALTER TABLE {$table} ADD COLUMN adset_ref_id INT UNSIGNED NULL AFTER adset_name",
     'ad_name' => "ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL AFTER utm_term",
     'ad_id' => "ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL AFTER ad_name",
+    'ad_ref_id' => "ALTER TABLE {$table} ADD COLUMN ad_ref_id INT UNSIGNED NULL AFTER ad_id",
     'ad_referral_source' => "ALTER TABLE {$table} ADD COLUMN ad_referral_source VARCHAR(80) NULL AFTER ad_id",
     'ad_referral_type' => "ALTER TABLE {$table} ADD COLUMN ad_referral_type VARCHAR(80) NULL AFTER ad_referral_source",
     'ad_referral_payload' => "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type",
@@ -168,10 +175,13 @@ SQL);
     'idx_source_platform' => "ALTER TABLE {$table} ADD KEY idx_source_platform (source_platform)",
     'idx_utm_campaign' => "ALTER TABLE {$table} ADD KEY idx_utm_campaign (utm_campaign)",
     'idx_campaign_name' => "ALTER TABLE {$table} ADD KEY idx_campaign_name (campaign_name)",
+    'idx_campaign_ref_id' => "ALTER TABLE {$table} ADD KEY idx_campaign_ref_id (campaign_ref_id)",
     'idx_adset_name' => "ALTER TABLE {$table} ADD KEY idx_adset_name (adset_name)",
+    'idx_adset_ref_id' => "ALTER TABLE {$table} ADD KEY idx_adset_ref_id (adset_ref_id)",
     'idx_utm_content' => "ALTER TABLE {$table} ADD KEY idx_utm_content (utm_content)",
     'idx_ad_name' => "ALTER TABLE {$table} ADD KEY idx_ad_name (ad_name)",
     'idx_ad_id' => "ALTER TABLE {$table} ADD KEY idx_ad_id (ad_id)",
+    'idx_ad_ref_id' => "ALTER TABLE {$table} ADD KEY idx_ad_ref_id (ad_ref_id)",
     'idx_sales_status' => "ALTER TABLE {$table} ADD KEY idx_sales_status (sales_status)",
     'idx_reminder_at' => "ALTER TABLE {$table} ADD KEY idx_reminder_at (reminder_at)",
     'uniq_external_contact' => "ALTER TABLE {$table} ADD UNIQUE KEY uniq_external_contact (account_id, external_source, external_contact_id)",
@@ -184,6 +194,8 @@ SQL);
 }
 
 ensure_dashboard_schema($pdo, $DB_NAME, $TABLE_LEADS);
+ads_ensure_schema($pdo, $TABLE_LEADS);
+try { ads_backfill_from_leads($pdo, $TABLE_LEADS, 200); } catch (Throwable $e) { /* no-op */ }
 conv_ensure_schema($pdo);
 lead_status_normalize_legacy_statuses($pdo, $TABLE_LEADS);
 lead_status_auto_mark_no_response($pdo, $TABLE_LEADS, is_super_admin() ? null : (int) (current_account_id() ?: accounts_default_id($pdo)));
@@ -249,6 +261,36 @@ $channelIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $channelOpti
 $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
 if ($filterChannelId > 0 && !in_array($filterChannelId, $channelIds, true)) $filterChannelId = 0;
 
+$campaignOptions = [];
+try {
+  $campaignsTable = ads_campaigns_table();
+  $accountsTableForCampaigns = accounts_table();
+  $campaignWhere = [];
+  $campaignParams = [];
+  if (!is_super_admin()) {
+    $campaignWhere[] = 'ac.account_id = ?';
+    $campaignParams[] = $currentAccountId;
+  } elseif ($filterAccountId > 0) {
+    $campaignWhere[] = 'ac.account_id = ?';
+    $campaignParams[] = $filterAccountId;
+  }
+  $campaignSql = "SELECT ac.id, ac.account_id, ac.campaign_name, ac.external_campaign_id, ac.last_seen_at, a.name AS account_name FROM {$campaignsTable} ac LEFT JOIN {$accountsTableForCampaigns} a ON a.id = ac.account_id";
+  if ($campaignWhere) $campaignSql .= ' WHERE ' . implode(' AND ', $campaignWhere);
+  $campaignSql .= ' ORDER BY COALESCE(ac.last_seen_at, ac.created_at) DESC, ac.campaign_name ASC';
+  if ($campaignParams) {
+    $campaignStmt = $pdo->prepare($campaignSql);
+    $campaignStmt->execute($campaignParams);
+  } else {
+    $campaignStmt = $pdo->query($campaignSql);
+  }
+  $campaignOptions = $campaignStmt ? $campaignStmt->fetchAll() : [];
+} catch (Throwable $e) {
+  $campaignOptions = [];
+}
+$campaignIds = array_map(static fn($row) => (int) ($row['id'] ?? 0), $campaignOptions);
+$filterCampaignRefId = max(0, (int) ($_GET['campaign_ref_id'] ?? 0));
+if ($filterCampaignRefId > 0 && !in_array($filterCampaignRefId, $campaignIds, true)) $filterCampaignRefId = 0;
+
 $salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
 
 $defaultSalesStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
@@ -266,6 +308,10 @@ if (!is_super_admin()) {
 if ($filterChannelId > 0) {
   $whereConditions[] = 'c.channel_id = :channel_id';
   $whereParams[':channel_id'] = $filterChannelId;
+}
+if ($filterCampaignRefId > 0) {
+  $whereConditions[] = 'l.campaign_ref_id = :campaign_ref_id';
+  $whereParams[':campaign_ref_id'] = $filterCampaignRefId;
 }
 if ($q !== '') {
   $digits = preg_replace('/\D+/', '', $q) ?: $q;
@@ -286,6 +332,7 @@ $funnelWhereSql = $funnelWhereConditions ? 'WHERE ' . implode(' AND ', $funnelWh
 $activeFilters = array_filter([
   'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null,
   'channel_id' => $filterChannelId > 0 ? $filterChannelId : null,
+  'campaign_ref_id' => $filterCampaignRefId > 0 ? $filterCampaignRefId : null,
   'q' => $q,
   'sales_status' => $filterSalesStatus,
 ], static fn($v) => $v !== '' && $v !== null);
@@ -321,6 +368,7 @@ $summaryToneByStatus = [
 $summaryBaseParams = [];
 if ($filterAccountId > 0 && $requestSlug === '') $summaryBaseParams['account_id'] = $filterAccountId;
 if ($filterChannelId > 0) $summaryBaseParams['channel_id'] = $filterChannelId;
+if ($filterCampaignRefId > 0) $summaryBaseParams['campaign_ref_id'] = $filterCampaignRefId;
 if ($q !== '') $summaryBaseParams['q'] = $q;
 function dashboard_query_url(array $params): string {
   return account_url('dashboard.php', $params);
@@ -393,11 +441,14 @@ SELECT
   l.utm_campaign,
   l.campaign_id,
   l.campaign_name,
+  l.campaign_ref_id,
   l.utm_content,
   l.adset_id,
   l.adset_name,
+  l.adset_ref_id,
   l.ad_name,
   l.ad_id,
+  l.ad_ref_id,
   l.ad_referral_source,
   l.ad_enrichment_error,
   COALESCE(l.sales_status, :default_sales_status_select) AS sales_status,
@@ -1570,7 +1621,7 @@ function dash_channel_label(array $channel): string {
           </div>
           <div class="topbar-right app-nav-actions">
             <?php nav_render_view_button('dashboard'); ?>
-            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'sales_status' => $filterSalesStatus], ['q' => $q, 'sales_status' => $filterSalesStatus]); ?>
+            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'dashboard.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'campaign_ref_id' => $filterCampaignRefId > 0 ? $filterCampaignRefId : null, 'sales_status' => $filterSalesStatus], ['q' => $q, 'campaign_ref_id' => $filterCampaignRefId > 0 ? $filterCampaignRefId : null, 'sales_status' => $filterSalesStatus]); ?>
             <?php nav_render_user_menu(true); ?>
           </div>
         </div>
@@ -1604,6 +1655,23 @@ function dash_channel_label(array $channel): string {
                 <option value="">Todos</option>
                 <?php foreach ($channelOptions as $channel): ?>
                   <option value="<?= (int) $channel['id'] ?>" <?= $filterChannelId === (int) $channel['id'] ? 'selected' : '' ?>><?= h(dash_channel_label($channel)) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span>Campaña</span>
+              <select name="campaign_ref_id">
+                <option value="">Todas</option>
+                <?php foreach ($campaignOptions as $campaign): ?>
+                  <?php
+                    $campaignId = (int) ($campaign['id'] ?? 0);
+                    $campaignLabel = trim((string) ($campaign['campaign_name'] ?? '')) ?: 'Campaña #' . $campaignId;
+                    if (is_super_admin() && $filterAccountId === 0 && trim((string) ($campaign['account_name'] ?? '')) !== '') {
+                      $campaignLabel .= ' · ' . trim((string) $campaign['account_name']);
+                    }
+                  ?>
+                  <option value="<?= $campaignId ?>" <?= $filterCampaignRefId === $campaignId ? 'selected' : '' ?>><?= h($campaignLabel) ?></option>
                 <?php endforeach; ?>
               </select>
             </label>

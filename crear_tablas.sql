@@ -46,12 +46,15 @@ CREATE TABLE IF NOT EXISTS `leads` (
   `utm_campaign` VARCHAR(120) NULL,
   `campaign_id` VARCHAR(120) NULL,
   `campaign_name` VARCHAR(180) NULL,
+  `campaign_ref_id` INT UNSIGNED NULL,
   `utm_content` VARCHAR(160) NULL,
   `utm_term` VARCHAR(160) NULL,
   `adset_id` VARCHAR(120) NULL,
   `adset_name` VARCHAR(180) NULL,
+  `adset_ref_id` INT UNSIGNED NULL,
   `ad_name` VARCHAR(180) NULL,
   `ad_id` VARCHAR(120) NULL,
+  `ad_ref_id` INT UNSIGNED NULL,
   `ad_referral_source` VARCHAR(80) NULL,
   `ad_referral_type` VARCHAR(80) NULL,
   `ad_referral_payload` TEXT NULL,
@@ -87,15 +90,75 @@ CREATE TABLE IF NOT EXISTS `leads` (
   KEY `idx_source_platform` (`source_platform`),
   KEY `idx_utm_campaign` (`utm_campaign`),
   KEY `idx_campaign_name` (`campaign_name`),
+  KEY `idx_campaign_ref_id` (`campaign_ref_id`),
   KEY `idx_adset_name` (`adset_name`),
+  KEY `idx_adset_ref_id` (`adset_ref_id`),
   KEY `idx_utm_content` (`utm_content`),
   KEY `idx_ad_name` (`ad_name`),
   KEY `idx_ad_id` (`ad_id`),
+  KEY `idx_ad_ref_id` (`ad_ref_id`),
   KEY `idx_sales_status` (`sales_status`),
   KEY `idx_reminder_at` (`reminder_at`),
   KEY `idx_last_message_at` (`last_message_at`),
   KEY `idx_status` (`status`),
   KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ad_campaigns` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
+  `provider` VARCHAR(40) NOT NULL DEFAULT 'meta',
+  `campaign_key` VARCHAR(180) NOT NULL,
+  `external_campaign_id` VARCHAR(120) NULL,
+  `campaign_name` VARCHAR(180) NOT NULL,
+  `first_seen_at` DATETIME NULL,
+  `last_seen_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_campaign` (`account_id`, `provider`, `campaign_key`),
+  KEY `idx_account_id` (`account_id`),
+  KEY `idx_campaign_name` (`campaign_name`),
+  KEY `idx_last_seen_at` (`last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ad_sets` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
+  `campaign_ref_id` INT UNSIGNED NOT NULL DEFAULT 0,
+  `provider` VARCHAR(40) NOT NULL DEFAULT 'meta',
+  `adset_key` VARCHAR(180) NOT NULL,
+  `external_adset_id` VARCHAR(120) NULL,
+  `adset_name` VARCHAR(180) NOT NULL,
+  `first_seen_at` DATETIME NULL,
+  `last_seen_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_adset` (`account_id`, `provider`, `campaign_ref_id`, `adset_key`),
+  KEY `idx_account_id` (`account_id`),
+  KEY `idx_campaign_ref_id` (`campaign_ref_id`),
+  KEY `idx_adset_name` (`adset_name`),
+  KEY `idx_last_seen_at` (`last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ads` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
+  `campaign_ref_id` INT UNSIGNED NOT NULL DEFAULT 0,
+  `adset_ref_id` INT UNSIGNED NOT NULL DEFAULT 0,
+  `provider` VARCHAR(40) NOT NULL DEFAULT 'meta',
+  `ad_key` VARCHAR(180) NOT NULL,
+  `external_ad_id` VARCHAR(120) NULL,
+  `ad_name` VARCHAR(180) NOT NULL,
+  `first_seen_at` DATETIME NULL,
+  `last_seen_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_ad` (`account_id`, `provider`, `ad_key`),
+  KEY `idx_account_id` (`account_id`),
+  KEY `idx_campaign_ref_id` (`campaign_ref_id`),
+  KEY `idx_adset_ref_id` (`adset_ref_id`),
+  KEY `idx_ad_name` (`ad_name`),
+  KEY `idx_last_seen_at` (`last_seen_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `instagram_channels` (
