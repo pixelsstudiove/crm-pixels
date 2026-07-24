@@ -27,21 +27,30 @@ function camp_column_exists(PDO $pdo, string $dbName, string $table, string $col
   return (bool) $stmt->fetchColumn();
 }
 
+function camp_add_column_if_missing(PDO $pdo, string $dbName, string $table, string $column, string $preferredSql, string $fallbackSql): void {
+  if (camp_column_exists($pdo, $dbName, $table, $column)) return;
+  try {
+    $pdo->exec($preferredSql);
+    return;
+  } catch (Throwable $e) {
+    /* Try again without AFTER dependencies for partially migrated installs. */
+  }
+  try { $pdo->exec($fallbackSql); } catch (Throwable $e) { /* no-op */ }
+}
+
 function camp_ensure_lead_attribution_schema(PDO $pdo, string $dbName, string $table): void {
   $columns = [
-    'campaign_id' => "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign",
-    'campaign_name' => "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id",
-    'adset_id' => "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term",
-    'adset_name' => "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id",
-    'ad_name' => "ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL AFTER utm_content",
-    'ad_id' => "ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL AFTER ad_name",
-    'ad_referral_payload' => "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type",
-    'ad_enrichment_error' => "ALTER TABLE {$table} ADD COLUMN ad_enrichment_error VARCHAR(255) NULL AFTER ad_referral_payload",
+    'campaign_id' => ["ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL AFTER utm_campaign", "ALTER TABLE {$table} ADD COLUMN campaign_id VARCHAR(120) NULL"],
+    'campaign_name' => ["ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL AFTER campaign_id", "ALTER TABLE {$table} ADD COLUMN campaign_name VARCHAR(180) NULL"],
+    'adset_id' => ["ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL AFTER utm_term", "ALTER TABLE {$table} ADD COLUMN adset_id VARCHAR(120) NULL"],
+    'adset_name' => ["ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL AFTER adset_id", "ALTER TABLE {$table} ADD COLUMN adset_name VARCHAR(180) NULL"],
+    'ad_name' => ["ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL AFTER utm_content", "ALTER TABLE {$table} ADD COLUMN ad_name VARCHAR(180) NULL"],
+    'ad_id' => ["ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL AFTER ad_name", "ALTER TABLE {$table} ADD COLUMN ad_id VARCHAR(120) NULL"],
+    'ad_referral_payload' => ["ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL AFTER ad_referral_type", "ALTER TABLE {$table} ADD COLUMN ad_referral_payload TEXT NULL"],
+    'ad_enrichment_error' => ["ALTER TABLE {$table} ADD COLUMN ad_enrichment_error VARCHAR(255) NULL AFTER ad_referral_payload", "ALTER TABLE {$table} ADD COLUMN ad_enrichment_error VARCHAR(255) NULL"],
   ];
-  foreach ($columns as $column => $sql) {
-    if (!camp_column_exists($pdo, $dbName, $table, $column)) {
-      try { $pdo->exec($sql); } catch (Throwable $e) { /* no-op */ }
-    }
+  foreach ($columns as $column => $sqls) {
+    camp_add_column_if_missing($pdo, $dbName, $table, $column, $sqls[0], $sqls[1]);
   }
 }
 
@@ -283,6 +292,10 @@ $adNameExpr = camp_lead_expr($leadColumns, 'ad_name');
 $utmContentExpr = camp_lead_expr($leadColumns, 'utm_content');
 $referralPayloadExpr = camp_lead_expr($leadColumns, 'ad_referral_payload');
 $enrichmentErrorExpr = camp_lead_expr($leadColumns, 'ad_enrichment_error');
+$salesStatusExpr = camp_lead_expr($leadColumns, 'sales_status');
+$campaignRefExpr = camp_lead_expr($leadColumns, 'campaign_ref_id');
+$adsetRefExpr = camp_lead_expr($leadColumns, 'adset_ref_id');
+$adRefExpr = camp_lead_expr($leadColumns, 'ad_ref_id');
 
 $scope = camp_scope('COALESCE(c.last_message_at, c.created_at)', $fromUtc, $toUtc, $filterAccountId, $filterChannelId);
 $baseParams = $scope['params'];
@@ -295,7 +308,7 @@ SELECT
   c.channel_id,
   c.created_at,
   c.last_message_at,
-  COALESCE(l.sales_status, :default_status) AS sales_status,
+  COALESCE({$salesStatusExpr}, :default_status) AS sales_status,
   ch.page_name AS channel_label,
   ch.instagram_username AS channel_username,
   ac.external_campaign_id AS ref_campaign_id,
@@ -317,9 +330,9 @@ SELECT
 FROM {$conversationsTable} c
 LEFT JOIN {$leadsTable} l ON l.id = c.lead_id
 LEFT JOIN {$channelsTable} ch ON ch.id = c.channel_id
-LEFT JOIN {$campaignsTable} ac ON ac.id = l.campaign_ref_id
-LEFT JOIN {$adsetsTable} adst ON adst.id = l.adset_ref_id
-LEFT JOIN {$adsTable} ad ON ad.id = l.ad_ref_id
+LEFT JOIN {$campaignsTable} ac ON ac.id = {$campaignRefExpr}
+LEFT JOIN {$adsetsTable} adst ON adst.id = {$adsetRefExpr}
+LEFT JOIN {$adsTable} ad ON ad.id = {$adRefExpr}
 {$scope['sql']}
   AND (
     ac.id IS NOT NULL

@@ -30,6 +30,17 @@ function ads_index_exists(PDO $pdo, string $dbName, string $table, string $index
   return (bool) $stmt->fetchColumn();
 }
 
+function ads_add_column_if_missing(PDO $pdo, string $dbName, string $table, string $column, string $preferredSql, string $fallbackSql): void {
+  if (ads_column_exists($pdo, $dbName, $table, $column)) return;
+  try {
+    $pdo->exec($preferredSql);
+    return;
+  } catch (Throwable $e) {
+    /* Partial installs may not have the column referenced by AFTER. */
+  }
+  try { $pdo->exec($fallbackSql); } catch (Throwable $e) { /* no-op */ }
+}
+
 function ads_clean($value, int $max = 180): ?string {
   $value = trim(str_replace("\0", '', (string) $value));
   if ($value === '') return null;
@@ -122,14 +133,12 @@ SQL);
 
   $leadsTable = safe_identifier((string) ($leadsTable ?: ($TABLE_LEADS ?? app_config('database.leads_table', 'leads'))), 'leads');
   $columns = [
-    'campaign_ref_id' => "ALTER TABLE {$leadsTable} ADD COLUMN campaign_ref_id INT UNSIGNED NULL AFTER campaign_name",
-    'adset_ref_id' => "ALTER TABLE {$leadsTable} ADD COLUMN adset_ref_id INT UNSIGNED NULL AFTER adset_name",
-    'ad_ref_id' => "ALTER TABLE {$leadsTable} ADD COLUMN ad_ref_id INT UNSIGNED NULL AFTER ad_id",
+    'campaign_ref_id' => ["ALTER TABLE {$leadsTable} ADD COLUMN campaign_ref_id INT UNSIGNED NULL AFTER campaign_name", "ALTER TABLE {$leadsTable} ADD COLUMN campaign_ref_id INT UNSIGNED NULL"],
+    'adset_ref_id' => ["ALTER TABLE {$leadsTable} ADD COLUMN adset_ref_id INT UNSIGNED NULL AFTER adset_name", "ALTER TABLE {$leadsTable} ADD COLUMN adset_ref_id INT UNSIGNED NULL"],
+    'ad_ref_id' => ["ALTER TABLE {$leadsTable} ADD COLUMN ad_ref_id INT UNSIGNED NULL AFTER ad_id", "ALTER TABLE {$leadsTable} ADD COLUMN ad_ref_id INT UNSIGNED NULL"],
   ];
-  foreach ($columns as $column => $sql) {
-    if (!ads_column_exists($pdo, $dbName, $leadsTable, $column)) {
-      try { $pdo->exec($sql); } catch (Throwable $e) { /* no-op */ }
-    }
+  foreach ($columns as $column => $sqls) {
+    ads_add_column_if_missing($pdo, $dbName, $leadsTable, $column, $sqls[0], $sqls[1]);
   }
 
   $indexes = [
@@ -233,20 +242,53 @@ SQL);
 
 function ads_backfill_from_leads(PDO $pdo, string $leadsTable, int $limit = 500): int {
   ads_ensure_schema($pdo, $leadsTable);
+  global $DB_NAME;
+  $dbName = (string) ($DB_NAME ?? '');
   $leadsTable = safe_identifier($leadsTable, 'leads');
+  foreach (['id', 'campaign_ref_id', 'adset_ref_id', 'ad_ref_id'] as $requiredColumn) {
+    if (!ads_column_exists($pdo, $dbName, $leadsTable, $requiredColumn)) return 0;
+  }
+  $optionalColumns = [
+    'account_id',
+    'campaign_id',
+    'campaign_name',
+    'utm_campaign',
+    'adset_id',
+    'adset_name',
+    'ad_name',
+    'ad_id',
+    'utm_content',
+    'created_at',
+    'last_message_at',
+  ];
+  $available = [];
+  foreach ($optionalColumns as $column) $available[$column] = ads_column_exists($pdo, $dbName, $leadsTable, $column);
+  $expr = static function (string $column) use ($available): string {
+    return !empty($available[$column]) ? $column : "NULL AS {$column}";
+  };
+  $terms = [];
+  foreach (['campaign_id', 'campaign_name', 'utm_campaign', 'adset_id', 'adset_name', 'ad_name', 'ad_id', 'utm_content'] as $column) {
+    if (!empty($available[$column])) $terms[] = "NULLIF({$column}, '') IS NOT NULL";
+  }
+  if (!$terms) return 0;
+  $whereTermsSql = implode(' OR ', $terms);
   $sql = <<<SQL
-SELECT id, account_id, campaign_id, campaign_name, utm_campaign, adset_id, adset_name, ad_name, ad_id, utm_content, created_at, last_message_at
+SELECT id,
+  {$expr('account_id')},
+  {$expr('campaign_id')},
+  {$expr('campaign_name')},
+  {$expr('utm_campaign')},
+  {$expr('adset_id')},
+  {$expr('adset_name')},
+  {$expr('ad_name')},
+  {$expr('ad_id')},
+  {$expr('utm_content')},
+  {$expr('created_at')},
+  {$expr('last_message_at')}
 FROM {$leadsTable}
 WHERE (campaign_ref_id IS NULL OR adset_ref_id IS NULL OR ad_ref_id IS NULL)
   AND (
-    NULLIF(campaign_id, '') IS NOT NULL
-    OR NULLIF(campaign_name, '') IS NOT NULL
-    OR NULLIF(utm_campaign, '') IS NOT NULL
-    OR NULLIF(adset_id, '') IS NOT NULL
-    OR NULLIF(adset_name, '') IS NOT NULL
-    OR NULLIF(ad_name, '') IS NOT NULL
-    OR NULLIF(ad_id, '') IS NOT NULL
-    OR NULLIF(utm_content, '') IS NOT NULL
+    {$whereTermsSql}
   )
 ORDER BY id DESC
 LIMIT ?
