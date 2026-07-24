@@ -262,7 +262,7 @@ if ($filterAccountId > 0) {
   $channelParams[':account_id'] = $filterAccountId;
 }
 $channelSql = $channelWhere ? 'WHERE ' . implode(' AND ', $channelWhere) : '';
-$channelOptions = camp_fetch_all($pdo, "SELECT id, page_name, instagram_username, provider FROM {$channelsTable} {$channelSql} ORDER BY page_name ASC, instagram_username ASC", $channelParams);
+$channelOptions = camp_fetch_all($pdo, "SELECT id, page_name, instagram_username FROM {$channelsTable} {$channelSql} ORDER BY page_name ASC, instagram_username ASC", $channelParams);
 
 $leadColumns = [];
 try {
