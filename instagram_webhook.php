@@ -777,6 +777,32 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
   }
 }
 
+function ig_recent_outbound_duplicate_for_thread(PDO $pdo, int $accountId, string $provider, string $threadId, ?string $customerId, string $messageText, string $messageAt): bool {
+  $text = trim($messageText);
+  if ($accountId <= 0 || $threadId === '' || $text === '') return false;
+  $conversationsTable = conv_conversations_table();
+  $messagesTable = conv_messages_table();
+  try {
+    $stmt = $pdo->prepare(<<<SQL
+SELECT 1
+FROM {$messagesTable} m
+JOIN {$conversationsTable} c ON c.id = m.conversation_id
+WHERE c.account_id = ?
+  AND c.external_source = ?
+  AND c.external_thread_id = ?
+  AND m.direction = 'outbound'
+  AND m.message_text = ?
+  AND (? IS NULL OR m.sender_external_id IS NULL OR m.sender_external_id = '' OR m.sender_external_id = ?)
+  AND ABS(TIMESTAMPDIFF(SECOND, m.sent_at, ?)) <= 90
+LIMIT 1
+SQL);
+    $stmt->execute([$accountId, $provider, $threadId, $text, $customerId, $customerId, $messageAt]);
+    return (bool) $stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return false;
+  }
+}
+
 function ig_auto_mark_lead_after_official_reply(PDO $pdo, string $leadsTable, int $leadId, int $accountId, ?array $channel, bool $hadOutboundBefore, string $sentAt): void {
   if ($leadId <= 0 || $accountId <= 0 || $hadOutboundBefore) return;
   $defaultStatus = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
@@ -862,6 +888,9 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
 
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $businessId . ':' . $customerId;
+  $looksLikeEchoDuplicate = $direction === 'inbound'
+    && $hasVisibleMessage
+    && ig_recent_outbound_duplicate_for_thread($pdo, $accountId, $provider, $threadId, $customerId, $messageText, $messageAt);
   $ref = ig_referral_data($event);
   $ref = ig_enrich_ad_attribution($channel ?: null, $ref);
   try {
@@ -883,8 +912,9 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $existing = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
   $existing->execute([$accountId, $provider, $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
-  $shouldStoreMessage = $hasVisibleMessage;
-  $shouldUpdateLeadMessage = $direction === 'inbound' && $hasVisibleMessage;
+  $shouldStoreMessage = $hasVisibleMessage && !$looksLikeEchoDuplicate;
+  $shouldUpdateLeadActivity = $hasVisibleMessage && !$looksLikeEchoDuplicate;
+  $shouldUpdateLeadMessage = $direction === 'inbound' && $hasVisibleMessage && !$looksLikeEchoDuplicate;
 
   if ($leadId > 0) {
     $update = $pdo->prepare(<<<SQL
@@ -896,8 +926,8 @@ SET
   END,
   brand_instagram = CASE WHEN ? IS NOT NULL THEN ? ELSE brand_instagram END,
   external_thread_id = ?,
-  last_external_message_id = ?,
-  last_message_at = ?,
+  last_external_message_id = CASE WHEN ? = 1 THEN ? ELSE last_external_message_id END,
+  last_message_at = CASE WHEN ? = 1 THEN ? ELSE last_message_at END,
   last_inbound_message = CASE WHEN ? = 1 THEN ? ELSE last_inbound_message END,
   message = CASE WHEN ? = 1 THEN COALESCE(message, ?) ELSE message END,
   utm_campaign = CASE WHEN ? IS NOT NULL THEN ? ELSE utm_campaign END,
@@ -919,7 +949,9 @@ SET
 WHERE id = ?
 SQL);
     $update->execute([
-      $profileDisplayName, $profileDisplayName, $profileUsername, $profileUsername, $threadId, $messageId, $messageAt,
+      $profileDisplayName, $profileDisplayName, $profileUsername, $profileUsername, $threadId,
+      $shouldUpdateLeadActivity ? 1 : 0, $messageId,
+      $shouldUpdateLeadActivity ? 1 : 0, $messageAt,
       $shouldUpdateLeadMessage ? 1 : 0, $messageText, $shouldUpdateLeadMessage ? 1 : 0, $messageText,
       $ref['campaign'], $ref['campaign'],
       $ref['campaign_id'], $ref['campaign_id'],
@@ -957,9 +989,9 @@ SQL);
     $attributionError = ig_clean($ref['enrichment_error'] ?? null, 255);
     conv_log_webhook_event($pdo, [
       'source' => $provider,
-      'status' => $hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only'),
+      'status' => $looksLikeEchoDuplicate ? 'duplicate' : ($hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only')),
       'account_id' => $accountId,
-      'event_type' => $hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'))),
+      'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : ($hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
       'recipient_id' => $businessId,
       'sender_id' => $customerId,
       'channel_id' => (int) $channel['id'],
@@ -968,7 +1000,7 @@ SQL);
       'lead_id' => $leadId,
       'conversation_id' => $conversationId > 0 ? $conversationId : null,
       'message_preview' => $messageText,
-      'error_message' => $hasReferralOnly ? $attributionError : ($conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.')),
+      'error_message' => $looksLikeEchoDuplicate ? 'Eco saliente duplicado ignorado.' : ($hasReferralOnly ? $attributionError : ($conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead actualizado, pero no se pudo sincronizar el mensaje.'))),
       'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
     ]);
     return $leadId;
@@ -1050,9 +1082,9 @@ SQL);
   $attributionError = ig_clean($ref['enrichment_error'] ?? null, 255);
   conv_log_webhook_event($pdo, [
     'source' => $provider,
-    'status' => $hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only'),
+    'status' => $looksLikeEchoDuplicate ? 'duplicate' : ($hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only')),
     'account_id' => $accountId,
-    'event_type' => $hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'))),
+    'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : ($hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
     'recipient_id' => $businessId,
     'sender_id' => $customerId,
     'channel_id' => (int) $channel['id'],
@@ -1061,7 +1093,7 @@ SQL);
     'lead_id' => $leadId,
     'conversation_id' => $conversationId > 0 ? $conversationId : null,
     'message_preview' => $messageText,
-    'error_message' => $hasReferralOnly ? $attributionError : ($conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.')),
+    'error_message' => $looksLikeEchoDuplicate ? 'Eco saliente duplicado ignorado.' : ($hasReferralOnly ? $attributionError : ($conversationMessageId > 0 ? ($attachmentError ?: $attributionError) : (string) ($sync['error'] ?? 'Lead creado, pero no se pudo sincronizar el mensaje.'))),
     'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
   ]);
   return $leadId;

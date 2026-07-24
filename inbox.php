@@ -444,7 +444,9 @@ function inbox_ad_attribution_rows(array $row): array {
   if ($adset !== '') $rows[] = ['Conjunto', $adset];
   if ($ad !== '') $rows[] = ['Anuncio', $ad];
   if ($source !== '') $rows[] = ['Referencia', $source];
-  if ($campaign === '' && $error !== '') $rows[] = ['Atribución', $error];
+  if ($campaign === '' && $adset === '' && $ad === '' && $source === '' && $error !== '') {
+    $rows[] = ['Atribución', 'No se pudo resolver la campaña con el token actual.'];
+  }
   return $rows;
 }
 
