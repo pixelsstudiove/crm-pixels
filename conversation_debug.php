@@ -7,11 +7,11 @@ require_permission('manage_integrations');
 
 conv_ensure_schema($pdo);
 
-$conversationRouteId = max(0, (int) ($_GET['id'] ?? 0));
+$conversationRouteId = trim((string) ($_GET['id'] ?? ''));
 $requestAccountId = accounts_request_account_id($pdo);
 $conversationId = $requestAccountId > 0
-  ? conv_resolve_public_conversation_id($pdo, $requestAccountId, $conversationRouteId)
-  : $conversationRouteId;
+  ? conv_resolve_conversation_route_id($pdo, $requestAccountId, $conversationRouteId)
+  : 0;
 $conversationsTable = conv_conversations_table();
 $contactsTable = conv_contacts_table();
 $messagesTable = conv_messages_table();
@@ -81,12 +81,12 @@ if ($conversationId > 0) {
         <header class="debug-header">
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
-            <h1 class="title">Diagnóstico de conversación #<?= (int) ($conversationRouteId ?: $conversationId) ?></h1>
+            <h1 class="title">Diagnóstico de conversación #<?= h($conversationRouteId !== '' ? $conversationRouteId : (string) $conversationId) ?></h1>
             <p class="subtitle">Compara eventos recibidos vs mensajes guardados en el historial.</p>
           </div>
           <div class="debug-actions">
             <a class="debug-link" href="<?= h(account_url('webhook_logs.php')) ?>">Eventos</a>
-            <a class="debug-link" href="<?= h(account_url('inbox.php', ['id' => $conversationRouteId ?: conv_display_id($conversation ?: [])])) ?>">Inbox</a>
+            <a class="debug-link" href="<?= h(account_url('inbox.php', ['id' => $conversationRouteId !== '' ? $conversationRouteId : conv_route_id($conversation ?: [])])) ?>">Inbox</a>
           </div>
         </header>
 

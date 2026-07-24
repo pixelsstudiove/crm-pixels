@@ -26,8 +26,8 @@ function send_json(array $payload, int $status = 200): void {
   exit;
 }
 
-function send_redirect(int $conversationId, string $notice, ?int $routeId = null): void {
-  $routeId = $routeId !== null && $routeId > 0 ? $routeId : $conversationId;
+function send_redirect(int $conversationId, string $notice, ?string $routeId = null): void {
+  $routeId = $routeId !== null && $routeId !== '' ? $routeId : (string) $conversationId;
   if (send_wants_json()) send_json(['ok' => false, 'error' => $notice, 'conversation_id' => $routeId], 400);
   header('Location: ' . account_url('inbox.php', ['id' => $routeId, 'notice' => $notice]));
   exit;
@@ -124,13 +124,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   exit;
 }
 
-$conversationRouteId = (int) ($_POST['conversation_id'] ?? 0);
+$conversationRouteId = trim((string) ($_POST['conversation_id'] ?? ''));
 $requestAccountId = accounts_request_account_id($pdo);
 $postAccountId = max(0, (int) ($_POST['account_id'] ?? 0));
 $lookupAccountId = $requestAccountId > 0 ? $requestAccountId : $postAccountId;
 $conversationId = $lookupAccountId > 0
-  ? conv_resolve_public_conversation_id($pdo, $lookupAccountId, $conversationRouteId)
-  : $conversationRouteId;
+  ? conv_resolve_conversation_route_id($pdo, $lookupAccountId, $conversationRouteId)
+  : 0;
 $csrf = (string) ($_POST['csrf'] ?? '');
 if ($conversationId <= 0) send_redirect(0, 'Conversacion invalida.', $conversationRouteId);
 if (!$csrf || !isset($_SESSION['csrf']) || !hash_equals((string) $_SESSION['csrf'], $csrf)) {

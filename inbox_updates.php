@@ -117,8 +117,8 @@ try {
     exit;
   }
   $requestAccountId = $requestAccount ? (int) ($requestAccount['id'] ?? 0) : 0;
-  $selectedRouteId = max(0, (int) ($_GET['id'] ?? 0));
-  $selectedId = $selectedRouteId;
+  $selectedRouteId = trim((string) ($_GET['id'] ?? ''));
+  $selectedId = 0;
   $filterChannelId = max(0, (int) ($_GET['channel_id'] ?? 0));
   $selectedAccountId = max(0, (int) ($_GET['selected_account_id'] ?? 0));
   $filterAccountId = 0;
@@ -134,8 +134,8 @@ try {
     if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
   }
   $publicLookupAccountId = $requestAccountId > 0 ? $requestAccountId : ($selectedAccountId > 0 ? $selectedAccountId : $filterAccountId);
-  if ($selectedRouteId > 0 && $publicLookupAccountId > 0) {
-    $selectedId = conv_resolve_public_conversation_id($pdo, $publicLookupAccountId, $selectedRouteId);
+  if ($selectedRouteId !== '' && $publicLookupAccountId > 0) {
+    $selectedId = conv_resolve_conversation_route_id($pdo, $publicLookupAccountId, $selectedRouteId);
   }
 
   $where = [];
@@ -195,7 +195,7 @@ SQL;
   $conversations = [];
   foreach ($rows as $row) {
     $conversations[] = [
-      'id' => conv_display_id($row),
+      'id' => conv_route_id($row),
       'account_id' => (int) ($row['account_id'] ?? 0),
       'account_slug' => (string) ($row['account_slug'] ?? ''),
       'name' => updates_contact_name($row),
@@ -257,7 +257,7 @@ SQL;
       $selected = $detailStmt->fetch() ?: null;
     }
     if ($selected) {
-      $selectedRouteId = conv_display_id($selected);
+      $selectedRouteId = conv_route_id($selected);
       conv_mark_read($pdo, (int) $selected['id']);
       $msgStmt = $pdo->prepare("SELECT * FROM (SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at DESC, m.id DESC LIMIT 120) recent_messages ORDER BY sent_at ASC, id ASC");
       $msgStmt->execute([(int) $selected['id']]);

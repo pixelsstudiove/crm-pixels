@@ -98,7 +98,7 @@ if (!is_super_admin()) {
 $where = $whereParts ? 'WHERE ' . implode(' AND ', $whereParts) : '';
 $conversationsTable = conv_conversations_table();
 $accountsTable = accounts_table();
-$stmt = $pdo->prepare("SELECT l.*, c.public_id AS conversation_public_id, a.slug AS account_slug FROM {$logsTable} l LEFT JOIN {$conversationsTable} c ON c.id = l.conversation_id LEFT JOIN {$accountsTable} a ON a.id = l.account_id {$where} ORDER BY l.id DESC LIMIT 150");
+$stmt = $pdo->prepare("SELECT l.*, c.public_id AS conversation_public_id, c.public_uid AS conversation_public_uid, a.slug AS account_slug FROM {$logsTable} l LEFT JOIN {$conversationsTable} c ON c.id = l.conversation_id LEFT JOIN {$accountsTable} a ON a.id = l.account_id {$where} ORDER BY l.id DESC LIMIT 150");
 foreach ($params as $key => $value) $stmt->bindValue($key, $value);
 $stmt->execute();
 $logs = $stmt->fetchAll();
@@ -209,10 +209,11 @@ function log_badge_class(string $status): string {
                   <td class="mono" data-label="Conversación">
                     <?php if ($log['conversation_id']): ?>
                       <?php
-                        $logPublicId = (int) ($log['conversation_public_id'] ?? $log['conversation_id']);
+                        $logPublicId = trim((string) ($log['conversation_public_uid'] ?? ''));
+                        if ($logPublicId === '') $logPublicId = (string) ((int) ($log['conversation_public_id'] ?? $log['conversation_id']));
                         $logSlug = trim((string) ($log['account_slug'] ?? accounts_request_slug()));
                       ?>
-                      <a href="<?= h(account_url('conversation_debug.php', ['id' => $logPublicId], $logSlug !== '' ? $logSlug : null)) ?>">#<?= $logPublicId ?></a>
+                      <a href="<?= h(account_url('conversation_debug.php', ['id' => $logPublicId], $logSlug !== '' ? $logSlug : null)) ?>">#<?= h($logPublicId) ?></a>
                     <?php else: ?>
                       —
                     <?php endif; ?>

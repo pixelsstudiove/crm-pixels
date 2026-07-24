@@ -78,12 +78,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors[] = 'CSRF invalido. Recarga la pagina.';
   } else {
     $action = (string) ($_POST['action'] ?? '');
-    $conversationRouteId = (int) ($_POST['conversation_id'] ?? 0);
+    $conversationRouteId = trim((string) ($_POST['conversation_id'] ?? ''));
     $postAccountId = max(0, (int) ($_POST['account_id'] ?? 0));
     $postLookupAccountId = $requestAccountId > 0 ? $requestAccountId : $postAccountId;
     $conversationId = $postLookupAccountId > 0
-      ? conv_resolve_public_conversation_id($pdo, $postLookupAccountId, $conversationRouteId)
-      : $conversationRouteId;
+      ? conv_resolve_conversation_route_id($pdo, $postLookupAccountId, $conversationRouteId)
+      : 0;
     if ($action === 'update_status' && $canManageConversations && $conversationId > 0) {
       $status = (string) ($_POST['status'] ?? '');
       if (array_key_exists($status, $statusOptions)) {
@@ -158,8 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $filterStatus = trim((string) ($_GET['status'] ?? ''));
 if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
 $q = trim((string) ($_GET['q'] ?? ''));
-$selectedRouteId = max(0, (int) ($_GET['id'] ?? 0));
-$selectedId = $selectedRouteId;
+$selectedRouteId = trim((string) ($_GET['id'] ?? ''));
+$selectedId = 0;
 $accountOptions = [];
 $filterAccountId = 0;
 if (is_super_admin()) {
@@ -174,8 +174,8 @@ if (is_super_admin()) {
   if ($filterAccountId > 0 && !in_array($filterAccountId, $accountIds, true)) $filterAccountId = 0;
 }
 $publicLookupAccountId = $requestAccountId > 0 ? $requestAccountId : $filterAccountId;
-if ($selectedRouteId > 0 && $publicLookupAccountId > 0) {
-  $selectedId = conv_resolve_public_conversation_id($pdo, $publicLookupAccountId, $selectedRouteId);
+if ($selectedRouteId !== '' && $publicLookupAccountId > 0) {
+  $selectedId = conv_resolve_conversation_route_id($pdo, $publicLookupAccountId, $selectedRouteId);
 }
 
 $channelOptions = [];
@@ -260,7 +260,7 @@ $conversations = $stmt->fetchAll();
 
 if ($selectedId <= 0 && $conversations) {
   $selectedId = (int) $conversations[0]['id'];
-  $selectedRouteId = conv_display_id($conversations[0]);
+  $selectedRouteId = conv_route_id($conversations[0]);
 }
 
 $selected = null;
@@ -321,7 +321,7 @@ SQL;
 
 $messages = [];
 if ($selected) {
-  $selectedRouteId = conv_display_id($selected);
+  $selectedRouteId = conv_route_id($selected);
   $msgStmt = $pdo->prepare("SELECT m.*, u.username AS sent_by_username FROM {$messagesTable} m LEFT JOIN {$TABLE_USERS} u ON u.id = m.sent_by WHERE m.conversation_id=? ORDER BY m.sent_at ASC, m.id ASC");
   $msgStmt->execute([(int) $selected['id']]);
   $messages = $msgStmt->fetchAll();
@@ -778,13 +778,13 @@ function inbox_visible_message_text($value, array $attachments): string {
                 </div>
               </details>
             </form>
-            <div class="conversation-list" id="conversationList" data-selected-id="<?= (int) $selectedRouteId ?>">
+            <div class="conversation-list" id="conversationList" data-selected-id="<?= h($selectedRouteId) ?>">
               <?php if ($conversations): foreach ($conversations as $conversation): ?>
                 <?php $isActive = $selected && (int) $selected['id'] === (int) $conversation['id']; ?>
                 <?php $conversationSlug = trim((string) ($conversation['account_slug'] ?? $requestSlug)); ?>
                 <?php $avatarUrl = inbox_avatar_url($conversation); ?>
                 <?php $avatarInitials = inbox_avatar_initials($conversation); ?>
-                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" data-conversation-key="<?= (int) ($conversation['account_id'] ?? 0) ?>:<?= (int) conv_display_id($conversation) ?>" href="<?= h(account_url('inbox.php', ['id' => conv_display_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
+                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" data-conversation-key="<?= (int) ($conversation['account_id'] ?? 0) ?>:<?= h(conv_route_id($conversation)) ?>" href="<?= h(account_url('inbox.php', ['id' => conv_route_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
                   <span class="conversation-avatar" data-initials="<?= h($avatarInitials) ?>" aria-hidden="true">
                     <?php if ($avatarUrl !== ''): ?>
                       <img src="<?= h($avatarUrl) ?>" alt="">
@@ -876,7 +876,7 @@ function inbox_visible_message_text($value, array $attachments): string {
 
               <form class="reply-box <?= $canReplyFromCrm ? '' : 'is-disabled' ?>" id="replyForm" method="post" action="<?= h(account_url('send_instagram_message.php')) ?>" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                <input type="hidden" name="conversation_id" value="<?= h($selectedRouteId) ?>">
                 <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                 <div class="composer-main">
                   <div class="composer-input">
@@ -967,7 +967,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="conversationStatusLabel">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                   <input type="hidden" name="action" value="update_status">
-                  <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                  <input type="hidden" name="conversation_id" value="<?= h($selectedRouteId) ?>">
                   <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                   <label class="field">
                     <span class="field-label">Estado conversacional</span>
@@ -983,7 +983,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="salesStatusLabel">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                   <input type="hidden" name="action" value="update_sales_status">
-                  <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                  <input type="hidden" name="conversation_id" value="<?= h($selectedRouteId) ?>">
                   <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
                   <input type="hidden" name="lead_id" value="<?= (int) $selected['lead_id'] ?>">
                   <label class="field">
@@ -1027,7 +1027,7 @@ function inbox_visible_message_text($value, array $attachments): string {
   <script src="js/dashboard.js?v=<?= (int) @filemtime(__DIR__ . '/js/dashboard.js') ?>" defer></script>
   <script>
     const inboxState = {
-      conversationId: <?= (int) $selectedRouteId ?>,
+      conversationId: <?= json_encode((string) $selectedRouteId, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       accountId: <?= (int) $filterAccountId ?>,
       selectedAccountId: <?= (int) $selectedAccountId ?>,
       channelId: <?= (int) $filterChannelId ?>,
@@ -1310,7 +1310,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     }
 
     function conversationKey(item) {
-      return `${Number(item.account_id || 0)}:${Number(item.id || 0)}`;
+      return `${Number(item.account_id || 0)}:${String(item.id || '')}`;
     }
 
     function setTextIfChanged(node, value) {
@@ -1408,7 +1408,7 @@ function inbox_visible_message_text($value, array $attachments): string {
 
     function updateConversationElement(element, item) {
       const itemAccountId = Number(item.account_id || 0);
-      const active = Number(item.id) === Number(inboxState.conversationId)
+      const active = String(item.id || '') === String(inboxState.conversationId || '')
         && (!inboxState.selectedAccountId || !itemAccountId || itemAccountId === Number(inboxState.selectedAccountId));
       const unread = active ? 0 : Number(item.unread_count || 0);
       const channelIcon = item.channel_icon || 'images/icon_instagram.png';
@@ -1626,7 +1626,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         });
         const data = await response.json();
         if (!data.ok) throw new Error(data.error || 'No se pudieron cargar actualizaciones.');
-        if (Object.prototype.hasOwnProperty.call(data, 'conversation_id')) inboxState.conversationId = Number(data.conversation_id || 0);
+        if (Object.prototype.hasOwnProperty.call(data, 'conversation_id')) inboxState.conversationId = String(data.conversation_id || '');
         if (Object.prototype.hasOwnProperty.call(data, 'selected_account_id')) inboxState.selectedAccountId = Number(data.selected_account_id || 0);
         renderConversations(data.conversations || []);
         updateReplyWindow(data.reply_window || null);

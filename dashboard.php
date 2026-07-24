@@ -315,7 +315,7 @@ if ($filterCampaignRefId > 0) {
 }
 if ($q !== '') {
   $digits = preg_replace('/\D+/', '', $q) ?: $q;
-  $whereConditions[] = "(c.public_id LIKE :q OR l.id LIKE :q OR ct.display_name LIKE :q OR ct.username LIKE :q OR ct.external_contact_id LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q OR l.fullname LIKE :q OR l.phone LIKE :q OR REPLACE(COALESCE(l.phone,''),'-','') LIKE :qd OR l.email LIKE :q OR l.brand_instagram LIKE :q OR l.business_type LIKE :q OR l.business_type_other LIKE :q OR l.services_needed LIKE :q OR l.main_objective LIKE :q OR l.message LIKE :q OR l.last_inbound_message LIKE :q OR l.source_platform LIKE :q OR l.utm_source LIKE :q OR l.utm_medium LIKE :q OR l.utm_campaign LIKE :q OR l.campaign_name LIKE :q OR l.campaign_id LIKE :q OR l.adset_name LIKE :q OR l.adset_id LIKE :q OR l.utm_content LIKE :q OR l.utm_term LIKE :q OR l.ad_name LIKE :q OR l.ad_id LIKE :q OR l.ad_referral_source LIKE :q OR l.external_contact_id LIKE :q OR l.sales_status LIKE :q OR l.notes LIKE :q OR l.reminder_note LIKE :q)";
+  $whereConditions[] = "(c.public_id LIKE :q OR c.public_uid LIKE :q OR l.id LIKE :q OR ct.display_name LIKE :q OR ct.username LIKE :q OR ct.external_contact_id LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q OR l.fullname LIKE :q OR l.phone LIKE :q OR REPLACE(COALESCE(l.phone,''),'-','') LIKE :qd OR l.email LIKE :q OR l.brand_instagram LIKE :q OR l.business_type LIKE :q OR l.business_type_other LIKE :q OR l.services_needed LIKE :q OR l.main_objective LIKE :q OR l.message LIKE :q OR l.last_inbound_message LIKE :q OR l.source_platform LIKE :q OR l.utm_source LIKE :q OR l.utm_medium LIKE :q OR l.utm_campaign LIKE :q OR l.campaign_name LIKE :q OR l.campaign_id LIKE :q OR l.adset_name LIKE :q OR l.adset_id LIKE :q OR l.utm_content LIKE :q OR l.utm_term LIKE :q OR l.ad_name LIKE :q OR l.ad_id LIKE :q OR l.ad_referral_source LIKE :q OR l.external_contact_id LIKE :q OR l.sales_status LIKE :q OR l.notes LIKE :q OR l.reminder_note LIKE :q)";
   $whereParams[':q'] = '%' . $q . '%';
   $whereParams[':qd'] = '%' . $digits . '%';
 }
@@ -408,6 +408,7 @@ SELECT
   c.account_id AS conversation_account_id,
   c.id AS conversation_id,
   c.public_id AS conversation_public_id,
+  c.public_uid AS conversation_public_uid,
   c.status AS conversation_status,
   c.unread_count,
   c.last_message_preview AS conversation_preview,
@@ -1709,7 +1710,8 @@ function dash_channel_label(array $channel): string {
                   <?php if ($cards): foreach ($cards as $lead): ?>
                     <?php
                       $conversationId = (int) ($lead['conversation_id'] ?? 0);
-                      $conversationPublicId = (int) ($lead['conversation_public_id'] ?? $conversationId);
+                      $conversationRouteId = trim((string) ($lead['conversation_public_uid'] ?? ''));
+                      if ($conversationRouteId === '') $conversationRouteId = (string) ((int) ($lead['conversation_public_id'] ?? $conversationId));
                       $conversationSlug = trim((string) ($lead['account_slug'] ?? $requestSlug));
                       $leadId = (int) ($lead['id'] ?? 0);
                       $phoneValue = dash_value($lead['phone'] ?? null);
@@ -1723,7 +1725,7 @@ function dash_channel_label(array $channel): string {
                       $igHandle = instagram_handle($lead['brand_instagram'] ?? '');
                       $replyWindow = meta_reply_window_info($lead['last_inbound_at'] ?? '');
                     ?>
-                    <article class="funnel-card" data-id="<?= $leadId ?>" data-conversation-id="<?= $conversationPublicId ?>">
+                    <article class="funnel-card" data-id="<?= $leadId ?>" data-conversation-id="<?= h($conversationRouteId) ?>">
                       <div class="funnel-card-title">
                         <strong><?= h(short_value($lead['fullname'] ?? null, 34)) ?></strong>
                       </div>
@@ -1762,7 +1764,7 @@ function dash_channel_label(array $channel): string {
                         <span class="sales-status-badge" data-status="<?= h($salesStatus) ?>"><?= h($salesStatusLabel) ?></span>
                       <?php endif; ?>
                       <div class="funnel-actions">
-                        <a class="funnel-action-link" href="<?= h(account_url('inbox.php', ['id' => $conversationPublicId, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null], $conversationSlug !== '' ? $conversationSlug : null)) ?>">Abrir conversación</a>
+                        <a class="funnel-action-link" href="<?= h(account_url('inbox.php', ['id' => $conversationRouteId, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null], $conversationSlug !== '' ? $conversationSlug : null)) ?>">Abrir conversación</a>
                         <?php if ($leadId > 0): ?><button class="funnel-action-link" type="button" data-history-open data-lead-id="<?= $leadId ?>">Ver historial</button><?php endif; ?>
                       </div>
                     </article>

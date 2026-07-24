@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS {$conversationsTable} (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   account_id INT UNSIGNED NOT NULL DEFAULT {$defaultAccountId},
   public_id INT UNSIGNED NULL,
+  public_uid VARCHAR(32) NULL,
   channel_id INT UNSIGNED NULL,
   contact_id INT UNSIGNED NOT NULL,
   lead_id INT UNSIGNED NULL,
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS {$conversationsTable} (
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uniq_external_thread (account_id, external_source, external_thread_id),
   UNIQUE KEY uniq_account_public_id (account_id, public_id),
+  UNIQUE KEY uniq_account_public_uid (account_id, public_uid),
   KEY idx_account_id (account_id),
   KEY idx_channel_id (channel_id),
   KEY idx_contact_id (contact_id),
@@ -170,8 +172,11 @@ SQL);
 
   try { $pdo->exec("ALTER TABLE {$messagesTable} ADD COLUMN external_message_hash CHAR(64) NULL AFTER external_message_id"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$conversationsTable} ADD COLUMN public_id INT UNSIGNED NULL AFTER account_id"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$conversationsTable} ADD COLUMN public_uid VARCHAR(32) NULL AFTER public_id"); } catch (Throwable $e) { /* no-op */ }
   conv_backfill_public_ids($pdo);
+  conv_backfill_public_uids($pdo);
   try { $pdo->exec("ALTER TABLE {$conversationsTable} ADD UNIQUE KEY uniq_account_public_id (account_id, public_id)"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$conversationsTable} ADD UNIQUE KEY uniq_account_public_uid (account_id, public_uid)"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("UPDATE {$messagesTable} SET external_message_hash=SHA2(external_message_id, 256) WHERE external_message_hash IS NULL AND external_message_id IS NOT NULL AND external_message_id <> ''"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$messagesTable} DROP INDEX uniq_conversation_message"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$messagesTable} MODIFY external_message_id TEXT NULL"); } catch (Throwable $e) { /* no-op */ }
@@ -217,6 +222,46 @@ function conv_next_public_id(PDO $pdo, int $accountId): int {
   }
 }
 
+function conv_public_uid_exists(PDO $pdo, int $accountId, string $publicUid): bool {
+  if ($accountId <= 0 || $publicUid === '') return true;
+  $table = conv_conversations_table();
+  try {
+    $stmt = $pdo->prepare("SELECT 1 FROM {$table} WHERE account_id=? AND public_uid=? LIMIT 1");
+    $stmt->execute([$accountId, $publicUid]);
+    return (bool) $stmt->fetchColumn();
+  } catch (Throwable $e) {
+    return true;
+  }
+}
+
+function conv_new_public_uid(PDO $pdo, int $accountId): string {
+  $accountId = max(1, $accountId);
+  for ($attempt = 0; $attempt < 20; $attempt++) {
+    try {
+      $uid = 'c_' . bin2hex(random_bytes(8));
+    } catch (Throwable $e) {
+      $uid = 'c_' . substr(hash('sha256', uniqid('', true) . mt_rand()), 0, 16);
+    }
+    if (!conv_public_uid_exists($pdo, $accountId, $uid)) return $uid;
+  }
+  return 'c_' . substr(hash('sha256', $accountId . ':' . microtime(true) . ':' . mt_rand()), 0, 16);
+}
+
+function conv_backfill_public_uids(PDO $pdo): void {
+  $table = conv_conversations_table();
+  try {
+    $rows = $pdo->query("SELECT id, account_id FROM {$table} WHERE public_uid IS NULL OR public_uid='' ORDER BY account_id ASC, id ASC")->fetchAll();
+  } catch (Throwable $e) {
+    return;
+  }
+  if (!$rows) return;
+  $upd = $pdo->prepare("UPDATE {$table} SET public_uid=? WHERE id=? AND (public_uid IS NULL OR public_uid='')");
+  foreach ($rows as $row) {
+    $accountId = (int) ($row['account_id'] ?? 0);
+    try { $upd->execute([conv_new_public_uid($pdo, $accountId), (int) $row['id']]); } catch (Throwable $e) { /* no-op */ }
+  }
+}
+
 function conv_resolve_public_conversation_id(PDO $pdo, int $accountId, int $publicId): int {
   if ($accountId <= 0 || $publicId <= 0) return 0;
   $table = conv_conversations_table();
@@ -229,9 +274,33 @@ function conv_resolve_public_conversation_id(PDO $pdo, int $accountId, int $publ
   }
 }
 
+function conv_resolve_conversation_route_id(PDO $pdo, int $accountId, string $routeId): int {
+  $routeId = trim($routeId);
+  if ($accountId <= 0 || $routeId === '') return 0;
+  $table = conv_conversations_table();
+  if (preg_match('/^[a-zA-Z0-9_-]{8,32}$/', $routeId)) {
+    try {
+      $stmt = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND public_uid=? LIMIT 1");
+      $stmt->execute([$accountId, $routeId]);
+      $conversationId = (int) ($stmt->fetchColumn() ?: 0);
+      if ($conversationId > 0) return $conversationId;
+    } catch (Throwable $e) {
+      return 0;
+    }
+  }
+  if (ctype_digit($routeId)) return conv_resolve_public_conversation_id($pdo, $accountId, (int) $routeId);
+  return 0;
+}
+
 function conv_display_id(array $conversation): int {
   $publicId = (int) ($conversation['public_id'] ?? $conversation['conversation_public_id'] ?? 0);
   return $publicId > 0 ? $publicId : (int) ($conversation['id'] ?? $conversation['conversation_id'] ?? 0);
+}
+
+function conv_route_id(array $conversation): string {
+  $publicUid = trim((string) ($conversation['public_uid'] ?? $conversation['conversation_public_uid'] ?? ''));
+  if ($publicUid !== '') return $publicUid;
+  return (string) conv_display_id($conversation);
 }
 
 function conv_clean($value, int $max = 180): ?string {
@@ -314,11 +383,12 @@ SQL);
   }
 
   $publicId = conv_next_public_id($pdo, $accountId);
+  $publicUid = conv_new_public_uid($pdo, $accountId);
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  account_id, public_id, channel_id, contact_id, lead_id, external_source, external_thread_id, status,
+  account_id, public_id, public_uid, channel_id, contact_id, lead_id, external_source, external_thread_id, status,
   last_message_preview, last_message_at, unread_count, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
 ON DUPLICATE KEY UPDATE
   channel_id = COALESCE(VALUES(channel_id), channel_id),
   contact_id = VALUES(contact_id),
@@ -328,7 +398,7 @@ ON DUPLICATE KEY UPDATE
   unread_count = unread_count + VALUES(unread_count),
   updated_at = NOW()
 SQL);
-  $stmt->execute([$accountId, $publicId, $channelId, $contactId, $leadId, $externalSource, $externalThreadId, $status, $preview, $lastMessageAt, $unreadIncrement]);
+  $stmt->execute([$accountId, $publicId, $publicUid, $channelId, $contactId, $leadId, $externalSource, $externalThreadId, $status, $preview, $lastMessageAt, $unreadIncrement]);
 
   $find = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_thread_id=? LIMIT 1");
   $find->execute([$accountId, $externalSource, $externalThreadId]);
