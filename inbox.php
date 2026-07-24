@@ -362,6 +362,16 @@ function inbox_source_contact_html(array $conversation): string {
     : '—';
 }
 
+function inbox_source_profile_url(array $conversation): string {
+  $profileUrl = trim((string) ($conversation['profile_url'] ?? ''));
+  if ($profileUrl !== '') return $profileUrl;
+  if (conv_conversation_provider($conversation) === 'instagram') {
+    $username = trim((string) ($conversation['username'] ?? ''));
+    if ($username !== '') return 'https://instagram.com/' . ltrim($username, '@');
+  }
+  return '';
+}
+
 function inbox_channel_icon_source(array $conversation): string {
   $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
   if ($source === 'messenger') return 'messenger';
@@ -566,6 +576,9 @@ function inbox_visible_message_text($value, array $attachments): string {
     .chat-header { flex:0 0 auto; min-height:74px; padding:15px 16px; border-bottom:1px solid var(--inbox-line); display:flex; justify-content:space-between; gap:12px; align-items:center; background:#fff; }
     .chat-header h2 { margin:0; font-size:1.08rem; color:var(--inbox-ink); letter-spacing:-.025em; }
     .chat-header p { margin:4px 0 0; color:var(--inbox-muted); font-size:.9rem; font-weight:650; }
+    .chat-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    .channel-chip { min-height:42px; display:inline-flex; align-items:center; gap:8px; padding:0 13px; border:1px solid var(--inbox-line); border-radius:999px; background:#f8fafc; color:var(--inbox-ink); font-size:.82rem; font-weight:900; white-space:nowrap; }
+    .channel-chip img { width:18px; height:18px; border-radius:50%; object-fit:contain; }
     .message-list { flex:1 1 auto; min-height:0; overflow:auto; padding:20px; background:#f7f9fc; display:flex; flex-direction:column; gap:10px; scrollbar-color:#c4cfdd transparent; }
     .reply-window-alert { margin:12px 16px 0; padding:12px 14px; border-radius:14px; border:1px solid #bfe2c5; background:#eef9f0; color:#184f2b; font-size:.9rem; line-height:1.35; font-weight:750; }
     .reply-window-alert[hidden] { display:none; }
@@ -650,6 +663,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     .info-row { display:grid; gap:4px; padding:10px 0; border-bottom:1px solid #eef2f7; color:var(--inbox-muted); font-size:.9rem; }
     .info-row span, .field-label { color:var(--inbox-muted); font-size:.72rem; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
     .info-row strong { color:var(--inbox-ink); font-weight:850; overflow-wrap:anywhere; }
+    .contact-row { display:grid; grid-template-columns:42px minmax(0, 1fr); align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #eef2f7; }
+    .profile-link-button { width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--inbox-line); border-radius:50%; background:#fff; box-shadow:0 8px 18px rgba(15,23,42,.08); transition:transform .14s ease, border-color .18s ease, box-shadow .18s ease; }
+    .profile-link-button:hover { transform:translateY(-1px); border-color:#c7d3e2; box-shadow:0 12px 26px rgba(15,23,42,.12); }
+    .profile-link-button img { width:24px; height:24px; object-fit:contain; }
+    .profile-link-button.is-disabled { pointer-events:none; opacity:.45; }
+    .contact-copy { display:grid; gap:2px; min-width:0; }
+    .contact-copy span { color:var(--inbox-muted); font-size:.72rem; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
+    .contact-copy strong { color:var(--inbox-ink); font-weight:900; overflow-wrap:anywhere; }
     .status-form { display:grid; gap:8px; }
     .status-save-hint { color:var(--inbox-muted); font-size:.78rem; font-weight:750; }
     .side-notes-field { display:grid; gap:7px; }
@@ -705,6 +726,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     @media (max-width: 560px) {
       .inbox-card > .panel { padding:12px; }
       .chat-header { align-items:flex-start; flex-direction:column; }
+      .chat-header-actions { width:100%; justify-content:flex-start; }
       .message-list { max-height:52vh; }
       .composer-tools { font-size:.78rem; }
       .menu-panel { left:0; right:auto; width:min(92vw, 300px); }
@@ -797,9 +819,15 @@ function inbox_visible_message_text($value, array $attachments): string {
               <header class="chat-header">
                 <div>
                   <h2><?= h(inbox_contact_name($selected)) ?></h2>
-                  <p><?= h(inbox_source_label($selected)) ?> · <?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Canal Meta')) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
+                  <p><?= h(inbox_source_label($selected)) ?> · <span id="conversationStatusLabel"><?= h($statusOptions[(string) ($selected['status'] ?? '')] ?? 'Abierta') ?></span></p>
                 </div>
-                <a class="inbox-link" href="<?= h(account_url('dashboard.php', ['q' => $funnelSearch, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null], $requestSlug !== '' ? $requestSlug : null)) ?>">Ver en embudo</a>
+                <div class="chat-header-actions">
+                  <span class="channel-chip">
+                    <img src="<?= h(inbox_channel_icon_path($selected)) ?>" alt="" aria-hidden="true">
+                    <?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Canal Meta')) ?>
+                  </span>
+                  <a class="inbox-link" href="<?= h(account_url('dashboard.php', ['q' => $funnelSearch, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null], $requestSlug !== '' ? $requestSlug : null)) ?>">Ver en embudo</a>
+                </div>
               </header>
               <?php $showChatWindowAlert = in_array((string) ($replyWindow['status'] ?? ''), ['expired', 'unknown'], true); ?>
               <?php if ($replyWindow): ?>
@@ -915,10 +943,16 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <span><?= h((string) ($replyWindow['detail'] ?? '')) ?></span>
                   </div>
                 <?php endif; ?>
-                <div class="info-row"><span>Contacto</span><strong><?= h(inbox_contact_name($selected)) ?></strong></div>
-                <div class="info-row"><span><?= h(inbox_source_label($selected)) ?></span><strong><?= inbox_source_contact_html($selected) ?></strong></div>
-                <div class="info-row"><span>Canal</span><strong><?= h((string) ($selected['channel_username'] ?: $selected['page_name'] ?: 'Canal Meta')) ?></strong></div>
-                <div class="info-row"><span>Ultimo mensaje</span><strong><?= h(inbox_time($selected['last_message_at'] ?? '')) ?></strong></div>
+                <?php $profileUrl = inbox_source_profile_url($selected); ?>
+                <div class="contact-row">
+                  <a class="profile-link-button <?= $profileUrl !== '' ? '' : 'is-disabled' ?>" href="<?= h($profileUrl !== '' ? $profileUrl : '#') ?>" target="_blank" rel="noopener" aria-label="Abrir perfil de <?= h(inbox_source_label($selected)) ?>">
+                    <img src="<?= h(inbox_channel_icon_path($selected)) ?>" alt="" aria-hidden="true">
+                  </a>
+                  <div class="contact-copy">
+                    <span>Contacto</span>
+                    <strong><?= h(inbox_contact_name($selected)) ?></strong>
+                  </div>
+                </div>
                 <?php foreach (inbox_ad_attribution_rows($selected) as [$adLabel, $adValue]): ?>
                   <div class="info-row"><span><?= h($adLabel) ?></span><strong><?= h(inbox_short($adValue, 72)) ?></strong></div>
                 <?php endforeach; ?>
@@ -928,6 +962,24 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <span>Anotaciones</span>
                   <textarea class="side-notes-input" data-lead-notes data-lead-id="<?= (int) $selected['lead_id'] ?>" maxlength="2000" rows="4" placeholder="Agregar anotación..." <?= $canEditLeads ? '' : 'disabled' ?>><?= h((string) ($selected['lead_notes'] ?? '')) ?></textarea>
                 </label>
+                <?php endif; ?>
+
+                <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="conversationStatusLabel">
+                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+                  <input type="hidden" name="action" value="update_status">
+                  <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
+                  <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
+                  <label class="field">
+                    <span class="field-label">Estado conversacional</span>
+                    <select name="status" <?= $canManageConversations ? '' : 'disabled' ?>>
+                      <?php foreach ($statusOptions as $value => $label): ?>
+                        <option value="<?= h($value) ?>" <?= (string) ($selected['status'] ?? '') === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </label>
+                </form>
+
+                <?php if (!empty($selected['lead_id'])): ?>
                 <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="salesStatusLabel">
                   <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
                   <input type="hidden" name="action" value="update_sales_status">
@@ -945,21 +997,6 @@ function inbox_visible_message_text($value, array $attachments): string {
                 </form>
                 <button class="inbox-link" type="button" data-history-open data-lead-id="<?= (int) $selected['lead_id'] ?>">Ver historial</button>
                 <?php endif; ?>
-
-                <form class="status-form" method="post" action="<?= h(account_url('inbox.php', ['id' => $selectedRouteId, 'account_id' => $filterAccountId > 0 && $requestSlug === '' ? $filterAccountId : null])) ?>" data-auto-status-form data-status-target="conversationStatusLabel">
-                  <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
-                  <input type="hidden" name="action" value="update_status">
-                  <input type="hidden" name="conversation_id" value="<?= (int) $selectedRouteId ?>">
-                  <?php if ($requestSlug === '' && ($filterAccountId > 0 || $selectedAccountId > 0)): ?><input type="hidden" name="account_id" value="<?= (int) ($filterAccountId > 0 ? $filterAccountId : $selectedAccountId) ?>"><?php endif; ?>
-                  <label class="field">
-                    <span class="field-label">Estado conversacional</span>
-                    <select name="status" <?= $canManageConversations ? '' : 'disabled' ?>>
-                      <?php foreach ($statusOptions as $value => $label): ?>
-                        <option value="<?= h($value) ?>" <?= (string) ($selected['status'] ?? '') === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
-                      <?php endforeach; ?>
-                    </select>
-                  </label>
-                </form>
               <?php else: ?>
                 <h2>Ficha conversacional</h2>
                 <p class="subtitle">Cuando selecciones una conversacion veras aqui el contacto, canal, estado y lead asociado.</p>
