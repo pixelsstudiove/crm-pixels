@@ -180,7 +180,18 @@ function log_status_label(string $status): string {
     .repair-form { margin:0!important; display:flex; justify-content:flex-end; }
     .repair-form .logs-btn { border-color:var(--event-dark)!important; background:var(--event-dark)!important; color:#fff!important; }
     .logs-table-wrap { max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--event-line)!important; border-radius:24px!important; background:#fff!important; box-shadow:0 18px 42px rgba(15,23,42,.06)!important; }
-    .logs-table { width:100%; border-collapse:separate!important; border-spacing:0; font-size:.86rem; min-width:1180px; }
+    .logs-table { width:100%; border-collapse:separate!important; border-spacing:0; table-layout:fixed; font-size:.86rem; min-width:1880px; }
+    .logs-table .col-id { width:76px; }
+    .logs-table .col-status { width:150px; }
+    .logs-table .col-event { width:255px; }
+    .logs-table .col-channel { width:160px; }
+    .logs-table .col-recipient,
+    .logs-table .col-sender { width:205px; }
+    .logs-table .col-message { width:460px; }
+    .logs-table .col-lead { width:82px; }
+    .logs-table .col-conversation { width:150px; }
+    .logs-table .col-error { width:245px; }
+    .logs-table .col-date { width:150px; }
     .logs-table th { position:sticky; top:0; z-index:1; background:var(--event-dark)!important; color:#fff!important; text-align:left; padding:14px 13px!important; white-space:nowrap; font-size:.7rem; letter-spacing:.09em; text-transform:uppercase; }
     .logs-table td { padding:13px!important; border-bottom:1px solid #e6edf5!important; vertical-align:top; color:#24324a!important; background:#fff!important; }
     .logs-table tr { position:relative; }
@@ -194,7 +205,8 @@ function log_status_label(string $status): string {
     .log-badge.warn { background:#fff8df!important; color:#946200!important; border:1px solid #efda85; }
     .log-badge.muted { background:#f1f5f9!important; color:#64748b!important; border:1px solid #cbd5e1; }
     .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.78rem; line-height:1.45; }
-    .preview { max-width:330px; white-space:normal; overflow-wrap:anywhere; line-height:1.42; }
+    .preview { white-space:normal; overflow-wrap:break-word; word-break:normal; line-height:1.42; }
+    .preview .mono { display:block; margin-top:8px; overflow-wrap:anywhere; word-break:break-all; color:var(--event-muted); }
     .error-cell:not(:empty) { color:#991b1b!important; font-weight:850; }
     .event-empty { padding:28px!important; color:var(--event-muted)!important; text-align:center; font-weight:850; }
     @media (max-width: 1180px) { .logs-header { grid-template-columns:1fr; } .event-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .event-toolbar { grid-template-columns:1fr; } .repair-form { justify-content:flex-start; } }
@@ -255,6 +267,19 @@ function log_status_label(string $status): string {
 
               <div class="logs-table-wrap">
                 <table class="logs-table">
+                  <colgroup>
+                    <col class="col-id">
+                    <col class="col-status">
+                    <col class="col-event">
+                    <col class="col-channel">
+                    <col class="col-recipient">
+                    <col class="col-sender">
+                    <col class="col-message">
+                    <col class="col-lead">
+                    <col class="col-conversation">
+                    <col class="col-error">
+                    <col class="col-date">
+                  </colgroup>
                   <thead>
                     <tr>
                       <th>ID</th>
