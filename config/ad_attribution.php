@@ -164,11 +164,126 @@ function ads_select_id(PDO $pdo, string $table, string $keyColumn, int $accountI
   return (int) ($stmt->fetchColumn() ?: 0);
 }
 
+function ads_ref_has_resolved_campaign(array $ref): bool {
+  $campaignId = ads_clean($ref['campaign_id'] ?? null, 120);
+  $campaignName = ads_clean($ref['campaign_name'] ?? $ref['campaign'] ?? null, 180);
+  return $campaignId !== null || ($campaignName !== null && !ads_is_generic_meta_source($campaignName));
+}
+
+function ads_unique_known_row(array $rows): ?array {
+  if (!$rows) return null;
+  $campaignIds = [];
+  $adsetIds = [];
+  foreach ($rows as $row) {
+    $campaignRefId = (int) ($row['campaign_ref_id'] ?? 0);
+    if ($campaignRefId > 0) $campaignIds[$campaignRefId] = true;
+    $adsetRefId = (int) ($row['adset_ref_id'] ?? 0);
+    if ($adsetRefId > 0) $adsetIds[$adsetRefId] = true;
+  }
+  if (count($campaignIds) !== 1) return null;
+  if (count($adsetIds) > 1) return null;
+  return $rows[0];
+}
+
+function ads_apply_known_row(array $ref, array $row, string $source): array {
+  if (ads_clean($ref['campaign_id'] ?? null, 120) === null && ads_clean($row['external_campaign_id'] ?? null, 120) !== null) {
+    $ref['campaign_id'] = ads_clean($row['external_campaign_id'], 120);
+  }
+  if ((ads_clean($ref['campaign_name'] ?? null, 180) === null || ads_is_generic_meta_source($ref['campaign_name'] ?? null)) && ads_clean($row['campaign_name'] ?? null, 180) !== null) {
+    $ref['campaign_name'] = ads_clean($row['campaign_name'], 180);
+  }
+  if ((ads_clean($ref['campaign'] ?? null, 120) === null || ads_is_generic_meta_source($ref['campaign'] ?? null)) && ads_clean($row['campaign_name'] ?? null, 120) !== null) {
+    $ref['campaign'] = ads_clean($row['campaign_name'], 120);
+  }
+  if (ads_clean($ref['adset_id'] ?? null, 120) === null && ads_clean($row['external_adset_id'] ?? null, 120) !== null) {
+    $ref['adset_id'] = ads_clean($row['external_adset_id'], 120);
+  }
+  if (ads_clean($ref['adset_name'] ?? null, 180) === null && ads_clean($row['adset_name'] ?? null, 180) !== null) {
+    $ref['adset_name'] = ads_clean($row['adset_name'], 180);
+  }
+  if (ads_clean($ref['ad_id'] ?? null, 120) === null && ads_clean($row['external_ad_id'] ?? null, 120) !== null) {
+    $ref['ad_id'] = ads_clean($row['external_ad_id'], 120);
+  }
+  if (ads_clean($ref['ad_name'] ?? null, 180) === null && ads_clean($row['ad_name'] ?? null, 180) !== null) {
+    $ref['ad_name'] = ads_clean($row['ad_name'], 180);
+  }
+  if (ads_clean($ref['enrichment_error'] ?? null, 255) !== null) {
+    $ref['enrichment_error'] = null;
+  }
+  $ref['attribution_inferred_from'] = $source;
+  return $ref;
+}
+
+function ads_infer_from_known_attribution(PDO $pdo, int $accountId, array $ref, string $provider = 'meta'): array {
+  if (ads_ref_has_resolved_campaign($ref)) return $ref;
+  $accountId = $accountId > 0 ? $accountId : accounts_default_id($pdo);
+  $provider = ads_clean($provider, 40) ?: 'meta';
+  $campaignsTable = ads_campaigns_table();
+  $adsetsTable = ads_adsets_table();
+  $adsTable = ads_ads_table();
+
+  $adId = ads_clean($ref['ad_id'] ?? null, 120);
+  if ($adId !== null) {
+    $stmt = $pdo->prepare(<<<SQL
+SELECT ad.external_ad_id, ad.ad_name, ad.campaign_ref_id, ad.adset_ref_id,
+  ac.external_campaign_id, ac.campaign_name,
+  aset.external_adset_id, aset.adset_name
+FROM {$adsTable} ad
+LEFT JOIN {$campaignsTable} ac ON ac.id = ad.campaign_ref_id
+LEFT JOIN {$adsetsTable} aset ON aset.id = ad.adset_ref_id
+WHERE ad.account_id=? AND ad.provider=? AND ad.external_ad_id=? AND ad.campaign_ref_id > 0
+ORDER BY COALESCE(ad.last_seen_at, ad.updated_at, ad.created_at) DESC
+LIMIT 5
+SQL);
+    $stmt->execute([$accountId, $provider, $adId]);
+    $row = ads_unique_known_row($stmt->fetchAll() ?: []);
+    if ($row) return ads_apply_known_row($ref, $row, 'ad_id');
+  }
+
+  $adName = ads_clean($ref['ad_name'] ?? null, 180);
+  if ($adName !== null && !ads_is_generic_meta_source($adName)) {
+    $stmt = $pdo->prepare(<<<SQL
+SELECT ad.external_ad_id, ad.ad_name, ad.campaign_ref_id, ad.adset_ref_id,
+  ac.external_campaign_id, ac.campaign_name,
+  aset.external_adset_id, aset.adset_name
+FROM {$adsTable} ad
+LEFT JOIN {$campaignsTable} ac ON ac.id = ad.campaign_ref_id
+LEFT JOIN {$adsetsTable} aset ON aset.id = ad.adset_ref_id
+WHERE ad.account_id=? AND ad.provider=? AND ad.ad_name=? AND ad.campaign_ref_id > 0
+ORDER BY COALESCE(ad.last_seen_at, ad.updated_at, ad.created_at) DESC
+LIMIT 20
+SQL);
+    $stmt->execute([$accountId, $provider, $adName]);
+    $row = ads_unique_known_row($stmt->fetchAll() ?: []);
+    if ($row) return ads_apply_known_row($ref, $row, 'ad_name');
+  }
+
+  $adsetName = ads_clean($ref['adset_name'] ?? null, 180);
+  if ($adsetName !== null && !ads_is_generic_meta_source($adsetName)) {
+    $stmt = $pdo->prepare(<<<SQL
+SELECT NULL AS external_ad_id, NULL AS ad_name, aset.campaign_ref_id, aset.id AS adset_ref_id,
+  ac.external_campaign_id, ac.campaign_name,
+  aset.external_adset_id, aset.adset_name
+FROM {$adsetsTable} aset
+LEFT JOIN {$campaignsTable} ac ON ac.id = aset.campaign_ref_id
+WHERE aset.account_id=? AND aset.provider=? AND aset.adset_name=? AND aset.campaign_ref_id > 0
+ORDER BY COALESCE(aset.last_seen_at, aset.updated_at, aset.created_at) DESC
+LIMIT 20
+SQL);
+    $stmt->execute([$accountId, $provider, $adsetName]);
+    $row = ads_unique_known_row($stmt->fetchAll() ?: []);
+    if ($row) return ads_apply_known_row($ref, $row, 'adset_name');
+  }
+
+  return $ref;
+}
+
 function ads_upsert_from_ref(PDO $pdo, int $accountId, array $ref, string $provider = 'meta', ?string $seenAt = null, ?string $leadsTable = null): array {
   ads_ensure_schema($pdo, $leadsTable);
   $seenAt = ads_clean($seenAt, 19) ?: gmdate('Y-m-d H:i:s');
   $accountId = $accountId > 0 ? $accountId : accounts_default_id($pdo);
   $provider = ads_clean($provider, 40) ?: 'meta';
+  $ref = ads_infer_from_known_attribution($pdo, $accountId, $ref, $provider);
 
   $campaignId = ads_clean($ref['campaign_id'] ?? null, 120);
   $campaignName = ads_clean($ref['campaign_name'] ?? $ref['campaign'] ?? null, 180);
@@ -234,9 +349,17 @@ SQL);
   }
 
   return [
+    'campaign' => ads_clean($ref['campaign'] ?? $campaignName ?? null, 120),
+    'campaign_id' => $campaignId,
+    'campaign_name' => $campaignName,
     'campaign_ref_id' => $campaignRefId > 0 ? $campaignRefId : null,
+    'adset_id' => $adsetId,
+    'adset_name' => $adsetName,
     'adset_ref_id' => $adsetRefId > 0 ? $adsetRefId : null,
+    'ad_id' => $adId,
+    'ad_name' => $adName,
     'ad_ref_id' => $adRefId > 0 ? $adRefId : null,
+    'enrichment_error' => $ref['enrichment_error'] ?? null,
   ];
 }
 
@@ -297,7 +420,6 @@ SQL;
   $stmt->bindValue(1, max(1, $limit), PDO::PARAM_INT);
   $stmt->execute();
   $updated = 0;
-  $update = $pdo->prepare("UPDATE {$leadsTable} SET campaign_ref_id=COALESCE(?, campaign_ref_id), adset_ref_id=COALESCE(?, adset_ref_id), ad_ref_id=COALESCE(?, ad_ref_id) WHERE id=?");
   foreach ($stmt->fetchAll() ?: [] as $lead) {
     $refs = ads_upsert_from_ref($pdo, (int) ($lead['account_id'] ?? 0), [
       'campaign_id' => $lead['campaign_id'] ?? null,
@@ -309,7 +431,30 @@ SQL;
       'ad_id' => $lead['ad_id'] ?? null,
       'content' => $lead['utm_content'] ?? null,
     ], 'meta', (string) ($lead['last_message_at'] ?? $lead['created_at'] ?? gmdate('Y-m-d H:i:s')), $leadsTable);
-    $update->execute([$refs['campaign_ref_id'], $refs['adset_ref_id'], $refs['ad_ref_id'], (int) $lead['id']]);
+    $setParts = [
+      'campaign_ref_id=COALESCE(?, campaign_ref_id)',
+      'adset_ref_id=COALESCE(?, adset_ref_id)',
+      'ad_ref_id=COALESCE(?, ad_ref_id)',
+    ];
+    $values = [$refs['campaign_ref_id'], $refs['adset_ref_id'], $refs['ad_ref_id']];
+    $visibleUpdates = [
+      'campaign_id' => $refs['campaign_id'] ?? null,
+      'campaign_name' => $refs['campaign_name'] ?? null,
+      'utm_campaign' => $refs['campaign'] ?? ($refs['campaign_name'] ?? null),
+      'adset_id' => $refs['adset_id'] ?? null,
+      'adset_name' => $refs['adset_name'] ?? null,
+      'ad_id' => $refs['ad_id'] ?? null,
+      'ad_name' => $refs['ad_name'] ?? null,
+    ];
+    foreach ($visibleUpdates as $column => $value) {
+      if (empty($available[$column])) continue;
+      $setParts[] = "{$column}=CASE WHEN ? IS NOT NULL THEN ? ELSE {$column} END";
+      $values[] = $value;
+      $values[] = $value;
+    }
+    $values[] = (int) $lead['id'];
+    $update = $pdo->prepare("UPDATE {$leadsTable} SET " . implode(', ', $setParts) . " WHERE id=?");
+    $update->execute($values);
     $updated += $update->rowCount() > 0 ? 1 : 0;
   }
   return $updated;
