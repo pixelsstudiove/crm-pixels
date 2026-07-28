@@ -23,6 +23,11 @@ return [
   'META_ADS_ACCESS_TOKEN' => '',
   'INSTAGRAM_DIRECT_OAUTH_SCOPES' => 'instagram_business_basic,instagram_business_manage_messages',
   'INSTAGRAM_DM_INBOX_URL' => 'https://www.instagram.com/direct/inbox/',
+  // WhatsApp Cloud API. Usa un token permanente/System User token con whatsapp_business_messaging.
+  'WHATSAPP_CLOUD_ACCESS_TOKEN' => '',
+  'WHATSAPP_CLOUD_VERIFY_TOKEN' => '',
+  'WHATSAPP_CLOUD_APP_SECRET' => '',
+  'WHATSAPP_CLOUD_GRAPH_VERSION' => 'v25.0',
   'R2_ACCOUNT_ID' => '',
   'R2_ACCESS_KEY_ID' => '',
   'R2_SECRET_ACCESS_KEY' => '',

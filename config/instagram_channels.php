@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS {$table} (
   scopes TEXT NULL,
   receive_instagram TINYINT(1) NOT NULL DEFAULT 1,
   receive_messenger TINYINT(1) NOT NULL DEFAULT 0,
+  receive_whatsapp TINYINT(1) NOT NULL DEFAULT 0,
+  whatsapp_business_account_id VARCHAR(120) NULL,
+  whatsapp_phone_number_id VARCHAR(120) NULL,
+  whatsapp_display_phone_number VARCHAR(40) NULL,
+  whatsapp_verified_name VARCHAR(180) NULL,
   connected_by INT UNSIGNED NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   last_event_at DATETIME NULL,
@@ -43,6 +48,11 @@ SQL);
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN scopes TEXT NULL AFTER token_expires_at"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_instagram TINYINT(1) NOT NULL DEFAULT 1 AFTER scopes"); } catch (Throwable $e) { /* no-op */ }
   try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_messenger TINYINT(1) NOT NULL DEFAULT 0 AFTER receive_instagram"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN receive_whatsapp TINYINT(1) NOT NULL DEFAULT 0 AFTER receive_messenger"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN whatsapp_business_account_id VARCHAR(120) NULL AFTER receive_whatsapp"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN whatsapp_phone_number_id VARCHAR(120) NULL AFTER whatsapp_business_account_id"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN whatsapp_display_phone_number VARCHAR(40) NULL AFTER whatsapp_phone_number_id"); } catch (Throwable $e) { /* no-op */ }
+  try { $pdo->exec("ALTER TABLE {$table} ADD COLUMN whatsapp_verified_name VARCHAR(180) NULL AFTER whatsapp_display_phone_number"); } catch (Throwable $e) { /* no-op */ }
 }
 
 function ig_graph_version(): string {
@@ -97,7 +107,11 @@ function ig_channel_find_by_recipient(PDO $pdo, string $table, ?string $recipien
   if ($recipientId === '') return null;
   $messengerRecipientId = 'messenger:' . $recipientId;
   try {
-    if ($provider === 'messenger') {
+    if ($provider === 'whatsapp') {
+      $whatsappRecipientId = 'whatsapp:' . $recipientId;
+      $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND receive_whatsapp=1 AND (whatsapp_phone_number_id=? OR page_id=? OR instagram_user_id=?) ORDER BY updated_at DESC, id DESC LIMIT 1");
+      $stmt->execute([$recipientId, $recipientId, $whatsappRecipientId]);
+    } elseif ($provider === 'messenger') {
       $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE is_active=1 AND receive_messenger=1 AND (page_id=? OR instagram_user_id=?) ORDER BY updated_at DESC, id DESC LIMIT 1");
       $stmt->execute([$recipientId, $messengerRecipientId]);
     } else {
@@ -144,7 +158,10 @@ SQL;
 function ig_channel_existing_account_message(array $channel): string {
   $accountName = trim((string) ($channel['account_name'] ?? 'otra cuenta'));
   $channelName = trim((string) ($channel['instagram_username'] ?? $channel['page_name'] ?? 'este canal'));
-  $channelLabel = $channelName !== '' ? '@' . ltrim($channelName, '@') : 'Este canal';
+  $isWhatsapp = (string) ($channel['connection_type'] ?? '') === 'whatsapp_cloud' || !empty($channel['receive_whatsapp']);
+  $channelLabel = $channelName !== ''
+    ? ($isWhatsapp ? $channelName : '@' . ltrim($channelName, '@'))
+    : 'Este canal';
   return "{$channelLabel} ya está integrado en la cuenta {$accountName}. Para integrarlo en esta cuenta, primero debes desvincularlo de la otra cuenta.";
 }
 
@@ -155,10 +172,16 @@ function ig_channel_upsert(PDO $pdo, string $table, array $channel): int {
   $instagramUserId = (string) $channel['instagram_user_id'];
   $receiveInstagram = !empty($channel['receive_instagram']) ? 1 : 0;
   $receiveMessenger = !empty($channel['receive_messenger']) ? 1 : 0;
+  $receiveWhatsapp = !empty($channel['receive_whatsapp']) ? 1 : 0;
+  $whatsappBusinessAccountId = (string) ($channel['whatsapp_business_account_id'] ?? '');
+  $whatsappPhoneNumberId = (string) ($channel['whatsapp_phone_number_id'] ?? '');
+  $whatsappDisplayPhoneNumber = (string) ($channel['whatsapp_display_phone_number'] ?? '');
+  $whatsappVerifiedName = (string) ($channel['whatsapp_verified_name'] ?? '');
   $account = accounts_find($pdo, $accountId) ?: [];
   $requestedTypes = [];
   if ($receiveInstagram === 1) $requestedTypes[] = 'instagram';
   if ($receiveMessenger === 1) $requestedTypes[] = 'messenger';
+  if ($receiveWhatsapp === 1) $requestedTypes[] = 'whatsapp';
   $deniedTypes = accounts_channel_types_denied($account, $requestedTypes);
   if ($deniedTypes) {
     throw new RuntimeException('Esta cuenta no tiene permitido conectar: ' . implode(', ', $deniedTypes) . '.');
@@ -194,8 +217,8 @@ function ig_channel_upsert(PDO $pdo, string $table, array $channel): int {
 
   $stmt = $pdo->prepare(<<<SQL
 INSERT INTO {$table} (
-  account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, user_access_token, token_expires_at, scopes, receive_instagram, receive_messenger, connected_by, is_active, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
+  account_id, connection_type, page_id, page_name, instagram_user_id, instagram_username, page_access_token, user_access_token, token_expires_at, scopes, receive_instagram, receive_messenger, receive_whatsapp, whatsapp_business_account_id, whatsapp_phone_number_id, whatsapp_display_phone_number, whatsapp_verified_name, connected_by, is_active, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NOW())
 ON DUPLICATE KEY UPDATE
   account_id = VALUES(account_id),
   connection_type = VALUES(connection_type),
@@ -212,6 +235,11 @@ ON DUPLICATE KEY UPDATE
   scopes = VALUES(scopes),
   receive_instagram = VALUES(receive_instagram),
   receive_messenger = VALUES(receive_messenger),
+  receive_whatsapp = VALUES(receive_whatsapp),
+  whatsapp_business_account_id = VALUES(whatsapp_business_account_id),
+  whatsapp_phone_number_id = VALUES(whatsapp_phone_number_id),
+  whatsapp_display_phone_number = VALUES(whatsapp_display_phone_number),
+  whatsapp_verified_name = VALUES(whatsapp_verified_name),
   connected_by = VALUES(connected_by),
   is_active = 1,
   updated_at = NOW()
@@ -229,6 +257,11 @@ SQL);
     $channel['scopes'] ?? null,
     $receiveInstagram,
     $receiveMessenger,
+    $receiveWhatsapp,
+    $whatsappBusinessAccountId ?: null,
+    $whatsappPhoneNumberId ?: null,
+    $whatsappDisplayPhoneNumber ?: null,
+    $whatsappVerifiedName ?: null,
     $channel['connected_by'] ?? null,
   ]);
 

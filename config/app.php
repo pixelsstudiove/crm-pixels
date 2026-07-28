@@ -191,6 +191,13 @@ $app = [
     'no_response_threshold_hours' => (int) env_value('META_NO_RESPONSE_THRESHOLD_HOURS', '2'),
   ],
 
+  'whatsapp_cloud' => [
+    'access_token' => (string) env_value('WHATSAPP_CLOUD_ACCESS_TOKEN', ''),
+    'webhook_verify_token' => (string) env_value('WHATSAPP_CLOUD_VERIFY_TOKEN', env_value('INSTAGRAM_WEBHOOK_VERIFY_TOKEN', '')),
+    'app_secret' => (string) env_value('WHATSAPP_CLOUD_APP_SECRET', env_value('FACEBOOK_APP_SECRET', env_value('META_APP_SECRET', ''))),
+    'graph_version' => (string) env_value('WHATSAPP_CLOUD_GRAPH_VERSION', env_value('META_GRAPH_VERSION', 'v20.0')),
+  ],
+
   'media' => [
     'max_upload_bytes' => (int) env_value('MEDIA_MAX_UPLOAD_BYTES', '8388608'),
     'allowed_image_mimes' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],

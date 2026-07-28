@@ -48,15 +48,19 @@ $configuredCallbackUrl = trim((string) app_config('instagram.oauth_redirect_uri'
 $fallbackCallbackUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? '') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_oauth_callback.php';
 $callbackUrl = $configuredCallbackUrl !== '' ? $configuredCallbackUrl : $fallbackCallbackUrl;
 $webhookUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tu-dominio') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/instagram_webhook.php';
+$whatsappWebhookUrl = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'tu-dominio') . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '')), '/\\') . '/whatsapp_webhook.php';
 $canConnectInstagram = $instagramAppId !== '' && $instagramAppSecret !== '';
 $canConnectFacebook = $facebookAppId !== '' && $facebookAppSecret !== '';
-$canConnect = $canConnectInstagram || $canConnectFacebook;
+$whatsappGlobalToken = trim((string) app_config('whatsapp_cloud.access_token', ''));
+$canConnectWhatsapp = true;
+$canConnect = $canConnectInstagram || $canConnectFacebook || $canConnectWhatsapp;
 $metaConfigStatus = [
   'facebook_app_id' => $facebookAppId !== '',
   'facebook_app_secret' => $facebookAppSecret !== '',
   'instagram_app_id' => $instagramAppId !== '',
   'instagram_app_secret' => $instagramAppSecret !== '',
   'verify_token' => trim((string) app_config('instagram.webhook_verify_token', '')) !== '',
+  'whatsapp_verify_token' => trim((string) app_config('whatsapp_cloud.webhook_verify_token', '')) !== '',
 ];
 
 function channels_find_channel(PDO $pdo, string $channelsTable, int $id, int $scopeAccountId, int $requestAccountId): ?array {
@@ -210,6 +214,7 @@ function channels_pending_meta_label(array $channel): string {
   $types = [];
   if (!empty($channel['receive_instagram'])) $types[] = 'Instagram';
   if (!empty($channel['receive_messenger'])) $types[] = 'Messenger';
+  if (!empty($channel['receive_whatsapp'])) $types[] = 'WhatsApp';
   return $types ? implode(' + ', $types) : 'Canal Meta';
 }
 
@@ -283,7 +288,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
 	    $action = (string) ($_POST['action'] ?? '');
 	    $id = (int) ($_POST['id'] ?? 0);
-	    if ($action === 'confirm_meta_channels') {
+	    if ($action === 'connect_whatsapp_cloud') {
+	      if ($mustChooseConnectAccount && $connectAccountId <= 0) {
+	        $errors[] = 'Selecciona la cuenta cliente a la que quieres asignar este número de WhatsApp.';
+	      } elseif (!$selectedConnectAccount || !accounts_channel_types_allowed($selectedConnectAccount, ['whatsapp'])) {
+	        $errors[] = 'Esta cuenta no tiene permitido conectar WhatsApp.';
+	      } elseif (!accounts_can_add_channel($pdo, $connectAccountId)) {
+	        $errors[] = accounts_limit_error($pdo, $connectAccountId, 'channels');
+	      } else {
+	        $phoneNumberId = preg_replace('/\D+/', '', (string) ($_POST['whatsapp_phone_number_id'] ?? ''));
+	        $wabaId = preg_replace('/\D+/', '', (string) ($_POST['whatsapp_business_account_id'] ?? ''));
+	        $displayPhone = trim((string) ($_POST['whatsapp_display_phone_number'] ?? ''));
+	        $verifiedName = trim((string) ($_POST['whatsapp_verified_name'] ?? ''));
+	        $token = trim((string) ($_POST['whatsapp_access_token'] ?? ''));
+	        if ($token === '') $token = $whatsappGlobalToken;
+
+	        if ($phoneNumberId === '') {
+	          $errors[] = 'Ingresa el Phone Number ID de WhatsApp Cloud.';
+	        } elseif ($token === '') {
+	          $errors[] = 'Ingresa un token permanente de WhatsApp Cloud o configúralo como WHATSAPP_CLOUD_ACCESS_TOKEN.';
+	        } else {
+	          $lookup = ig_graph_request('GET', $phoneNumberId, [
+	            'fields' => 'id,display_phone_number,verified_name,quality_rating',
+	            'access_token' => $token,
+	          ]);
+	          if (!($lookup['ok'] ?? false)) {
+	            $errors[] = 'Meta no pudo validar el número de WhatsApp: ' . (string) ($lookup['error'] ?? 'Respuesta inválida.');
+	          } else {
+	            $phoneData = is_array($lookup['data'] ?? null) ? $lookup['data'] : [];
+	            $displayPhone = trim((string) ($phoneData['display_phone_number'] ?? $displayPhone));
+	            $verifiedName = trim((string) ($phoneData['verified_name'] ?? $verifiedName));
+	            try {
+	              $savedChannelId = ig_channel_upsert($pdo, $channelsTable, [
+	                'account_id' => $connectAccountId,
+	                'connection_type' => 'whatsapp_cloud',
+	                'page_id' => $phoneNumberId,
+	                'page_name' => $verifiedName !== '' ? $verifiedName : ($displayPhone !== '' ? $displayPhone : 'WhatsApp ' . substr($phoneNumberId, -6)),
+	                'instagram_user_id' => 'whatsapp:' . $phoneNumberId,
+	                'instagram_username' => $displayPhone !== '' ? $displayPhone : $phoneNumberId,
+	                'page_access_token' => $token,
+	                'user_access_token' => null,
+	                'token_expires_at' => null,
+	                'scopes' => 'whatsapp_business_messaging,whatsapp_business_management',
+	                'receive_instagram' => 0,
+	                'receive_messenger' => 0,
+	                'receive_whatsapp' => 1,
+	                'whatsapp_business_account_id' => $wabaId,
+	                'whatsapp_phone_number_id' => $phoneNumberId,
+	                'whatsapp_display_phone_number' => $displayPhone,
+	                'whatsapp_verified_name' => $verifiedName,
+	                'connected_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+	              ]);
+	              $notice = $savedChannelId > 0 ? 'Número de WhatsApp conectado correctamente.' : 'WhatsApp fue validado, pero no se pudo confirmar el guardado del canal.';
+	            } catch (RuntimeException $e) {
+	              $errors[] = $e->getMessage();
+	            }
+	          }
+	        }
+	      }
+	    } elseif ($action === 'confirm_meta_channels') {
 	      $pending = channels_pending_meta_payload();
 	      $selectedKeys = $_POST['pending_channels'] ?? [];
 	      $selectedKeys = is_array($selectedKeys) ? array_values(array_unique(array_map('strval', $selectedKeys))) : [];
@@ -377,6 +440,7 @@ $facebookBothAllowed = $canConnectFacebook && $canAddChannelToSelected && accoun
 $facebookInstagramAllowed = $canConnectFacebook && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['instagram']);
 $facebookMessengerAllowed = $canConnectFacebook && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['messenger']);
 $instagramDirectAllowed = $canConnectInstagram && $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['instagram']);
+$whatsappCloudAllowed = $canAddChannelToSelected && accounts_channel_types_allowed($selectedConnectAccount ?: [], ['whatsapp']);
 $facebookConnectBothUrl = $facebookBothAllowed ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'both', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
 $facebookConnectInstagramUrl = $facebookInstagramAllowed ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'instagram', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
 $facebookConnectMessengerUrl = $facebookMessengerAllowed ? account_url('channels.php', ['connect' => 'facebook', 'mode' => 'messenger', 'connect_account_id' => $connectAccountParam], $connectBaseSlug) : '#';
@@ -412,7 +476,10 @@ try {
     .channel-btn.warning { background:#fff8df; border-color:#efda85; color:#946200; }
     .channel-btn.danger { background:#fff1f2; border-color:#fecdd3; color:#be123c; }
     .channel-link.is-disabled,
-    .channel-link.primary.is-disabled {
+    .channel-link.primary.is-disabled,
+    .channel-btn.is-disabled,
+    .channel-btn.primary.is-disabled,
+    .channel-btn:disabled {
       color:#64748b;
       background:#e5e7eb;
       border-color:#cbd5e1;
@@ -420,7 +487,9 @@ try {
       cursor:not-allowed;
       pointer-events:none;
     }
-    .channel-link.is-disabled .channel-choice-icon { filter:grayscale(1); opacity:.62; }
+    .channel-link.is-disabled .channel-choice-icon,
+    .channel-btn.is-disabled .channel-choice-icon,
+    .channel-btn:disabled .channel-choice-icon { filter:grayscale(1); opacity:.62; }
     .connect-actions { display:flex; flex-wrap:wrap; gap:8px; }
     .connect-actions .channel-link { min-height:36px; font-size:.9rem; }
     .channel-choice-icon { width:22px; height:22px; border-radius:999px; object-fit:cover; flex:0 0 auto; }
@@ -474,7 +543,7 @@ try {
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
             <h1 class="title">Canales conectados</h1>
-            <p class="subtitle">Conecta canales por Facebook/Fanpage o por Login directo de Instagram para capturar mensajes como leads.</p>
+            <p class="subtitle">Conecta canales por Facebook/Fanpage, Login directo de Instagram o WhatsApp Cloud API para capturar mensajes como leads.</p>
           </div>
           <?php nav_render_config_top_nav($pdo, 'channels.php', is_super_admin() ? $requestAccountId : 0); ?>
         </header>
@@ -535,8 +604,8 @@ try {
                 </form>
               </article>
             <?php endif; ?>
-            <?php if (!$canConnect): ?>
-              <div class="form-alert alert-error notice">Falta configurar credenciales de Meta en config/local.php. Para Messenger usa FACEBOOK_APP_ID y FACEBOOK_APP_SECRET; para Instagram Login usa INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET.</div>
+            <?php if (!$canConnectInstagram && !$canConnectFacebook && $whatsappGlobalToken === ''): ?>
+              <div class="form-alert alert-error notice">Falta configurar credenciales de Meta en config/local.php. Para Messenger usa FACEBOOK_APP_ID y FACEBOOK_APP_SECRET; para Instagram Login usa INSTAGRAM_APP_ID e INSTAGRAM_APP_SECRET; para WhatsApp puedes usar WHATSAPP_CLOUD_ACCESS_TOKEN.</div>
             <?php endif; ?>
 
         <?php if ($mustChooseConnectAccount): ?>
@@ -576,15 +645,31 @@ try {
             <p>Conecta directamente una cuenta profesional de Instagram usando los permisos de Instagram Login.</p>
             <a class="channel-link primary <?= $instagramDirectAllowed ? '' : 'is-disabled' ?>" href="<?= h($instagramConnectUrl) ?>" <?= $instagramDirectAllowed ? '' : 'aria-disabled="true"' ?>><img class="channel-choice-icon" src="/images/icon_instagram.png" alt="" aria-hidden="true"> Conectar por Instagram</a>
           </article>
+          <article class="connect-card">
+            <h2>WhatsApp Cloud API</h2>
+            <p>Conecta un número de WhatsApp Cloud con Phone Number ID y token permanente del socio o System User.</p>
+            <form method="post" action="<?= h(account_url('channels.php', ['connect_account_id' => $connectAccountParam], $connectBaseSlug)) ?>" style="display:grid; gap:10px">
+              <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
+              <input type="hidden" name="action" value="connect_whatsapp_cloud">
+              <input type="text" name="whatsapp_phone_number_id" placeholder="Phone Number ID" <?= $whatsappCloudAllowed ? '' : 'disabled' ?>>
+              <input type="text" name="whatsapp_business_account_id" placeholder="WABA ID (opcional)" <?= $whatsappCloudAllowed ? '' : 'disabled' ?>>
+              <input type="text" name="whatsapp_verified_name" placeholder="Nombre verificado (opcional)" <?= $whatsappCloudAllowed ? '' : 'disabled' ?>>
+              <input type="text" name="whatsapp_display_phone_number" placeholder="Número visible (opcional)" <?= $whatsappCloudAllowed ? '' : 'disabled' ?>>
+              <input type="password" name="whatsapp_access_token" placeholder="<?= $whatsappGlobalToken !== '' ? 'Token configurado globalmente' : 'Token permanente de WhatsApp Cloud' ?>" <?= $whatsappCloudAllowed ? '' : 'disabled' ?>>
+              <button class="channel-btn primary <?= $whatsappCloudAllowed ? '' : 'is-disabled' ?>" type="submit" <?= $whatsappCloudAllowed ? '' : 'disabled' ?>><img class="channel-choice-icon" src="/images/icon_whatsapp.png" alt="" aria-hidden="true"> Conectar WhatsApp</button>
+            </form>
+          </article>
         </div>
 
         <div class="channel-card" style="margin-bottom:14px">
           <h2>Webhook de Meta</h2>
           <p><strong>URL Instagram/Messenger:</strong> <?= h($webhookUrl) ?></p>
+          <p><strong>URL WhatsApp Cloud:</strong> <?= h($whatsappWebhookUrl) ?></p>
           <p><strong>Redirect OAuth:</strong> <?= h($callbackUrl) ?></p>
           <p><strong>Facebook App ID:</strong> <?= $metaConfigStatus['facebook_app_id'] ? 'Configurado' : 'Falta configurar' ?></p>
           <p><strong>Facebook App Secret:</strong> <?= $metaConfigStatus['facebook_app_secret'] ? 'Configurado' : 'Falta configurar' ?></p>
-          <p><strong>Verify Token:</strong> <?= $metaConfigStatus['verify_token'] ? 'Configurado' : 'Falta configurar' ?></p>
+          <p><strong>Verify Token Instagram/Messenger:</strong> <?= $metaConfigStatus['verify_token'] ? 'Configurado' : 'Falta configurar' ?></p>
+          <p><strong>Verify Token WhatsApp:</strong> <?= $metaConfigStatus['whatsapp_verify_token'] ? 'Configurado' : 'Falta configurar' ?></p>
         </div>
 
         <div class="channel-grid">
@@ -603,15 +688,23 @@ try {
                   </button>
                 </form>
               </div>
-              <?php $hasInstagramChannel = !str_starts_with((string) ($channel['instagram_user_id'] ?? ''), 'messenger:'); ?>
+              <?php $isWhatsappChannel = (string) ($channel['connection_type'] ?? '') === 'whatsapp_cloud' || !empty($channel['receive_whatsapp']); ?>
+              <?php $hasInstagramChannel = !$isWhatsappChannel && !str_starts_with((string) ($channel['instagram_user_id'] ?? ''), 'messenger:'); ?>
               <h2><?= h((string) ($channel['instagram_username'] ?: ($channel['page_name'] ?: 'Canal Meta conectado'))) ?></h2>
-              <p><strong>Tipo:</strong> <?= h((string) (($channel['connection_type'] ?? 'facebook') === 'instagram_login' ? 'Instagram Login' : 'Facebook / Fanpage')) ?></p>
+              <p><strong>Tipo:</strong> <?= h($isWhatsappChannel ? 'WhatsApp Cloud API' : (string) (($channel['connection_type'] ?? 'facebook') === 'instagram_login' ? 'Instagram Login' : 'Facebook / Fanpage')) ?></p>
               <?php $isDirectLogin = (string) ($channel['connection_type'] ?? 'facebook') === 'instagram_login'; ?>
-              <p><strong><?= $isDirectLogin ? 'Cuenta:' : 'Fanpage:' ?></strong> <?= h((string) ($channel['page_name'] ?: $channel['page_id'])) ?></p>
-              <p><strong><?= $isDirectLogin ? 'Cuenta ID:' : 'Page ID:' ?></strong> <?= h((string) $channel['page_id']) ?></p>
-              <p><strong>Instagram ID:</strong> <?= $hasInstagramChannel ? h((string) $channel['instagram_user_id']) : '—' ?></p>
+              <p><strong><?= $isWhatsappChannel ? 'Número:' : ($isDirectLogin ? 'Cuenta:' : 'Fanpage:') ?></strong> <?= h((string) ($isWhatsappChannel ? (($channel['whatsapp_display_phone_number'] ?? '') ?: $channel['instagram_username']) : ($channel['page_name'] ?: $channel['page_id']))) ?></p>
+              <p><strong><?= $isWhatsappChannel ? 'Phone Number ID:' : ($isDirectLogin ? 'Cuenta ID:' : 'Page ID:') ?></strong> <?= h((string) ($isWhatsappChannel ? (($channel['whatsapp_phone_number_id'] ?? '') ?: $channel['page_id']) : $channel['page_id'])) ?></p>
+              <?php if ($isWhatsappChannel && !empty($channel['whatsapp_business_account_id'])): ?><p><strong>WABA ID:</strong> <?= h((string) $channel['whatsapp_business_account_id']) ?></p><?php endif; ?>
+              <?php if (!$isWhatsappChannel): ?><p><strong>Instagram ID:</strong> <?= $hasInstagramChannel ? h((string) $channel['instagram_user_id']) : '—' ?></p><?php endif; ?>
               <p><strong>Recibe:</strong>
-                <?= !empty($channel['receive_instagram']) ? 'Instagram' : '' ?><?= !empty($channel['receive_instagram']) && !empty($channel['receive_messenger']) ? ' + ' : '' ?><?= !empty($channel['receive_messenger']) ? 'Messenger' : '' ?><?= empty($channel['receive_instagram']) && empty($channel['receive_messenger']) ? '—' : '' ?>
+                <?php
+                  $receiveTypes = [];
+                  if (!empty($channel['receive_instagram'])) $receiveTypes[] = 'Instagram';
+                  if (!empty($channel['receive_messenger'])) $receiveTypes[] = 'Messenger';
+                  if (!empty($channel['receive_whatsapp'])) $receiveTypes[] = 'WhatsApp';
+                  echo h($receiveTypes ? implode(' + ', $receiveTypes) : '—');
+                ?>
               </p>
               <?php if (!empty($channel['token_expires_at'])): ?><p><strong>Token vence:</strong> <?= h(app_datetime($channel['token_expires_at'])) ?></p><?php endif; ?>
               <p><strong>Ultimo evento:</strong> <?= h((string) ($channel['last_event_at'] ?: 'Sin eventos')) ?></p>
@@ -625,7 +718,7 @@ try {
           <?php endforeach; else: ?>
             <article class="channel-card">
               <h2>Sin canales conectados</h2>
-              <p>Conecta Facebook o Instagram para que los mensajes entrantes se creen como leads dentro del CRM.</p>
+              <p>Conecta Facebook, Instagram o WhatsApp para que los mensajes entrantes se creen como leads dentro del CRM.</p>
             </article>
           <?php endif; ?>
         </div>

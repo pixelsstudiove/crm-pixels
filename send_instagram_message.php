@@ -49,7 +49,9 @@ function send_public_media_text(string $type): string {
 
 function send_conversation_provider(array $conversation): string {
   $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
-  return $source === 'messenger' ? 'messenger' : 'instagram';
+  if ($source === 'messenger') return 'messenger';
+  if ($source === 'whatsapp') return 'whatsapp';
+  return 'instagram';
 }
 
 function send_conversation_has_outbound(PDO $pdo, int $conversationId): bool {

@@ -334,20 +334,30 @@ $replyWindow = $selected ? meta_reply_window_info($selected['last_inbound_at'] ?
 $replyChannel = $selected ? conv_instagram_channel_for_conversation($pdo, $selected) : null;
 $canReplyFromCrm = $canSendMessages && ($replyWindow['can_reply'] ?? true) && (bool) $replyChannel;
 $selectedProvider = $selected ? conv_conversation_provider($selected) : 'instagram';
-$channelUnavailableMessage = $selectedProvider === 'messenger'
-  ? 'No hay un canal de Messenger activo disponible para esta conversación. Revisa Canales o reconecta Facebook antes de responder.'
-  : 'No hay un canal de Instagram activo disponible para esta conversación. Revisa Canales o reconecta Instagram antes de responder.';
+$channelUnavailableMessage = match ($selectedProvider) {
+  'messenger' => 'No hay un canal de Messenger activo disponible para esta conversación. Revisa Canales o reconecta Facebook antes de responder.',
+  'whatsapp' => 'No hay un canal de WhatsApp activo disponible para esta conversación. Revisa Canales o reconecta WhatsApp Cloud antes de responder.',
+  default => 'No hay un canal de Instagram activo disponible para esta conversación. Revisa Canales o reconecta Instagram antes de responder.',
+};
 
 function inbox_contact_name(array $conversation): string {
   $name = trim((string) ($conversation['display_name'] ?? ''));
   if ($name !== '') return $name;
   $username = trim((string) ($conversation['username'] ?? ''));
   if ($username !== '') return '@' . ltrim($username, '@');
-  return conv_conversation_provider($conversation) === 'messenger' ? 'Contacto de Messenger' : 'Contacto de Instagram';
+  return match (conv_conversation_provider($conversation)) {
+    'messenger' => 'Contacto de Messenger',
+    'whatsapp' => 'Contacto de WhatsApp',
+    default => 'Contacto de Instagram',
+  };
 }
 
 function inbox_source_label(array $conversation): string {
-  return conv_conversation_provider($conversation) === 'messenger' ? 'Messenger' : 'Instagram';
+  return match (conv_conversation_provider($conversation)) {
+    'messenger' => 'Messenger',
+    'whatsapp' => 'WhatsApp',
+    default => 'Instagram',
+  };
 }
 
 function inbox_source_contact_html(array $conversation): string {
@@ -356,6 +366,10 @@ function inbox_source_contact_html(array $conversation): string {
     return !empty($conversation['profile_url'])
       ? '<a href="' . h((string) $conversation['profile_url']) . '" target="_blank" rel="noopener">Perfil de Messenger</a>'
       : '—';
+  }
+  if ($provider === 'whatsapp') {
+    $phone = preg_replace('/\D+/', '', (string) ($conversation['contact_external_id'] ?? ''));
+    return $phone !== '' ? '<a href="https://wa.me/' . h($phone) . '" target="_blank" rel="noopener">+' . h($phone) . '</a>' : '—';
   }
   return !empty($conversation['username'])
     ? '<a href="' . h((string) ($conversation['profile_url'] ?: ('https://instagram.com/' . ltrim((string) $conversation['username'], '@')))) . '" target="_blank" rel="noopener">@' . h((string) $conversation['username']) . '</a>'
@@ -469,6 +483,7 @@ function inbox_normalize_message_text($value): string {
   $legacyUnsupported = [
     'Mensaje recibido desde Instagram DM.',
     'Mensaje recibido desde Facebook Messenger.',
+    'Mensaje recibido desde WhatsApp.',
     'Adjunto recibido: unsupported_type',
   ];
   return in_array($text, $legacyUnsupported, true) ? inbox_unsupported_message_text() : $text;
@@ -741,7 +756,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           <div>
             <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
             <h1 class="title">Inbox conversacional</h1>
-            <p class="subtitle">Gestiona conversaciones de Instagram, Messenger y su avance comercial desde el CRM.</p>
+            <p class="subtitle">Gestiona conversaciones de Instagram, Messenger, WhatsApp y su avance comercial desde el CRM.</p>
           </div>
           <div class="inbox-actions app-nav-actions">
             <?php nav_render_view_button('inbox'); ?>
@@ -805,7 +820,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                   <img class="conversation-channel-icon" src="<?= h(inbox_channel_icon_path($conversation)) ?>" alt="<?= h(inbox_channel_icon_label($conversation)) ?>" loading="lazy">
                 </a>
               <?php endforeach; else: ?>
-                <div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram o Messenger.</div>
+                <div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram, Messenger o WhatsApp.</div>
               <?php endif; ?>
             </div>
           </aside>
@@ -1231,6 +1246,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       const legacyUnsupportedTexts = [
         'Mensaje recibido desde Instagram DM.',
         'Mensaje recibido desde Facebook Messenger.',
+        'Mensaje recibido desde WhatsApp.',
         'Adjunto recibido: unsupported_type'
       ];
       let text = String(message?.text ?? '').trim();
@@ -1431,7 +1447,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     function renderConversations(items) {
       if (!conversationList || !Array.isArray(items)) return;
       if (!items.length) {
-        conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram o Messenger.</div>';
+        conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram, Messenger o WhatsApp.</div>';
         return;
       }
 

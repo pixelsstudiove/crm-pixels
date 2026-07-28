@@ -613,15 +613,23 @@ function conv_instagram_send_targets(array $channel): array {
 
 function conv_conversation_provider(array $conversation): string {
   $source = strtolower(trim((string) ($conversation['external_source'] ?? 'instagram')));
-  return $source === 'messenger' ? 'messenger' : 'instagram';
+  if ($source === 'messenger') return 'messenger';
+  if ($source === 'whatsapp') return 'whatsapp';
+  return 'instagram';
 }
 
 function conv_provider_label(string $provider): string {
-  return $provider === 'messenger' ? 'Facebook Messenger' : 'Instagram';
+  if ($provider === 'messenger') return 'Facebook Messenger';
+  if ($provider === 'whatsapp') return 'WhatsApp';
+  return 'Instagram';
 }
 
 function conv_meta_history_notice_text(string $provider): string {
-  $label = $provider === 'messenger' ? 'Facebook Messenger' : 'Instagram';
+  $label = match ($provider) {
+    'messenger' => 'Facebook Messenger',
+    'whatsapp' => 'WhatsApp',
+    default => 'Instagram',
+  };
   return 'Para acceder a todo el historial de esta conversación, abre el chat con el cliente desde ' . $label . '.';
 }
 
@@ -867,7 +875,11 @@ function conv_instagram_channel_for_conversation(PDO $pdo, array $conversation):
   $channelId = (int) ($conversation['channel_id'] ?? 0);
   $accountId = (int) (($conversation['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
   $provider = conv_conversation_provider($conversation);
-  $capabilityColumn = $provider === 'messenger' ? 'receive_messenger' : 'receive_instagram';
+  $capabilityColumn = match ($provider) {
+    'messenger' => 'receive_messenger',
+    'whatsapp' => 'receive_whatsapp',
+    default => 'receive_instagram',
+  };
 
   if ($channelId > 0) {
     $stmt = $pdo->prepare("SELECT * FROM {$channelsTable} WHERE id=? AND is_active=1 AND {$capabilityColumn}=1 AND COALESCE(page_access_token, '')<>'' LIMIT 1");
@@ -977,9 +989,80 @@ function conv_send_messenger_attachment(PDO $pdo, array $conversation, string $m
   return ['ok' => false, 'error' => $lastError];
 }
 
+function conv_send_whatsapp_message(PDO $pdo, array $conversation, string $message): array {
+  $message = trim($message);
+  if ($message === '') return ['ok' => false, 'error' => 'El mensaje esta vacio.'];
+
+  $channel = conv_instagram_channel_for_conversation($pdo, $conversation);
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de WhatsApp no disponible o existen varios canales activos para esta cuenta.'];
+
+  $token = (string) ($channel['page_access_token'] ?? '');
+  $phoneNumberId = (string) (($channel['whatsapp_phone_number_id'] ?? '') ?: ($channel['page_id'] ?? ''));
+  $recipientId = preg_replace('/\D+/', '', (string) ($conversation['contact_external_id'] ?? ''));
+  if ($token === '' || $phoneNumberId === '' || $recipientId === '') return ['ok' => false, 'error' => 'Faltan credenciales del canal o destinatario.'];
+
+  $payload = [
+    'messaging_product' => 'whatsapp',
+    'to' => $recipientId,
+    'type' => 'text',
+    'text' => [
+      'preview_url' => false,
+      'body' => $message,
+    ],
+  ];
+
+  $response = conv_graph_post_json_base(ig_graph_base(), $phoneNumberId . '/messages', $payload, $token);
+  if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+    $data = $response['data'];
+    if (empty($data['message_id']) && isset($data['messages'][0]['id'])) {
+      $data['message_id'] = (string) $data['messages'][0]['id'];
+    }
+    return ['ok' => true, 'data' => $data, 'target' => $phoneNumberId];
+  }
+
+  return ['ok' => false, 'error' => (string) ($response['error'] ?? 'No se pudo enviar el mensaje.')];
+}
+
+function conv_send_whatsapp_attachment(PDO $pdo, array $conversation, string $mediaUrl, string $mediaType): array {
+  $mediaUrl = trim($mediaUrl);
+  $mediaType = conv_clean($mediaType, 40) ?? 'image';
+  if (!in_array($mediaType, ['image', 'audio'], true)) return ['ok' => false, 'error' => 'Tipo de adjunto no permitido.'];
+  if ($mediaUrl === '') return ['ok' => false, 'error' => 'El adjunto no esta disponible.'];
+
+  $channel = conv_instagram_channel_for_conversation($pdo, $conversation);
+  if (!$channel) return ['ok' => false, 'error' => 'Canal de WhatsApp no disponible o existen varios canales activos para esta cuenta.'];
+
+  $token = (string) ($channel['page_access_token'] ?? '');
+  $phoneNumberId = (string) (($channel['whatsapp_phone_number_id'] ?? '') ?: ($channel['page_id'] ?? ''));
+  $recipientId = preg_replace('/\D+/', '', (string) ($conversation['contact_external_id'] ?? ''));
+  if ($token === '' || $phoneNumberId === '' || $recipientId === '') return ['ok' => false, 'error' => 'Faltan credenciales del canal o destinatario.'];
+
+  $payload = [
+    'messaging_product' => 'whatsapp',
+    'to' => $recipientId,
+    'type' => $mediaType,
+    $mediaType => ['link' => $mediaUrl],
+  ];
+
+  $response = conv_graph_post_json_base(ig_graph_base(), $phoneNumberId . '/messages', $payload, $token);
+  if (($response['ok'] ?? false) && isset($response['data']) && is_array($response['data'])) {
+    $data = $response['data'];
+    if (empty($data['message_id']) && isset($data['messages'][0]['id'])) {
+      $data['message_id'] = (string) $data['messages'][0]['id'];
+    }
+    return ['ok' => true, 'data' => $data, 'target' => $phoneNumberId];
+  }
+
+  return ['ok' => false, 'error' => (string) ($response['error'] ?? 'No se pudo enviar el adjunto.')];
+}
+
 function conv_send_instagram_message(PDO $pdo, array $conversation, string $message): array {
-  if (conv_conversation_provider($conversation) === 'messenger') {
+  $provider = conv_conversation_provider($conversation);
+  if ($provider === 'messenger') {
     return conv_send_messenger_message($pdo, $conversation, $message);
+  }
+  if ($provider === 'whatsapp') {
+    return conv_send_whatsapp_message($pdo, $conversation, $message);
   }
   $message = trim($message);
   if ($message === '') return ['ok' => false, 'error' => 'El mensaje esta vacio.'];
@@ -1012,8 +1095,12 @@ function conv_send_instagram_message(PDO $pdo, array $conversation, string $mess
 }
 
 function conv_send_instagram_attachment(PDO $pdo, array $conversation, string $mediaUrl, string $mediaType): array {
-  if (conv_conversation_provider($conversation) === 'messenger') {
+  $provider = conv_conversation_provider($conversation);
+  if ($provider === 'messenger') {
     return conv_send_messenger_attachment($pdo, $conversation, $mediaUrl, $mediaType);
+  }
+  if ($provider === 'whatsapp') {
+    return conv_send_whatsapp_attachment($pdo, $conversation, $mediaUrl, $mediaType);
   }
   $mediaUrl = trim($mediaUrl);
   $mediaType = conv_clean($mediaType, 40) ?? 'image';
@@ -1129,13 +1216,34 @@ SQL);
   $username = conv_clean($conversation['username'] ?? null, 180);
   $fullname = $displayName ?: ($username ? '@' . ltrim($username, '@') : 'Lead ' . $providerLabel . ' #' . substr($senderId, -6));
   $brandInstagram = $provider === 'instagram' ? $username : null;
+  $phone = $provider === 'whatsapp' ? '+' . preg_replace('/\D+/', '', $senderId) : null;
   $messageText = conv_clean($conversation['last_message_preview'] ?? 'Conversacion iniciada desde ' . $providerLabel . '.', 5000) ?? 'Conversacion iniciada desde ' . $providerLabel . '.';
   $messageAt = conv_clean($conversation['last_message_at'] ?? $conversation['created_at'] ?? gmdate('Y-m-d H:i:s'), 30) ?? gmdate('Y-m-d H:i:s');
-  $businessType = $provider === 'messenger' ? 'Messenger' : (string) app_config('instagram.default_business_type', 'Instagram DM');
-  $service = $provider === 'messenger' ? 'Mensaje directo de Facebook Messenger' : (string) app_config('instagram.default_service', 'Mensaje directo de Instagram');
-  $objective = $provider === 'messenger' ? 'Conversación iniciada desde Facebook Messenger' : (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram');
-  $utmSource = $provider === 'messenger' ? 'facebook' : 'instagram';
-  $utmMedium = $provider === 'messenger' ? 'messenger' : 'dm';
+  $businessType = match ($provider) {
+    'messenger' => 'Messenger',
+    'whatsapp' => 'WhatsApp',
+    default => (string) app_config('instagram.default_business_type', 'Instagram DM'),
+  };
+  $service = match ($provider) {
+    'messenger' => 'Mensaje directo de Facebook Messenger',
+    'whatsapp' => 'Mensaje directo de WhatsApp Cloud API',
+    default => (string) app_config('instagram.default_service', 'Mensaje directo de Instagram'),
+  };
+  $objective = match ($provider) {
+    'messenger' => 'Conversación iniciada desde Facebook Messenger',
+    'whatsapp' => 'Conversación iniciada desde WhatsApp',
+    default => (string) app_config('instagram.default_objective', 'Conversación iniciada desde Instagram'),
+  };
+  $utmSource = match ($provider) {
+    'messenger' => 'facebook',
+    'whatsapp' => 'whatsapp',
+    default => 'instagram',
+  };
+  $utmMedium = match ($provider) {
+    'messenger' => 'messenger',
+    'whatsapp' => 'cloud_api',
+    default => 'dm',
+  };
 
   if ($leadId <= 0) {
     $insert = $pdo->prepare(<<<SQL
@@ -1144,7 +1252,7 @@ INSERT INTO {$leadsTable} (
   source_platform, utm_source, utm_medium, sales_status, status, whatsapp_sent, whatsapp_status,
   external_source, external_contact_id, external_thread_id, first_message_at, last_message_at, last_inbound_message
 ) VALUES (
-  ?, ?, NULL, NULL, ?, ?, NULL, ?, ?, ?,
+  ?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?,
   ?, ?, ?, ?, 'pending', 0, 'disabled',
   ?, ?, ?, ?, ?, ?
 )
@@ -1152,6 +1260,7 @@ SQL);
     $insert->execute([
       $accountId,
       $fullname,
+      $phone,
       $brandInstagram,
       $businessType,
       $service,
@@ -1175,7 +1284,9 @@ UPDATE {$leadsTable}
 SET
   fullname = CASE WHEN fullname IS NULL OR fullname = '' OR fullname LIKE 'Lead Instagram #%'
       OR fullname LIKE 'Lead Facebook Messenger #%'
+      OR fullname LIKE 'Lead WhatsApp #%'
     THEN ? ELSE fullname END,
+  phone = COALESCE(phone, ?),
   brand_instagram = COALESCE(brand_instagram, ?),
   external_thread_id = COALESCE(external_thread_id, ?),
   last_message_at = COALESCE(?, last_message_at),
@@ -1183,7 +1294,7 @@ SET
   updated_at = NOW()
 WHERE id = ?
 SQL);
-    $update->execute([$fullname, $brandInstagram, $threadId ?: $contactKey, $messageAt, $messageText, $leadId]);
+    $update->execute([$fullname, $phone, $brandInstagram, $threadId ?: $contactKey, $messageAt, $messageText, $leadId]);
   }
 
   if ($leadId > 0) {

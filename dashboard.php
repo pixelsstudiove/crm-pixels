@@ -427,6 +427,7 @@ SELECT
     NULLIF(CONCAT('@', TRIM(LEADING '@' FROM COALESCE(ct.username, ''))), '@'),
     CASE
       WHEN c.external_source = 'messenger' THEN 'Contacto de Messenger'
+      WHEN c.external_source = 'whatsapp' THEN 'Contacto de WhatsApp'
       ELSE 'Contacto de Instagram'
     END
   ) AS fullname,
@@ -511,6 +512,11 @@ function is_messenger_lead(array $lead): bool {
   $source = mb_strtolower(trim((string) ($lead['source_platform'] ?? '')));
   return $external === 'messenger' || str_contains($source, 'messenger');
 }
+function is_whatsapp_lead(array $lead): bool {
+  $external = mb_strtolower(trim((string) ($lead['external_source'] ?? '')));
+  $source = mb_strtolower(trim((string) ($lead['source_platform'] ?? '')));
+  return $external === 'whatsapp' || str_contains($source, 'whatsapp');
+}
 function instagram_inbox_url(): string {
   return (string) app_config('instagram.dm_inbox_url', 'https://www.instagram.com/direct/inbox/');
 }
@@ -581,6 +587,7 @@ function dashboard_normalize_message_text($value): string {
   $legacyUnsupported = [
     'Mensaje recibido desde Instagram DM.',
     'Mensaje recibido desde Facebook Messenger.',
+    'Mensaje recibido desde WhatsApp.',
     'Adjunto recibido: unsupported_type',
   ];
   return in_array($text, $legacyUnsupported, true) ? dashboard_unsupported_message_text() : $text;
@@ -595,6 +602,7 @@ function lead_contact_display(array $lead): string {
   if ($phone !== '—') return $phone;
   if (is_instagram_lead($lead)) return 'Instagram DM';
   if (is_messenger_lead($lead)) return 'Facebook Messenger';
+  if (is_whatsapp_lead($lead)) return 'WhatsApp';
   return '—';
 }
 function datetime_local_value($value): string {
@@ -612,7 +620,7 @@ function dash_channel_label(array $channel): string {
   if ($username !== '') return '@' . ltrim($username, '@');
   $pageName = trim((string) ($channel['page_name'] ?? ''));
   if ($pageName !== '') return $pageName;
-  return trim((string) ($channel['page_id'] ?? 'Canal de Instagram'));
+  return trim((string) ($channel['page_id'] ?? 'Canal'));
 }
 ?>
 <!DOCTYPE html>
@@ -1657,7 +1665,7 @@ function dash_channel_label(array $channel): string {
             <?php if ($filterSalesStatus !== ''): ?><input type="hidden" name="sales_status" value="<?= h($filterSalesStatus) ?>"><?php endif; ?>
             <label class="filter-field">
               <span>Buscar</span>
-              <input type="text" name="q" value="<?= h($q) ?>" placeholder="Cliente, Instagram o mensaje">
+              <input type="text" name="q" value="<?= h($q) ?>" placeholder="Cliente, canal o mensaje">
             </label>
 
             <label class="filter-field">
@@ -1718,6 +1726,7 @@ function dash_channel_label(array $channel): string {
                       $wa = $phoneValue !== '—' ? wa_number_from_formatted($phoneValue) : '';
                       $isInstagramLead = is_instagram_lead($lead);
                       $isMessengerLead = is_messenger_lead($lead);
+                      $isWhatsappLead = is_whatsapp_lead($lead);
                       $salesStatus = (string) ($lead['sales_status'] ?? app_config('sales_funnel.default_status', 'nuevo_lead'));
                       $salesStatusLabel = (string) ($salesStatusOptions[$salesStatus] ?? $salesStatus);
                       $adLines = lead_ad_attribution_lines($lead);
@@ -1741,6 +1750,8 @@ function dash_channel_label(array $channel): string {
                             <?php endif; ?>
                           <?php elseif ($isMessengerLead): ?>
                             <span>Facebook Messenger</span>
+                          <?php elseif ($isWhatsappLead): ?>
+                            <span>WhatsApp</span>
                           <?php else: ?>
                             <?= h(lead_contact_display($lead)) ?>
                           <?php endif; ?>

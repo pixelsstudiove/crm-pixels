@@ -34,7 +34,11 @@ function updates_contact_name(array $conversation): string {
   if ($name !== '') return $name;
   $username = trim((string) ($conversation['username'] ?? ''));
   if ($username !== '') return '@' . ltrim($username, '@');
-  return conv_conversation_provider($conversation) === 'messenger' ? 'Contacto de Messenger' : 'Contacto de Instagram';
+  return match (conv_conversation_provider($conversation)) {
+    'messenger' => 'Contacto de Messenger',
+    'whatsapp' => 'Contacto de WhatsApp',
+    default => 'Contacto de Instagram',
+  };
 }
 
 function updates_avatar_url(array $conversation): string {
@@ -74,6 +78,7 @@ function updates_normalize_message_text($value): string {
   $legacyUnsupported = [
     'Mensaje recibido desde Instagram DM.',
     'Mensaje recibido desde Facebook Messenger.',
+    'Mensaje recibido desde WhatsApp.',
     'Adjunto recibido: unsupported_type',
   ];
   return in_array($text, $legacyUnsupported, true) ? updates_unsupported_message_text() : $text;
