@@ -446,7 +446,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   wa_json(['ok' => false, 'error' => 'Metodo no permitido.'], 405);
 }
 
-$raw = file_get_contents('php://input') ?: '';
+$raw = defined('WHATSAPP_WEBHOOK_RAW_BODY')
+  ? (string) constant('WHATSAPP_WEBHOOK_RAW_BODY')
+  : (file_get_contents('php://input') ?: '');
 conv_ensure_schema($pdo);
 $channelsTable = ig_channels_table();
 ig_channels_ensure_schema($pdo, $channelsTable);

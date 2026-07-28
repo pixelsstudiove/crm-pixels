@@ -1104,7 +1104,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
   $token = (string) ($_GET['hub_verify_token'] ?? $_GET['hub.verify_token'] ?? '');
   $challenge = (string) ($_GET['hub_challenge'] ?? $_GET['hub.challenge'] ?? '');
   $expected = (string) app_config('instagram.webhook_verify_token', '');
-  if ($mode === 'subscribe' && $expected !== '' && hash_equals($expected, $token)) {
+  $whatsappExpected = (string) app_config('whatsapp_cloud.webhook_verify_token', '');
+  $validTokens = array_values(array_unique(array_filter([$expected, $whatsappExpected], static fn($value) => trim((string) $value) !== '')));
+  $isValidToken = false;
+  foreach ($validTokens as $validToken) {
+    if (hash_equals((string) $validToken, $token)) {
+      $isValidToken = true;
+      break;
+    }
+  }
+  if ($mode === 'subscribe' && $isValidToken) {
     if (!headers_sent()) header('Content-Type: text/plain; charset=utf-8');
     echo $challenge;
     exit;
@@ -1127,6 +1136,12 @@ if (!ig_validate_signature($raw)) {
 $payload = json_decode($raw, true);
 if (!is_array($payload)) {
   ig_json(['ok' => false, 'error' => 'JSON inválido'], 400);
+}
+
+if (strtolower(trim((string) ($payload['object'] ?? ''))) === 'whatsapp_business_account') {
+  if (!defined('WHATSAPP_WEBHOOK_RAW_BODY')) define('WHATSAPP_WEBHOOK_RAW_BODY', $raw);
+  require __DIR__ . '/whatsapp_webhook.php';
+  exit;
 }
 
 try {
