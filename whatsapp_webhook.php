@@ -168,6 +168,70 @@ function wa_update_message_status(PDO $pdo, ?string $messageId, ?string $status)
   }
 }
 
+function wa_process_status(PDO $pdo, string $channelsTable, array $value, array $status): void {
+  $phoneNumberId = wa_clean($value['metadata']['phone_number_id'] ?? null, 120);
+  $displayPhone = wa_clean($value['metadata']['display_phone_number'] ?? null, 40);
+  $recipientId = wa_clean($status['recipient_id'] ?? null, 160);
+  $messageId = wa_clean($status['id'] ?? null, 2000);
+  $deliveryStatus = wa_clean($status['status'] ?? null, 40);
+  $eventAt = wa_message_time($status['timestamp'] ?? null);
+
+  wa_update_message_status($pdo, $messageId, $deliveryStatus);
+
+  if ($phoneNumberId === null) {
+    wa_log($pdo, [
+      'source' => 'whatsapp',
+      'status' => 'ignored',
+      'event_type' => 'message_status',
+      'recipient_id' => $phoneNumberId,
+      'sender_id' => $recipientId,
+      'external_message_id' => $messageId,
+      'message_preview' => $deliveryStatus,
+      'error_message' => 'Status de WhatsApp sin phone_number_id.',
+      'payload_json' => json_encode(['value' => $value, 'status' => $status], JSON_UNESCAPED_UNICODE),
+    ]);
+    return;
+  }
+
+  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $phoneNumberId, 'whatsapp');
+  if (!$channel) {
+    wa_log($pdo, [
+      'source' => 'whatsapp',
+      'status' => 'ignored',
+      'event_type' => 'message_status',
+      'recipient_id' => $phoneNumberId,
+      'sender_id' => $recipientId,
+      'external_message_id' => $messageId,
+      'message_preview' => $deliveryStatus,
+      'error_message' => 'No existe canal activo de WhatsApp para el phone_number_id.',
+      'payload_json' => json_encode(['value' => $value, 'status' => $status], JSON_UNESCAPED_UNICODE),
+    ]);
+    return;
+  }
+
+  $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
+  try {
+    $stmt = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
+    $stmt->execute([$eventAt, (int) ($channel['id'] ?? 0)]);
+  } catch (Throwable $e) {
+    /* no-op */
+  }
+
+  wa_log($pdo, [
+    'account_id' => $accountId,
+    'source' => 'whatsapp',
+    'status' => 'processed',
+    'event_type' => 'message_status',
+    'recipient_id' => $phoneNumberId,
+    'sender_id' => $recipientId,
+    'channel_id' => (int) ($channel['id'] ?? 0),
+    'channel_username' => (string) (($channel['whatsapp_display_phone_number'] ?? '') ?: ($displayPhone ?: ($channel['instagram_username'] ?? ''))),
+    'external_message_id' => $messageId,
+    'message_preview' => $deliveryStatus,
+    'payload_json' => json_encode(['value' => $value, 'status' => $status], JSON_UNESCAPED_UNICODE),
+  ]);
+}
+
 function wa_process_message(PDO $pdo, string $channelsTable, string $leadsTable, array $value, array $message): void {
   $phoneNumberId = wa_clean($value['metadata']['phone_number_id'] ?? null, 120);
   $displayPhone = wa_clean($value['metadata']['display_phone_number'] ?? null, 40);
@@ -352,17 +416,7 @@ foreach (($payload['entry'] ?? []) as $entry) {
     }
     foreach (($value['statuses'] ?? []) as $status) {
       if (!is_array($status)) continue;
-      wa_update_message_status($pdo, wa_clean($status['id'] ?? null, 2000), wa_clean($status['status'] ?? null, 40));
-      wa_log($pdo, [
-        'source' => 'whatsapp',
-        'status' => 'processed',
-        'event_type' => 'message_status',
-        'recipient_id' => wa_clean($value['metadata']['phone_number_id'] ?? null, 120),
-        'sender_id' => wa_clean($status['recipient_id'] ?? null, 160),
-        'external_message_id' => wa_clean($status['id'] ?? null, 2000),
-        'message_preview' => wa_clean($status['status'] ?? null, 255),
-        'payload_json' => json_encode(['value' => $value, 'status' => $status], JSON_UNESCAPED_UNICODE),
-      ]);
+      wa_process_status($pdo, $channelsTable, $value, $status);
     }
   }
 }
