@@ -267,13 +267,44 @@ if ($plan) {
   <title>Eliminación Meta - Pixels Studio</title>
   <link rel="stylesheet" href="css/app.css?v=<?= (int) @filemtime(__DIR__ . '/css/app.css') ?>">
   <style>
-    :root { --container-w:min(98vw, 1480px); }
-    .privacy-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
-    .privacy-grid { display:grid; grid-template-columns:280px minmax(0, 1fr); gap:18px; align-items:start; }
-    .privacy-card { border:1px solid var(--line); border-radius:22px; background:#fff; padding:20px; box-shadow:0 16px 34px rgba(0, 76, 110, .07); }
-    .privacy-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.25rem; letter-spacing:-.02em; }
-    .privacy-card p { margin:0 0 16px; color:var(--brand-muted); font-weight:750; line-height:1.45; }
-    .privacy-form { display:grid; gap:14px; }
+    .meta-deletion-page .dashboard-card,
+    .meta-deletion-page .panel,
+    .meta-deletion-page .admin-layout,
+    .meta-deletion-page .admin-content { overflow:visible; }
+    .privacy-header { position:relative; z-index:20; display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:22px; }
+    .privacy-header .title { margin:0; max-width:840px; }
+    .privacy-header .subtitle { max-width:860px; margin-top:8px; }
+    .privacy-content { min-width:0; display:grid; gap:18px; }
+    .privacy-intro {
+      display:grid;
+      grid-template-columns:minmax(0, 1fr) auto;
+      gap:18px;
+      align-items:center;
+      border:1px solid var(--config-line);
+      border-radius:28px;
+      background:#fff;
+      padding:22px;
+      box-shadow:0 18px 42px rgba(15,23,42,.05);
+    }
+    .privacy-intro strong { display:block; color:var(--brand-ink); font-size:1.1rem; font-weight:950; letter-spacing:-.02em; }
+    .privacy-intro span { display:block; margin-top:6px; color:var(--brand-muted); font-weight:760; line-height:1.42; }
+    .privacy-intro-badge {
+      display:inline-grid;
+      place-items:center;
+      min-height:46px;
+      padding:0 16px;
+      border-radius:999px;
+      background:var(--brand-ink);
+      color:#fff;
+      font-weight:950;
+      white-space:nowrap;
+    }
+    .privacy-grid { display:grid; grid-template-columns:minmax(360px, .72fr) minmax(540px, 1.28fr); gap:18px; align-items:start; }
+    .privacy-card { border:1px solid var(--config-line); border-radius:28px; background:#fff; padding:clamp(18px, 1.7vw, 28px); box-shadow:0 18px 42px rgba(15,23,42,.05); }
+    .privacy-card h2 { margin:0 0 8px; color:var(--brand-ink); font-size:1.22rem; letter-spacing:-.02em; }
+    .privacy-card p { margin:0 0 18px; color:var(--brand-muted); font-weight:760; line-height:1.45; }
+    .privacy-form { display:grid; gap:16px; }
+    .privacy-form label { display:grid; gap:8px; min-width:0; }
     .privacy-form textarea,
     .privacy-form input[type="file"],
     .privacy-form input[type="text"] {
@@ -288,7 +319,18 @@ if ($plan) {
       outline:none;
     }
     .privacy-form textarea { min-height:160px; padding:14px; resize:vertical; }
-    .privacy-form input[type="file"],
+    .privacy-form input[type="file"] { min-height:64px; height:auto; padding:15px; line-height:1.35; }
+    .privacy-form input[type="file"]::file-selector-button {
+      min-height:36px;
+      margin-right:12px;
+      border:1px solid var(--config-line);
+      border-radius:999px;
+      background:#f8fafc;
+      color:var(--brand-ink);
+      font:inherit;
+      font-weight:900;
+      cursor:pointer;
+    }
     .privacy-form input[type="text"] { min-height:52px; padding:12px 14px; }
     .privacy-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .privacy-btn {
@@ -318,27 +360,44 @@ if ($plan) {
     .privacy-table td { border-top:1px solid var(--line); padding:14px; font-weight:800; vertical-align:top; }
     .privacy-ids { max-width:520px; color:var(--brand-muted); overflow-wrap:anywhere; }
     .privacy-muted { color:var(--brand-muted); font-weight:850; }
-    @media (max-width: 980px) {
+    @media (max-width: 1180px) {
       .privacy-grid { grid-template-columns:1fr; }
+      .privacy-intro { grid-template-columns:1fr; }
+      .privacy-intro-badge { width:max-content; }
+    }
+    @media (max-width: 760px) {
+      .privacy-header { align-items:flex-start; }
+      .privacy-card,
+      .privacy-intro { border-radius:22px; }
       .privacy-summary { grid-template-columns:1fr; }
     }
   </style>
 </head>
-<body>
-  <main class="page-shell">
-    <section class="app-card">
+<body class="dashboard-page config-page meta-deletion-page">
+  <main class="dashboard-shell">
+    <section class="form-card dashboard-card">
+      <div class="panel">
       <header class="privacy-header">
         <div>
-          <div class="brand-kicker">PIXELS STUDIO</div>
-          <h1>Eliminación de datos Meta</h1>
-          <p class="lead-copy">Carga el CSV de Meta, audita coincidencias y elimina datos asociados a identificadores solicitados.</p>
+          <p class="eyebrow"><?= h(app_config('brand.name', 'Pixels Studio')) ?></p>
+          <h1 class="title">Eliminación de datos Meta</h1>
+          <p class="subtitle">Carga el CSV de Meta, audita coincidencias y elimina datos asociados a identificadores solicitados.</p>
         </div>
         <?php nav_render_config_top_nav($pdo, 'dashboard.php'); ?>
       </header>
 
       <div class="admin-layout">
         <?php nav_render_admin_side_nav('meta_deletion'); ?>
-        <div class="privacy-grid">
+        <div class="admin-content privacy-content">
+          <section class="privacy-intro" aria-label="Flujo de eliminación">
+            <div>
+              <strong>Auditoría primero, eliminación solo con confirmación.</strong>
+              <span>El archivo no se guarda en el servidor. El sistema muestra coincidencias por área antes de permitir una eliminación definitiva.</span>
+            </div>
+            <span class="privacy-intro-badge">Meta compliance</span>
+          </section>
+
+          <div class="privacy-grid">
           <section class="privacy-card">
             <h2>Archivo de Meta</h2>
             <p>Sube el CSV descargado desde App Manager o pega los IDs manualmente. El archivo no se guarda en el servidor.</p>
@@ -407,7 +466,9 @@ if ($plan) {
               </form>
             <?php endif; ?>
           </section>
+          </div>
         </div>
+      </div>
       </div>
     </section>
   </main>

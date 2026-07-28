@@ -329,6 +329,8 @@ body{
 }
 .dashboard-card .credit{padding-top:16px}
 .app-nav-actions{
+  position:relative;
+  z-index:5000;
   display:flex;
   align-items:center;
   justify-content:flex-end;
@@ -358,6 +360,10 @@ body{
 }
 .menu-dropdown{
   position:relative;
+  z-index:5000;
+}
+.menu-dropdown.is-open{
+  z-index:7000;
 }
 .menu-trigger{
   appearance:none;
@@ -397,7 +403,7 @@ body{
   position:absolute;
   top:calc(100% + 8px);
   right:0;
-  z-index:40;
+  z-index:8000;
   display:none;
   min-width:220px;
   padding:8px;
@@ -529,9 +535,16 @@ body{
   background:#eef4f9;
 }
 .config-page .dashboard-card{
+  overflow:visible!important;
   background:#f7f9fc!important;
   border-color:#dce8f3!important;
   box-shadow:none!important;
+}
+.config-page .form-card.dashboard-card,
+.config-page .dashboard-card .panel,
+.config-page .admin-layout,
+.config-page .admin-content{
+  overflow:visible!important;
 }
 .config-page .dashboard-card .panel{
   padding:clamp(18px, 2vw, 34px)!important;
@@ -540,6 +553,8 @@ body{
 .config-page .users-header,
 .config-page .channels-header,
 .config-page .logs-header{
+  position:relative;
+  z-index:5200;
   align-items:center!important;
   margin-bottom:22px!important;
   padding-bottom:0;
