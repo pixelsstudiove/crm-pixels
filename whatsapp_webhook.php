@@ -71,6 +71,45 @@ function wa_message_media_type(array $message): ?string {
   return null;
 }
 
+function wa_find_channel(PDO $pdo, string $channelsTable, ?string $phoneNumberId, ?string $wabaId = null): ?array {
+  $phoneNumberId = wa_clean($phoneNumberId, 120);
+  $wabaId = wa_clean($wabaId, 120);
+  if ($phoneNumberId !== null) {
+    $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $phoneNumberId, 'whatsapp');
+    if ($channel) return $channel;
+  }
+
+  $candidates = array_values(array_unique(array_filter([
+    $phoneNumberId,
+    $phoneNumberId !== null ? 'whatsapp:' . $phoneNumberId : null,
+    $wabaId,
+  ], static fn($value) => is_string($value) && trim($value) !== '')));
+  if (!$candidates) return null;
+
+  try {
+    $placeholders = implode(',', array_fill(0, count($candidates), '?'));
+    $stmt = $pdo->prepare(<<<SQL
+SELECT *
+FROM {$channelsTable}
+WHERE is_active=1
+  AND receive_whatsapp=1
+  AND (
+    whatsapp_phone_number_id IN ({$placeholders})
+    OR page_id IN ({$placeholders})
+    OR instagram_user_id IN ({$placeholders})
+    OR whatsapp_business_account_id IN ({$placeholders})
+  )
+ORDER BY updated_at DESC, id DESC
+LIMIT 1
+SQL);
+    $stmt->execute(array_merge($candidates, $candidates, $candidates, $candidates));
+    $row = $stmt->fetch();
+    return $row ?: null;
+  } catch (Throwable $e) {
+    return null;
+  }
+}
+
 function wa_download_media_bytes(string $mediaId, string $token): array {
   $meta = ig_graph_request('GET', $mediaId, ['access_token' => $token]);
   if (!($meta['ok'] ?? false)) return ['ok' => false, 'error' => (string) ($meta['error'] ?? 'Meta no devolvió el adjunto.')];
@@ -169,6 +208,7 @@ function wa_update_message_status(PDO $pdo, ?string $messageId, ?string $status)
 }
 
 function wa_process_status(PDO $pdo, string $channelsTable, array $value, array $status): void {
+  $wabaId = wa_clean($value['whatsapp_business_account_id'] ?? null, 120);
   $phoneNumberId = wa_clean($value['metadata']['phone_number_id'] ?? null, 120);
   $displayPhone = wa_clean($value['metadata']['display_phone_number'] ?? null, 40);
   $recipientId = wa_clean($status['recipient_id'] ?? null, 160);
@@ -193,7 +233,7 @@ function wa_process_status(PDO $pdo, string $channelsTable, array $value, array 
     return;
   }
 
-  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $phoneNumberId, 'whatsapp');
+  $channel = wa_find_channel($pdo, $channelsTable, $phoneNumberId, $wabaId);
   if (!$channel) {
     wa_log($pdo, [
       'source' => 'whatsapp',
@@ -233,6 +273,7 @@ function wa_process_status(PDO $pdo, string $channelsTable, array $value, array 
 }
 
 function wa_process_message(PDO $pdo, string $channelsTable, string $leadsTable, array $value, array $message): void {
+  $wabaId = wa_clean($value['whatsapp_business_account_id'] ?? null, 120);
   $phoneNumberId = wa_clean($value['metadata']['phone_number_id'] ?? null, 120);
   $displayPhone = wa_clean($value['metadata']['display_phone_number'] ?? null, 40);
   $from = wa_clean($message['from'] ?? null, 160);
@@ -256,7 +297,7 @@ function wa_process_message(PDO $pdo, string $channelsTable, string $leadsTable,
     return;
   }
 
-  $channel = ig_channel_find_by_recipient($pdo, $channelsTable, $phoneNumberId, 'whatsapp');
+  $channel = wa_find_channel($pdo, $channelsTable, $phoneNumberId, $wabaId);
   if (!$channel) {
     wa_log($pdo, [
       'source' => 'whatsapp',
@@ -272,100 +313,118 @@ function wa_process_message(PDO $pdo, string $channelsTable, string $leadsTable,
     return;
   }
 
-  $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
-  $contact = wa_contact_for($value, $from);
-  $profileName = wa_clean($contact['profile']['name'] ?? null, 180);
-  $displayName = $profileName ?: '+' . preg_replace('/\D+/', '', $from);
-  $threadId = $phoneNumberId . ':' . $from;
+  try {
+    $accountId = (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo));
+    $contact = wa_contact_for($value, $from);
+    $profileName = wa_clean($contact['profile']['name'] ?? null, 180);
+    $displayName = $profileName ?: '+' . preg_replace('/\D+/', '', $from);
+    $threadId = $phoneNumberId . ':' . $from;
 
-  $contactId = conv_upsert_contact($pdo, [
-    'account_id' => $accountId,
-    'external_source' => 'whatsapp',
-    'external_contact_id' => $from,
-    'display_name' => $displayName,
-    'username' => '+' . preg_replace('/\D+/', '', $from),
-    'profile_url' => 'https://wa.me/' . preg_replace('/\D+/', '', $from),
-    'last_seen_at' => $messageAt,
-  ]);
-  if ($contactId <= 0) return;
-
-  $conversationId = conv_upsert_conversation($pdo, [
-    'account_id' => $accountId,
-    'channel_id' => (int) ($channel['id'] ?? 0),
-    'contact_id' => $contactId,
-    'external_source' => 'whatsapp',
-    'external_thread_id' => $threadId,
-    'last_message_preview' => $messageText,
-    'last_message_at' => $messageAt,
-    'unread_increment' => 0,
-  ]);
-  if ($conversationId <= 0) return;
-
-  $isDuplicateMessage = wa_message_already_exists($pdo, $conversationId, $messageId);
-
-  $leadId = conv_ensure_lead_for_conversation($pdo, $leadsTable, $conversationId);
-  if ($leadId > 0) {
-    conv_upsert_conversation($pdo, [
+    $contactId = conv_upsert_contact($pdo, [
       'account_id' => $accountId,
-      'channel_id' => (int) ($channel['id'] ?? 0),
-      'contact_id' => $contactId,
-      'lead_id' => $leadId,
       'external_source' => 'whatsapp',
-      'external_thread_id' => $threadId,
-      'unread_increment' => 0,
+      'external_contact_id' => $from,
+      'display_name' => $displayName,
+      'username' => '+' . preg_replace('/\D+/', '', $from),
+      'profile_url' => 'https://wa.me/' . preg_replace('/\D+/', '', $from),
+      'last_seen_at' => $messageAt,
     ]);
-  }
+    if ($contactId <= 0) throw new RuntimeException('No se pudo crear o actualizar el contacto de WhatsApp.');
 
-  $internalMessageId = conv_add_message($pdo, [
-    'account_id' => $accountId,
-    'conversation_id' => $conversationId,
-    'external_message_id' => $messageId,
-    'direction' => 'inbound',
-    'sender_external_id' => $from,
-    'message_type' => $messageType,
-    'message_text' => $messageText,
-    'payload_json' => json_encode(['source' => 'whatsapp_cloud', 'value' => $value, 'message' => $message], JSON_UNESCAPED_UNICODE),
-    'sent_at' => $messageAt,
-    'delivery_status' => 'received',
-  ]);
-  wa_store_message_media($pdo, $channel, $conversationId, $internalMessageId, $message);
-
-  if (!$isDuplicateMessage) {
-    conv_upsert_conversation($pdo, [
+    $conversationId = conv_upsert_conversation($pdo, [
       'account_id' => $accountId,
       'channel_id' => (int) ($channel['id'] ?? 0),
       'contact_id' => $contactId,
-      'lead_id' => $leadId ?: null,
       'external_source' => 'whatsapp',
       'external_thread_id' => $threadId,
       'last_message_preview' => $messageText,
       'last_message_at' => $messageAt,
-      'unread_increment' => 1,
+      'unread_increment' => 0,
+    ]);
+    if ($conversationId <= 0) throw new RuntimeException('No se pudo crear o actualizar la conversación de WhatsApp.');
+
+    $isDuplicateMessage = wa_message_already_exists($pdo, $conversationId, $messageId);
+
+    $leadId = conv_ensure_lead_for_conversation($pdo, $leadsTable, $conversationId);
+    if ($leadId > 0) {
+      conv_upsert_conversation($pdo, [
+        'account_id' => $accountId,
+        'channel_id' => (int) ($channel['id'] ?? 0),
+        'contact_id' => $contactId,
+        'lead_id' => $leadId,
+        'external_source' => 'whatsapp',
+        'external_thread_id' => $threadId,
+        'unread_increment' => 0,
+      ]);
+    }
+
+    $internalMessageId = conv_add_message($pdo, [
+      'account_id' => $accountId,
+      'conversation_id' => $conversationId,
+      'external_message_id' => $messageId,
+      'direction' => 'inbound',
+      'sender_external_id' => $from,
+      'message_type' => $messageType,
+      'message_text' => $messageText,
+      'payload_json' => json_encode(['source' => 'whatsapp_cloud', 'value' => $value, 'message' => $message], JSON_UNESCAPED_UNICODE),
+      'sent_at' => $messageAt,
+      'delivery_status' => 'received',
+    ]);
+    if ($internalMessageId <= 0 && !$isDuplicateMessage) throw new RuntimeException('No se pudo guardar el mensaje de WhatsApp.');
+    wa_store_message_media($pdo, $channel, $conversationId, $internalMessageId, $message);
+
+    if (!$isDuplicateMessage) {
+      conv_upsert_conversation($pdo, [
+        'account_id' => $accountId,
+        'channel_id' => (int) ($channel['id'] ?? 0),
+        'contact_id' => $contactId,
+        'lead_id' => $leadId ?: null,
+        'external_source' => 'whatsapp',
+        'external_thread_id' => $threadId,
+        'last_message_preview' => $messageText,
+        'last_message_at' => $messageAt,
+        'unread_increment' => 1,
+      ]);
+    }
+
+    try {
+      $stmt = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
+      $stmt->execute([$messageAt, (int) ($channel['id'] ?? 0)]);
+    } catch (Throwable $e) {
+      /* no-op */
+    }
+
+    wa_log($pdo, [
+      'account_id' => $accountId,
+      'source' => 'whatsapp',
+      'status' => 'processed',
+      'event_type' => $messageType,
+      'recipient_id' => $phoneNumberId,
+      'sender_id' => $from,
+      'channel_id' => (int) ($channel['id'] ?? 0),
+      'channel_username' => (string) (($channel['whatsapp_display_phone_number'] ?? '') ?: ($displayPhone ?: ($channel['instagram_username'] ?? ''))),
+      'external_message_id' => $messageId,
+      'lead_id' => $leadId ?: null,
+      'conversation_id' => $conversationId,
+      'message_preview' => $messageText,
+      'payload_json' => json_encode(['value' => $value, 'message' => $message], JSON_UNESCAPED_UNICODE),
+    ]);
+  } catch (Throwable $e) {
+    wa_log($pdo, [
+      'account_id' => (int) (($channel['account_id'] ?? current_account_id()) ?: accounts_default_id($pdo)),
+      'source' => 'whatsapp',
+      'status' => 'ignored',
+      'event_type' => 'processing_error',
+      'recipient_id' => $phoneNumberId,
+      'sender_id' => $from,
+      'channel_id' => (int) ($channel['id'] ?? 0),
+      'channel_username' => (string) (($channel['whatsapp_display_phone_number'] ?? '') ?: ($displayPhone ?: ($channel['instagram_username'] ?? ''))),
+      'external_message_id' => $messageId,
+      'message_preview' => $messageText,
+      'error_message' => $e->getMessage(),
+      'payload_json' => json_encode(['value' => $value, 'message' => $message], JSON_UNESCAPED_UNICODE),
     ]);
   }
-
-  try {
-    $stmt = $pdo->prepare("UPDATE {$channelsTable} SET last_event_at=?, updated_at=NOW() WHERE id=?");
-    $stmt->execute([$messageAt, (int) ($channel['id'] ?? 0)]);
-  } catch (Throwable $e) {
-    /* no-op */
-  }
-
-  wa_log($pdo, [
-    'account_id' => $accountId,
-    'source' => 'whatsapp',
-    'status' => 'processed',
-    'event_type' => $messageType,
-    'recipient_id' => $phoneNumberId,
-    'sender_id' => $from,
-    'channel_id' => (int) ($channel['id'] ?? 0),
-    'channel_username' => (string) (($channel['whatsapp_display_phone_number'] ?? '') ?: ($displayPhone ?: ($channel['instagram_username'] ?? ''))),
-    'external_message_id' => $messageId,
-    'lead_id' => $leadId ?: null,
-    'conversation_id' => $conversationId,
-    'message_preview' => $messageText,
-    'payload_json' => json_encode(['value' => $value, 'message' => $message], JSON_UNESCAPED_UNICODE),
-  ]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -411,6 +470,9 @@ foreach (($payload['entry'] ?? []) as $entry) {
   foreach (($entry['changes'] ?? []) as $change) {
     if (!is_array($change)) continue;
     $value = is_array($change['value'] ?? null) ? $change['value'] : [];
+    if (!isset($value['whatsapp_business_account_id']) && isset($entry['id'])) {
+      $value['whatsapp_business_account_id'] = $entry['id'];
+    }
     foreach (($value['messages'] ?? []) as $message) {
       if (is_array($message)) wa_process_message($pdo, $channelsTable, $TABLE_LEADS, $value, $message);
     }
