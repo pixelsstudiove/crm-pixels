@@ -287,6 +287,61 @@ function ai_suggest_required_knowledge(array $approvedKnowledge): array {
   ];
 }
 
+function ai_suggest_required_knowledge_tokens(string $text): array {
+  $tokens = ai_suggest_keyword_tokens($text);
+  $important = [];
+  foreach ($tokens as $token) {
+    $length = function_exists('mb_strlen') ? mb_strlen($token, 'UTF-8') : strlen($token);
+    if ($length < 5) continue;
+    $important[$token] = true;
+  }
+  return array_keys($important);
+}
+
+function ai_suggest_reply_uses_required_knowledge(string $reply, array $requiredKnowledge): bool {
+  if (empty($requiredKnowledge['required'])) return true;
+
+  $source = ai_suggest_clean_text($requiredKnowledge['response'] ?? '', 1600);
+  if ($source === '') return true;
+
+  $replyNormalized = ai_suggest_match_normalize($reply);
+  $tokens = ai_suggest_required_knowledge_tokens($source);
+  if (!$tokens) return true;
+
+  $matches = 0;
+  foreach ($tokens as $token) {
+    if (preg_match('/\b' . preg_quote($token, '/') . '\b/u', $replyNormalized)) {
+      $matches++;
+    }
+  }
+
+  return $matches >= min(3, max(1, (int) ceil(count($tokens) * 0.18)));
+}
+
+function ai_suggest_direct_knowledge_reply(array $context): string {
+  $required = is_array($context['required_knowledge'] ?? null) ? $context['required_knowledge'] : [];
+  $knowledge = ai_suggest_clean_text($required['response'] ?? '', 1600);
+  if ($knowledge === '') return '';
+
+  $name = ai_suggest_clean_text($context['contact']['name'] ?? '', 80);
+  $nameParts = preg_split('/\s+/u', trim($name));
+  $firstName = is_array($nameParts) ? trim((string) ($nameParts[0] ?? '')) : '';
+  $greeting = $firstName !== '' && ai_suggest_match_normalize($firstName) !== 'contacto'
+    ? 'Hola ' . $firstName . ', claro.'
+    : 'Hola, claro.';
+
+  $title = ai_suggest_match_normalize($required['title'] ?? '');
+  $knowledgeNormalized = ai_suggest_match_normalize($knowledge);
+  $isLocation = strpos($title, 'ubic') !== false
+    || preg_match('/\b(sede|sedes|direccion|direcciones|av|avenida|valencia)\b/u', $knowledgeNormalized);
+
+  $suffix = $isLocation
+    ? "\n\n¿A cuál de las sedes te queda mejor acercarte?"
+    : "\n\nQuedo atento para ayudarte con el siguiente paso.";
+
+  return ai_suggest_clean_text($greeting . "\n\n" . $knowledge . $suffix, 1000);
+}
+
 function ai_suggest_history_key(int $accountId, int $conversationId): string {
   return 'a' . $accountId . '_c' . $conversationId;
 }
@@ -412,6 +467,20 @@ function ai_suggest_call_openai(array $context): array {
   if ($reply === '') {
     ai_suggest_log_error('OpenAI returned empty suggestion', ['body' => ai_suggest_clean_text($raw, 2000)]);
     ai_suggest_json(['ok' => false, 'error' => 'La IA no devolvio una respuesta sugerida.'], 502);
+  }
+
+  if (!ai_suggest_reply_uses_required_knowledge($reply, $context['required_knowledge'] ?? [])) {
+    $directReply = ai_suggest_direct_knowledge_reply($context);
+    if ($directReply !== '') {
+      ai_suggest_log_error('AI suggestion replaced by required knowledge fallback', [
+        'required_title' => ai_suggest_clean_text($context['required_knowledge']['title'] ?? '', 140),
+        'original_reply' => $reply,
+      ]);
+      $reply = $directReply;
+      $decoded['intent'] = 'Responder con conocimiento aprobado';
+      $decoded['next_step'] = 'Dar seguimiento a partir de la informacion entregada';
+      $decoded['confidence'] = max((float) ($decoded['confidence'] ?? 0), 0.96);
+    }
   }
 
   return [
