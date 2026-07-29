@@ -255,6 +255,38 @@ function ai_suggest_select_relevant_knowledge(array $items, array $conversation,
   return $selected;
 }
 
+function ai_suggest_required_knowledge(array $approvedKnowledge): array {
+  $top = $approvedKnowledge[0] ?? null;
+  if (!is_array($top)) {
+    return [
+      'required' => false,
+      'reason' => '',
+      'title' => '',
+      'response' => '',
+      'relevance_score' => 0,
+    ];
+  }
+
+  $score = (int) ($top['relevance_score'] ?? 0);
+  if ($score < 18) {
+    return [
+      'required' => false,
+      'reason' => '',
+      'title' => '',
+      'response' => '',
+      'relevance_score' => $score,
+    ];
+  }
+
+  return [
+    'required' => true,
+    'reason' => 'El cliente pregunto algo que coincide con conocimiento aprobado de la cuenta. Debes responder usando este dato de forma directa.',
+    'title' => ai_suggest_clean_text($top['title'] ?? '', 140),
+    'response' => ai_suggest_clean_text($top['response'] ?? '', 1400),
+    'relevance_score' => $score,
+  ];
+}
+
 function ai_suggest_history_key(int $accountId, int $conversationId): string {
   return 'a' . $accountId . '_c' . $conversationId;
 }
@@ -318,6 +350,7 @@ function ai_suggest_call_openai(array $context): array {
       'No repitas respuestas anteriores. Si el operador presiona varias veces generar respuesta IA, cambia completamente el enfoque, estructura, inicio y cierre.',
       'No repitas literalmente el mensaje del cliente ni uses plantillas genericas. La respuesta debe sonar humana y especifica al contexto.',
       'El bloque approved_sales_knowledge contiene conocimiento aprobado y activo de la cuenta actual. Tratalo como fuente de verdad cuando sea relevante.',
+      'Si required_knowledge.required es true, tu respuesta debe usar required_knowledge.response como dato principal y responder directo. No cambies el tema, no preguntes que necesita si el dato ya responde la pregunta.',
       'Si el cliente pregunta por ubicacion, direccion, sedes, horario, pagos, precios, garantia, envios o disponibilidad y el conocimiento aprobado incluye ese dato, respondelo de forma directa antes de pedir mas informacion.',
       'Si el conocimiento aprobado incluye varias sedes o instrucciones concretas, listalas claramente con saltos de linea. No digas que vas a validar un dato que ya esta en el conocimiento.',
       'Escribe con saltos de linea reales para que sea facil de leer en el chat: 2 a 4 parrafos cortos separados por una linea en blanco. Evita bloques largos de texto.',
@@ -328,7 +361,7 @@ function ai_suggest_call_openai(array $context): array {
     ]),
     'input' => "Contexto del CRM:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
     'max_output_tokens' => 500,
-    'temperature' => 0.92,
+    'temperature' => 0.78,
     'top_p' => 0.96,
   ];
 
@@ -542,6 +575,7 @@ try {
     ],
     'operator_draft' => $draft,
     'approved_sales_knowledge' => $approvedKnowledge,
+    'required_knowledge' => ai_suggest_required_knowledge($approvedKnowledge),
     'sales_generation_rules' => [
       'variant' => $variant,
       'must_be_different_from_previous' => true,
