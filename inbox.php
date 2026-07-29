@@ -157,6 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $filterStatus = trim((string) ($_GET['status'] ?? ''));
 if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
+$filterSalesStatus = trim((string) ($_GET['sales_status'] ?? ''));
+if ($filterSalesStatus !== '' && !array_key_exists($filterSalesStatus, $salesStatusOptions)) $filterSalesStatus = '';
 $q = trim((string) ($_GET['q'] ?? ''));
 $selectedRouteId = trim((string) ($_GET['id'] ?? ''));
 $selectedId = 0;
@@ -221,6 +223,11 @@ if ($filterStatus !== '') {
   $where[] = 'c.status = :status';
   $params[':status'] = $filterStatus;
 }
+if ($filterSalesStatus !== '') {
+  $where[] = 'COALESCE(l.sales_status, :default_sales_status) = :sales_status';
+  $params[':default_sales_status'] = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
+  $params[':sales_status'] = $filterSalesStatus;
+}
 if ($q !== '') {
   $where[] = '(ct.display_name LIKE :q OR ct.username LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q)';
   $params[':q'] = '%' . $q . '%';
@@ -239,6 +246,7 @@ SELECT
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,
   l.fullname AS lead_fullname,
+  l.sales_status AS lead_sales_status,
   (
     SELECT MAX(im.sent_at)
     FROM {$messagesTable} im
@@ -760,7 +768,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           </div>
           <div class="inbox-actions app-nav-actions">
             <?php nav_render_view_button('inbox'); ?>
-            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'inbox.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus], ['q' => $q, 'status' => $filterStatus]); ?>
+            <?php nav_render_account_switch($pdo, $accountOptions, $filterAccountId, 'inbox.php', ['q' => $q, 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'sales_status' => $filterSalesStatus], ['q' => $q, 'status' => $filterStatus, 'sales_status' => $filterSalesStatus]); ?>
             <?php nav_render_user_menu(true); ?>
           </div>
         </header>
@@ -772,7 +780,7 @@ function inbox_visible_message_text($value, array $attachments): string {
 
         <div class="inbox-layout">
           <aside class="inbox-panel" aria-label="Conversaciones">
-            <?php $activeFilterCount = ($filterChannelId > 0 ? 1 : 0) + ($filterStatus !== '' ? 1 : 0); ?>
+            <?php $activeFilterCount = ($filterChannelId > 0 ? 1 : 0) + ($filterStatus !== '' ? 1 : 0) + ($filterSalesStatus !== '' ? 1 : 0); ?>
             <form class="conversation-filters" method="get" action="inbox.php">
               <input type="text" name="q" value="<?= h($q) ?>" placeholder="Buscar conversación">
               <details class="conversation-filter-disclosure" data-filter-disclosure <?= $activeFilterCount > 0 ? 'open' : '' ?>>
@@ -790,6 +798,12 @@ function inbox_visible_message_text($value, array $attachments): string {
                       <option value="<?= h($value) ?>" <?= $filterStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
                     <?php endforeach; ?>
                   </select>
+                  <select name="sales_status" onchange="this.form.submit()" aria-label="Filtrar por status comercial">
+                    <option value="">Todos los status comerciales</option>
+                    <?php foreach ($salesStatusOptions as $value => $label): ?>
+                      <option value="<?= h($value) ?>" <?= $filterSalesStatus === (string) $value ? 'selected' : '' ?>><?= h($label) ?></option>
+                    <?php endforeach; ?>
+                  </select>
                 </div>
               </details>
             </form>
@@ -799,7 +813,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php $conversationSlug = trim((string) ($conversation['account_slug'] ?? $requestSlug)); ?>
                 <?php $avatarUrl = inbox_avatar_url($conversation); ?>
                 <?php $avatarInitials = inbox_avatar_initials($conversation); ?>
-                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" data-conversation-key="<?= (int) ($conversation['account_id'] ?? 0) ?>:<?= h(conv_route_id($conversation)) ?>" href="<?= h(account_url('inbox.php', ['id' => conv_route_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
+                <a class="conversation-item <?= $isActive ? 'is-active' : '' ?>" data-conversation-key="<?= (int) ($conversation['account_id'] ?? 0) ?>:<?= h(conv_route_id($conversation)) ?>" href="<?= h(account_url('inbox.php', ['id' => conv_route_id($conversation), 'channel_id' => $filterChannelId > 0 ? $filterChannelId : null, 'status' => $filterStatus, 'sales_status' => $filterSalesStatus, 'q' => $q], $conversationSlug !== '' ? $conversationSlug : null)) ?>">
                   <span class="conversation-avatar" data-initials="<?= h($avatarInitials) ?>" aria-hidden="true">
                     <?php if ($avatarUrl !== ''): ?>
                       <img src="<?= h($avatarUrl) ?>" alt="">
@@ -1048,6 +1062,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       channelId: <?= (int) $filterChannelId ?>,
       q: <?= json_encode($q, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       status: <?= json_encode($filterStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+      salesStatus: <?= json_encode($filterSalesStatus, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       lastMessageId: <?= (int) $lastMessageId ?>,
       csrf: <?= json_encode((string) ($_SESSION['csrf'] ?? ''), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
       canReply: <?= $canReplyFromCrm ? 'true' : 'false' ?>,
@@ -1319,6 +1334,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       params.set('id', String(id));
       if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
       if (inboxState.status) params.set('status', inboxState.status);
+      if (inboxState.salesStatus) params.set('sales_status', inboxState.salesStatus);
       if (inboxState.q) params.set('q', inboxState.q);
       const cleanSlug = String(slug || '').trim();
       if (!cleanSlug && accountId) params.set('account_id', String(accountId));
@@ -1636,6 +1652,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
         if (inboxState.q) params.set('q', inboxState.q);
         if (inboxState.status) params.set('status', inboxState.status);
+        if (inboxState.salesStatus) params.set('sales_status', inboxState.salesStatus);
         const response = await fetch(`inbox_updates.php?${params.toString()}`, {
           headers: { 'Accept': 'application/json' },
           cache: 'no-store'

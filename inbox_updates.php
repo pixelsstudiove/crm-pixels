@@ -28,6 +28,18 @@ $statusOptions = [
   'cerrada' => 'Cerrada',
   'spam' => 'Spam / no califica',
 ];
+$salesStatusOptions = (array) app_config('sales_funnel.statuses', []);
+if ($salesStatusOptions === []) {
+  $salesStatusOptions = [
+    'nuevo_lead' => 'Nuevo lead',
+    'en_conversacion' => 'En conversacion',
+    'propuesta_enviada' => 'Propuesta enviada',
+    'no_responde' => 'No responde',
+    'cliente_ganado' => 'Cliente ganado',
+    'cliente_perdido' => 'Cliente perdido',
+    'no_califica' => 'No califica',
+  ];
+}
 
 function updates_contact_name(array $conversation): string {
   $name = trim((string) ($conversation['display_name'] ?? ''));
@@ -114,6 +126,8 @@ function updates_channel_icon_label(array $conversation): string {
 try {
   $filterStatus = trim((string) ($_GET['status'] ?? ''));
   if ($filterStatus !== '' && !array_key_exists($filterStatus, $statusOptions)) $filterStatus = '';
+  $filterSalesStatus = trim((string) ($_GET['sales_status'] ?? ''));
+  if ($filterSalesStatus !== '' && !array_key_exists($filterSalesStatus, $salesStatusOptions)) $filterSalesStatus = '';
   $q = trim((string) ($_GET['q'] ?? ''));
   $requestSlug = accounts_request_slug();
   $requestAccount = accounts_request_account($pdo);
@@ -160,6 +174,11 @@ try {
     $where[] = 'c.status = :status';
     $params[':status'] = $filterStatus;
   }
+  if ($filterSalesStatus !== '') {
+    $where[] = 'COALESCE(l.sales_status, :default_sales_status) = :sales_status';
+    $params[':default_sales_status'] = (string) app_config('sales_funnel.default_status', 'nuevo_lead');
+    $params[':sales_status'] = $filterSalesStatus;
+  }
   if ($q !== '') {
     $where[] = '(ct.display_name LIKE :q OR ct.username LIKE :q OR c.last_message_preview LIKE :q OR ch.page_name LIKE :q OR ch.instagram_username LIKE :q)';
     $params[':q'] = '%' . $q . '%';
@@ -178,6 +197,7 @@ SELECT
   ch.instagram_username AS channel_username,
   a.slug AS account_slug,
   l.fullname AS lead_fullname,
+  l.sales_status AS lead_sales_status,
   (
     SELECT MAX(im.sent_at)
     FROM {$messagesTable} im
