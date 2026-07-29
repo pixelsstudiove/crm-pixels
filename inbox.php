@@ -1582,14 +1582,6 @@ function inbox_visible_message_text($value, array $attachments): string {
     }
 
     function messageSignature(message) {
-      const attachments = Array.isArray(message.attachments)
-        ? message.attachments.map(attachment => [
-          attachment.id || '',
-          attachment.url || '',
-          attachment.media_type || '',
-          attachment.filename || ''
-        ].join(':')).join('|')
-        : '';
       return [
         message.id || '',
         message.direction || '',
@@ -1597,8 +1589,19 @@ function inbox_visible_message_text($value, array $attachments): string {
         message.time || '',
         message.delivery_status || '',
         message.message_type || '',
-        attachments
+        attachmentsSignature(message.attachments)
       ].join('::');
+    }
+
+    function attachmentsSignature(attachments) {
+      return Array.isArray(attachments)
+        ? attachments.map(attachment => [
+          attachment.id || '',
+          attachment.url || '',
+          attachment.media_type || '',
+          attachment.filename || ''
+        ].join(':')).join('|')
+        : '';
     }
 
     function messageClassName(message) {
@@ -1607,26 +1610,76 @@ function inbox_visible_message_text($value, array $attachments): string {
       return `message ${direction}${isDeleted ? ' is-deleted' : ''}`;
     }
 
+    function messageMetaText(message) {
+      const direction = message.direction === 'outbound' ? 'outbound' : (message.direction === 'system' ? 'system' : 'inbound');
+      const metaLabel = direction === 'outbound' ? 'Enviado' : (direction === 'system' ? 'Sistema' : 'Recibido');
+      const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${message.sent_by_username}` : '';
+      return `${metaLabel} · ${message.time || ''}${sentBy}`;
+    }
+
+    function createMessageElement(message) {
+      const template = document.createElement('template');
+      template.innerHTML = messageMarkup(message).trim();
+      const node = template.content.firstElementChild;
+      if (node) bindMessageMediaScroll(node);
+      return node;
+    }
+
+    function updateMessageElement(node, message) {
+      if (!node || !message) return;
+      const signature = messageSignature(message);
+      if (node.dataset.signature === signature) return;
+
+      node.className = messageClassName(message);
+
+      const attachmentSignature = attachmentsSignature(message.attachments);
+      if (node.dataset.attachmentsSignature !== attachmentSignature) {
+        node.querySelector('.message-attachments')?.remove();
+        const markup = attachmentMarkup(message.attachments).trim();
+        if (markup) {
+          const wrapper = document.createElement('template');
+          wrapper.innerHTML = markup;
+          const attachmentsNode = wrapper.content.firstElementChild;
+          if (attachmentsNode) {
+            node.insertBefore(attachmentsNode, node.firstChild);
+            bindMessageMediaScroll(attachmentsNode);
+          }
+        }
+        node.dataset.attachmentsSignature = attachmentSignature;
+      }
+
+      const visibleText = visibleMessageText(message);
+      let textNode = node.querySelector('.message-text');
+      let metaNode = node.querySelector('.message-meta');
+      if (visibleText) {
+        if (!textNode) {
+          textNode = document.createElement('div');
+          textNode.className = 'message-text';
+          node.insertBefore(textNode, metaNode || null);
+        }
+        setTextIfChanged(textNode, visibleText);
+      } else if (textNode) {
+        textNode.remove();
+      }
+
+      if (!metaNode) {
+        metaNode = document.createElement('div');
+        metaNode.className = 'message-meta';
+        node.appendChild(metaNode);
+      }
+      setTextIfChanged(metaNode, messageMetaText(message));
+
+      node.dataset.signature = signature;
+    }
+
     function appendMessage(message) {
       if (!messageList || !message || !message.id) return;
       if (messageList.querySelector(`[data-message-id="${Number(message.id)}"]`)) return;
       const emptyState = messageList.querySelector('.empty-state');
       if (emptyState) emptyState.remove();
-      const direction = message.direction === 'outbound' ? 'outbound' : (message.direction === 'system' ? 'system' : 'inbound');
-      const metaLabel = direction === 'outbound' ? 'Enviado' : (direction === 'system' ? 'Sistema' : 'Recibido');
-      const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
-      const article = document.createElement('article');
-      article.className = messageClassName(message);
-      article.dataset.messageId = String(message.id);
-      article.dataset.signature = messageSignature(message);
-      const visibleText = visibleMessageText(message);
-      article.innerHTML = `
-        ${attachmentMarkup(message.attachments)}
-        ${visibleText ? `<div class="message-text">${escapeHtml(visibleText)}</div>` : ''}
-        <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
-      `;
+      const article = createMessageElement(message);
+      if (!article) return;
       messageList.appendChild(article);
-      bindMessageMediaScroll(article);
       inboxState.lastMessageId = Math.max(inboxState.lastMessageId, Number(message.id));
       messageList.dataset.lastId = String(inboxState.lastMessageId);
     }
@@ -1670,9 +1723,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         messageList.dataset.lastId = String(inboxState.lastMessageId);
         return true;
       }
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = messageMarkup(message).trim();
-      const realNode = wrapper.firstElementChild;
+      const realNode = createMessageElement(message);
       if (!realNode) return false;
       tempNode.replaceWith(realNode);
       inboxState.lastMessageId = Math.max(inboxState.lastMessageId, Number(message.id || 0));
@@ -1701,7 +1752,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
       const visibleText = visibleMessageText(message);
       return `
-        <article class="${messageClassName(message)}" data-message-id="${Number(message.id)}" data-signature="${escapeHtml(messageSignature(message))}">
+        <article class="${messageClassName(message)}" data-message-id="${Number(message.id)}" data-signature="${escapeHtml(messageSignature(message))}" data-attachments-signature="${escapeHtml(attachmentsSignature(message.attachments))}">
           ${attachmentMarkup(message.attachments)}
           ${visibleText ? `<div class="message-text">${escapeHtml(visibleText)}</div>` : ''}
           <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
@@ -1755,7 +1806,9 @@ function inbox_visible_message_text($value, array $attachments): string {
 
       if (hasSameOrder) {
         if (hasActiveMediaPlayback()) return;
-        renderMessages(messages);
+        messages.forEach(message => updateMessageElement(messageNodeById(Number(message.id || 0)), message));
+        inboxState.lastMessageId = Math.max(inboxState.lastMessageId, lastIncomingId);
+        messageList.dataset.lastId = String(inboxState.lastMessageId);
         return;
       }
 
@@ -1764,12 +1817,30 @@ function inbox_visible_message_text($value, array $attachments): string {
         && currentIds.every((id, index) => id === incomingIds[index]);
 
       if (onlyNewAtEnd) {
+        messages.slice(0, currentIds.length).forEach(message => updateMessageElement(messageNodeById(Number(message.id || 0)), message));
         messages.slice(currentIds.length).forEach(appendMessage);
         return;
       }
 
       if (hasActiveMediaPlayback()) return;
-      renderMessages(messages);
+      const existing = new Map();
+      messageList.querySelectorAll('[data-message-id]').forEach(node => {
+        existing.set(String(node.dataset.messageId || ''), node);
+      });
+      const nextIds = new Set(incomingIds.map(String));
+      existing.forEach((node, id) => {
+        if (!nextIds.has(id) && !node.dataset.optimistic) node.remove();
+      });
+      messages.forEach(message => {
+        const id = String(Number(message.id || 0));
+        let node = existing.get(id);
+        if (!node || !node.isConnected) node = createMessageElement(message);
+        if (!node) return;
+        updateMessageElement(node, message);
+        messageList.appendChild(node);
+      });
+      inboxState.lastMessageId = Math.max(inboxState.lastMessageId, lastIncomingId);
+      messageList.dataset.lastId = String(inboxState.lastMessageId);
     }
 
     async function pollInbox(force = false) {
