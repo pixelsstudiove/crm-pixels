@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS {$table} (
   raw_response_text TEXT NULL,
   response_hash CHAR(64) NOT NULL,
   context_hash CHAR(64) NULL,
-  category VARCHAR(60) NOT NULL DEFAULT 'ai_suggestion',
-  source VARCHAR(60) NOT NULL DEFAULT 'ai_suggestion',
+  category VARCHAR(60) NOT NULL DEFAULT 'manual',
+  source VARCHAR(60) NOT NULL DEFAULT 'manual',
   source_conversation_id INT UNSIGNED NULL,
   source_message_id INT UNSIGNED NULL,
   analysis_json LONGTEXT NULL,
@@ -65,8 +65,8 @@ SQL);
     'raw_response_text' => "ALTER TABLE {$table} ADD raw_response_text TEXT NULL AFTER response_text",
     'response_hash' => "ALTER TABLE {$table} ADD response_hash CHAR(64) NOT NULL DEFAULT '' AFTER raw_response_text",
     'context_hash' => "ALTER TABLE {$table} ADD context_hash CHAR(64) NULL AFTER response_hash",
-    'category' => "ALTER TABLE {$table} ADD category VARCHAR(60) NOT NULL DEFAULT 'ai_suggestion' AFTER context_hash",
-    'source' => "ALTER TABLE {$table} ADD source VARCHAR(60) NOT NULL DEFAULT 'ai_suggestion' AFTER category",
+    'category' => "ALTER TABLE {$table} ADD category VARCHAR(60) NOT NULL DEFAULT 'manual' AFTER context_hash",
+    'source' => "ALTER TABLE {$table} ADD source VARCHAR(60) NOT NULL DEFAULT 'manual' AFTER category",
     'source_conversation_id' => "ALTER TABLE {$table} ADD source_conversation_id INT UNSIGNED NULL AFTER source",
     'source_message_id' => "ALTER TABLE {$table} ADD source_message_id INT UNSIGNED NULL AFTER source_conversation_id",
     'analysis_json' => "ALTER TABLE {$table} ADD analysis_json LONGTEXT NULL AFTER source_message_id",
@@ -124,11 +124,51 @@ function ai_knowledge_title_from_text(string $text): string {
   return ai_knowledge_clean_text($firstLine, 90);
 }
 
+function ai_knowledge_learning_threshold(): int {
+  return max(2, (int) app_config('openai.knowledge_learning_min_distinct_leads', 4));
+}
+
+function ai_knowledge_decode_analysis_payload($json): array {
+  if (!is_string($json) || trim($json) === '') return [];
+  $decoded = json_decode($json, true);
+  return is_array($decoded) ? $decoded : [];
+}
+
+function ai_knowledge_evidence_key(array $evidence): string {
+  $conversationId = (int) ($evidence['conversation_id'] ?? 0);
+  $messageId = (int) ($evidence['message_id'] ?? 0);
+  if ($conversationId > 0 && $messageId > 0) return $conversationId . ':' . $messageId;
+  return hash('sha256', json_encode($evidence, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+function ai_knowledge_merge_evidence(array $current, array $newEvidence): array {
+  $merged = [];
+  foreach ($current as $item) {
+    if (!is_array($item)) continue;
+    $merged[ai_knowledge_evidence_key($item)] = $item;
+  }
+  $merged[ai_knowledge_evidence_key($newEvidence)] = $newEvidence;
+  return array_slice(array_values($merged), -25);
+}
+
+function ai_knowledge_distinct_conversation_count(array $evidence): int {
+  $ids = [];
+  foreach ($evidence as $item) {
+    if (!is_array($item)) continue;
+    $conversationId = (int) ($item['conversation_id'] ?? 0);
+    if ($conversationId > 0) $ids[$conversationId] = true;
+  }
+  return count($ids);
+}
+
 function ai_knowledge_create_suggestion(PDO $pdo, int $accountId, int $conversationId, string $reply, array $meta = []): void {
   try {
     ai_knowledge_ensure_schema($pdo);
     $reply = ai_knowledge_clean_text($reply, 2000);
     if ($accountId <= 0 || $reply === '') return;
+    $source = ai_knowledge_clean_text($meta['source'] ?? 'ai_suggestion', 60);
+    $category = ai_knowledge_clean_text($meta['category'] ?? 'ai_suggestion', 60);
+    if ($source === 'ai_suggestion' || $category === 'ai_suggestion') return;
 
     $table = ai_knowledge_table();
     $title = ai_knowledge_clean_text((string) ($meta['title'] ?? ''), 120);
@@ -150,8 +190,8 @@ function ai_knowledge_create_suggestion(PDO $pdo, int $accountId, int $conversat
       $title,
       $reply,
       $hash,
-      ai_knowledge_clean_text($meta['category'] ?? 'ai_suggestion', 60),
-      ai_knowledge_clean_text($meta['source'] ?? 'ai_suggestion', 60),
+      $category,
+      $source,
       $conversationId > 0 ? $conversationId : null,
       $createdBy,
     ]);
@@ -172,6 +212,7 @@ function ai_knowledge_active_items(PDO $pdo, int $accountId, int $limit = 8): ar
     WHERE account_id = ?
       AND is_approved = 1
       AND is_active = 1
+      AND source NOT IN ('ai_suggestion', 'seller_reply_candidate')
     ORDER BY usage_count ASC, updated_at DESC, id DESC
     LIMIT {$limit}
   ");
@@ -413,18 +454,44 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
     $createdBy = max(0, (int) ($meta['operator_id'] ?? ($_SESSION['user_id'] ?? 0))) ?: null;
     $responseHash = ai_knowledge_hash($knowledge);
     $contextHash = ai_knowledge_hash($contextKey);
+    $newEvidence = [
+      'conversation_id' => $conversationId,
+      'message_id' => $messageId,
+      'operator_id' => (int) ($meta['operator_id'] ?? ($_SESSION['user_id'] ?? 0)),
+      'operator_username' => ai_knowledge_clean_text($meta['operator_username'] ?? ($_SESSION['username'] ?? ''), 80),
+      'reply' => $reply,
+      'knowledge' => $knowledge,
+      'captured_at' => gmdate('c'),
+    ];
+
+    $existing = null;
+    $existingStmt = $pdo->prepare("SELECT id, analysis_json, source, is_approved, is_active FROM {$table} WHERE account_id=? AND context_hash=? LIMIT 1");
+    $existingStmt->execute([$accountId, $contextHash]);
+    $existing = $existingStmt->fetch() ?: null;
+
+    $existingPayload = ai_knowledge_decode_analysis_payload($existing['analysis_json'] ?? null);
+    $evidence = ai_knowledge_merge_evidence(
+      is_array($existingPayload['evidence'] ?? null) ? $existingPayload['evidence'] : [],
+      $newEvidence
+    );
+    $distinctConversationCount = ai_knowledge_distinct_conversation_count($evidence);
+    $threshold = ai_knowledge_learning_threshold();
+    $source = $distinctConversationCount >= $threshold ? 'seller_reply' : 'seller_reply_candidate';
     $analysisJson = json_encode([
       'analysis' => $analysis,
       'context_key' => $contextKey,
       'reason' => ai_knowledge_clean_text($analysis['reason'] ?? '', 500),
+      'evidence' => $evidence,
+      'evidence_conversation_count' => $distinctConversationCount,
+      'minimum_distinct_conversations' => $threshold,
       'learned_at' => gmdate('c'),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
 
     $stmt = $pdo->prepare("
       INSERT INTO {$table}
-        (account_id, title, response_text, raw_response_text, response_hash, context_hash, category, source, source_conversation_id, source_message_id, analysis_json, confidence, created_by, is_approved, is_active)
+        (account_id, title, response_text, raw_response_text, response_hash, context_hash, category, source, source_conversation_id, source_message_id, analysis_json, confidence, usage_count, created_by, is_approved, is_active)
       VALUES
-        (?, ?, ?, ?, ?, ?, ?, 'seller_reply', ?, ?, ?, ?, ?, 0, 0)
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
       ON DUPLICATE KEY UPDATE
         updated_at = NOW(),
         source_conversation_id = VALUES(source_conversation_id),
@@ -432,12 +499,13 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
         raw_response_text = VALUES(raw_response_text),
         analysis_json = VALUES(analysis_json),
         confidence = IF(confidence < VALUES(confidence), VALUES(confidence), confidence),
+        usage_count = VALUES(usage_count),
         title = IF(is_approved = 1, title, VALUES(title)),
         response_text = IF(is_approved = 1, response_text, VALUES(response_text)),
         response_hash = IF(is_approved = 1, response_hash, VALUES(response_hash)),
         context_hash = IF(is_approved = 1, context_hash, VALUES(context_hash)),
         category = IF(is_approved = 1, category, VALUES(category)),
-        source = IF(is_approved = 1, source, VALUES(source))
+        source = IF(is_approved = 1 AND source != 'seller_reply_candidate', source, VALUES(source))
     ");
     $stmt->execute([
       $accountId,
@@ -447,10 +515,12 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
       $responseHash,
       $contextHash,
       $category,
+      $source,
       $conversationId,
       $messageId,
       $analysisJson,
       $confidence,
+      $distinctConversationCount,
       $createdBy,
     ]);
   } catch (Throwable $e) {

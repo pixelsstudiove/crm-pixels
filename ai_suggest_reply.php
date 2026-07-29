@@ -657,12 +657,6 @@ try {
 
   $suggestion = ai_suggest_call_openai($context);
   ai_suggest_store_reply($historyKey, $suggestion['reply']);
-  ai_knowledge_create_suggestion($pdo, (int) ($conversation['account_id'] ?? 0), (int) $conversation['id'], $suggestion['reply'], [
-    'title' => 'Sugerencia para ' . $contactName,
-    'category' => 'ai_suggestion',
-    'source' => 'ai_suggestion',
-    'created_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
-  ]);
   ai_suggest_json([
     'ok' => true,
     'reply' => $suggestion['reply'],

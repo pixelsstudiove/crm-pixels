@@ -139,15 +139,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
-$where = '';
+$whereParts = ["k.source NOT IN ('ai_suggestion', 'seller_reply_candidate')"];
 $params = [];
 if ($selectedAccountId > 0) {
-  $where = 'WHERE k.account_id = ?';
+  $whereParts[] = 'k.account_id = ?';
   $params[] = $selectedAccountId;
 } elseif (!is_super_admin()) {
-  $where = 'WHERE k.account_id = ?';
+  $whereParts[] = 'k.account_id = ?';
   $params[] = current_account_id();
 }
+$where = 'WHERE ' . implode(' AND ', $whereParts);
 
 $stmt = $pdo->prepare("
   SELECT k.*, a.name AS account_name, a.slug AS account_slug
@@ -291,7 +292,7 @@ $pageTitle = 'Banco de conocimiento IA - Pixels Studio';
         <div>
           <h2>Conocimiento por revisar</h2>
           <?php if (!$items): ?>
-            <div class="ai-empty">Todavía no hay conocimiento para revisar. Cuando el equipo responda mensajes útiles, la IA analizará esas respuestas y las traerá aquí como pendientes.</div>
+            <div class="ai-empty">Todavía no hay conocimiento para revisar. Cuando la IA detecte la misma respuesta útil en varios leads distintos, la traerá aquí como pendiente.</div>
           <?php endif; ?>
 
           <?php foreach ($items as $item): ?>
@@ -308,6 +309,7 @@ $pageTitle = 'Banco de conocimiento IA - Pixels Studio';
                   <?php if ((int) $item['is_approved'] === 1): ?><span class="ai-pill ok">Aprobada</span><?php else: ?><span class="ai-pill pending">Pendiente</span><?php endif; ?>
                   <?php if ((int) $item['is_active'] === 1): ?><span class="ai-pill on">Activa</span><?php else: ?><span class="ai-pill">Pausada</span><?php endif; ?>
                   <?php if (!empty($item['category'])): ?><span class="ai-pill"><?= h((string) $item['category']) ?></span><?php endif; ?>
+                  <?php if ((int) ($item['usage_count'] ?? 0) > 0): ?><span class="ai-pill"><?= (int) $item['usage_count'] ?> evidencias</span><?php endif; ?>
                   <?php if ((float) ($item['confidence'] ?? 0) > 0): ?><span class="ai-pill"><?= h(number_format((float) $item['confidence'], 0, ',', '.')) ?>% confianza</span><?php endif; ?>
                 </div>
               </div>

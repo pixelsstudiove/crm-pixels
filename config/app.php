@@ -203,6 +203,7 @@ $app = [
     'api_key' => (string) env_value('OPENAI_API_KEY', ''),
     'model' => (string) env_value('OPENAI_MODEL', 'gpt-4.1-mini'),
     'base_url' => rtrim((string) env_value('OPENAI_BASE_URL', 'https://api.openai.com/v1'), '/'),
+    'knowledge_learning_min_distinct_leads' => (int) env_value('OPENAI_KNOWLEDGE_MIN_DISTINCT_LEADS', '4'),
   ],
 
   'media' => [
