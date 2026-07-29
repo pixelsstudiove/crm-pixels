@@ -407,6 +407,7 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
     if ($skipReason !== '') return;
 
     $conversation = is_array($meta['conversation'] ?? null) ? $meta['conversation'] : [];
+    $sourceChannel = ai_knowledge_clean_text($meta['source_channel'] ?? 'crm', 60);
     $recentMessages = is_array($meta['recent_messages'] ?? null)
       ? $meta['recent_messages']
       : ai_knowledge_recent_messages($pdo, $conversationId, 12);
@@ -415,6 +416,7 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
       'account_id' => $accountId,
       'conversation_id' => $conversationId,
       'provider' => ai_knowledge_clean_text($meta['provider'] ?? ($conversation['external_source'] ?? ''), 60),
+      'source_channel' => $sourceChannel,
       'operator' => [
         'id' => (int) ($meta['operator_id'] ?? ($_SESSION['user_id'] ?? 0)),
         'username' => ai_knowledge_clean_text($meta['operator_username'] ?? ($_SESSION['username'] ?? ''), 80),
@@ -459,6 +461,8 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
       'message_id' => $messageId,
       'operator_id' => (int) ($meta['operator_id'] ?? ($_SESSION['user_id'] ?? 0)),
       'operator_username' => ai_knowledge_clean_text($meta['operator_username'] ?? ($_SESSION['username'] ?? ''), 80),
+      'source_channel' => $sourceChannel,
+      'official_channel_name' => ai_knowledge_clean_text($meta['official_channel_name'] ?? '', 120),
       'reply' => $reply,
       'knowledge' => $knowledge,
       'captured_at' => gmdate('c'),
@@ -481,6 +485,7 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
       'analysis' => $analysis,
       'context_key' => $contextKey,
       'reason' => ai_knowledge_clean_text($analysis['reason'] ?? '', 500),
+      'source_channel' => $sourceChannel,
       'evidence' => $evidence,
       'evidence_conversation_count' => $distinctConversationCount,
       'minimum_distinct_conversations' => $threshold,

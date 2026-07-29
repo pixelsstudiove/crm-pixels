@@ -8,6 +8,7 @@ require_once __DIR__ . '/config/instagram_channels.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/ad_attribution.php';
 require_once __DIR__ . '/config/lead_status_history.php';
+require_once __DIR__ . '/config/ai_knowledge.php';
 
 function ig_json(array $payload, int $status = 200): void {
   if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
@@ -985,6 +986,37 @@ function ig_auto_mark_lead_after_official_reply(PDO $pdo, string $leadsTable, in
   lead_status_history_record($pdo, $leadId, $previousStatus, $targetStatus, $reason, $accountId);
 }
 
+function ig_schedule_ai_knowledge_learning_from_official(PDO $pdo, int $accountId, int $conversationId, int $messageId, string $messageText, array $conversationContext, string $provider, ?array $channel, string $sentAt): void {
+  if ($accountId <= 0 || $conversationId <= 0 || $messageId <= 0 || trim($messageText) === '') return;
+  if (!function_exists('ai_knowledge_learn_from_outbound_message')) return;
+
+  $channelName = ig_clean($channel['instagram_username'] ?? $channel['page_name'] ?? 'canal oficial', 120) ?? 'canal oficial';
+  $contextSnapshot = $conversationContext;
+
+  register_shutdown_function(static function() use ($pdo, $accountId, $conversationId, $messageId, $messageText, $contextSnapshot, $provider, $channelName, $sentAt): void {
+    ai_knowledge_learn_from_outbound_message($pdo, $accountId, $conversationId, $messageId, $messageText, [
+      'conversation' => $contextSnapshot,
+      'provider' => $provider,
+      'operator_id' => 0,
+      'operator_username' => 'canal_oficial',
+      'source_channel' => 'canal_oficial',
+      'official_channel_name' => $channelName,
+      'sent_at' => $sentAt,
+    ]);
+  });
+}
+
+function ig_ai_conversation_context(?string $displayName, ?string $username, string $provider, array $ref): array {
+  return [
+    'display_name' => $displayName,
+    'username' => $username,
+    'external_source' => $provider,
+    'campaign_name' => $ref['campaign_name'] ?? $ref['campaign'] ?? '',
+    'adset_name' => $ref['adset_name'] ?? '',
+    'ad_name' => $ref['ad_name'] ?? '',
+  ];
+}
+
 function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $event, string $provider = 'instagram'): int {
   $senderId = ig_clean($event['sender']['id'] ?? null, 120);
   if ($senderId === null) return 0;
@@ -1171,6 +1203,17 @@ SQL);
     $messageInserted = (bool) ($sync['message_inserted'] ?? false);
     if ($direction === 'outbound' && $messageInserted) {
       ig_auto_mark_lead_after_official_reply($pdo, $table, $leadId, $accountId, $channel ?: null, (bool) ($sync['had_outbound_before'] ?? false), $messageAt);
+      ig_schedule_ai_knowledge_learning_from_official(
+        $pdo,
+        $accountId,
+        $conversationId,
+        $conversationMessageId,
+        $messageText,
+        ig_ai_conversation_context($profileDisplayName, $profileUsername, $provider, $ref),
+        $provider,
+        $channel ?: null,
+        $messageAt
+      );
     }
     $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
     $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
@@ -1264,6 +1307,17 @@ SQL);
   $messageInserted = (bool) ($sync['message_inserted'] ?? false);
   if ($direction === 'outbound' && $messageInserted) {
     ig_auto_mark_lead_after_official_reply($pdo, $table, $leadId, $accountId, $channel ?: null, (bool) ($sync['had_outbound_before'] ?? false), $messageAt);
+    ig_schedule_ai_knowledge_learning_from_official(
+      $pdo,
+      $accountId,
+      $conversationId,
+      $conversationMessageId,
+      $messageText,
+      ig_ai_conversation_context($profileDisplayName, $profileUsername, $provider, $ref),
+      $provider,
+      $channel ?: null,
+      $messageAt
+    );
   }
   $attachmentErrors = (array) ($sync['attachment_errors'] ?? []);
   $attachmentError = $attachmentErrors ? implode(' | ', array_slice(array_map('strval', $attachmentErrors), 0, 3)) : null;
