@@ -893,7 +893,7 @@ function dash_channel_label(array $channel): string {
       background:var(--dash-panel);
       box-shadow:0 10px 26px rgba(15,23,42,.06);
       text-decoration:none;
-      transition:transform .16s ease, border-color .18s ease, box-shadow .18s ease;
+      transition:transform .16s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
     }
     .summary-card::before {
       content:"";
@@ -922,8 +922,20 @@ function dash_channel_label(array $channel): string {
     .summary-card:hover strong,
     .summary-card:hover span { color:#fff; }
     .summary-card.is-active {
-      border-color:var(--dash-navy);
-      box-shadow:0 0 0 3px rgba(7,11,24,.08), 0 18px 34px rgba(15,23,42,.10);
+      border-color:var(--tone, var(--dash-navy));
+      background:linear-gradient(135deg, color-mix(in srgb, var(--tone, var(--dash-cyan)) 13%, #fff) 0%, #fff 62%);
+      box-shadow:0 0 0 2px color-mix(in srgb, var(--tone, var(--dash-cyan)) 28%, transparent), 0 18px 34px rgba(15,23,42,.12);
+    }
+    .summary-card.is-active::before {
+      width:7px;
+    }
+    .summary-card.is-active::after {
+      width:14px;
+      height:14px;
+      box-shadow:0 0 0 7px color-mix(in srgb, var(--tone, var(--dash-cyan)) 16%, transparent);
+    }
+    .summary-card.is-active .active-pill {
+      display:inline-flex;
     }
     .summary-card strong {
       display:block;
@@ -943,6 +955,25 @@ function dash_channel_label(array $channel): string {
       letter-spacing:.08em;
       text-transform:uppercase;
       line-height:1.25;
+    }
+    .active-pill {
+      display:none;
+      width:max-content;
+      max-width:100%;
+      margin-top:12px;
+      padding:5px 9px;
+      border-radius:999px;
+      color:#fff;
+      background:var(--dash-navy);
+      font-size:.66rem;
+      font-weight:950;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+      line-height:1;
+    }
+    .summary-card:hover .active-pill {
+      color:var(--dash-navy);
+      background:#fff;
     }
     .summary-card[data-tone="total"] { --tone:var(--dash-navy); background:#f9fafb; }
     .summary-card[data-tone="new"] { --tone:var(--dash-cyan); }
@@ -1671,6 +1702,7 @@ function dash_channel_label(array $channel): string {
             <a class="summary-card <?= !empty($card['active']) ? 'is-active' : '' ?>" href="<?= h((string) $card['href']) ?>" data-tone="<?= h($card['tone']) ?>" aria-current="<?= !empty($card['active']) ? 'true' : 'false' ?>">
               <strong><?= (int) $card['value'] ?></strong>
               <span><?= h($card['label']) ?></span>
+              <?php if (!empty($card['active']) && $filterSalesStatus !== ''): ?><em class="active-pill">Filtro activo</em><?php endif; ?>
             </a>
           <?php endforeach; ?>
         </div>
