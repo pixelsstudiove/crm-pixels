@@ -60,6 +60,76 @@ function ai_suggest_log_error(string $message, array $context = []): void {
   @file_put_contents($dir . '/ai_suggest_errors.log', $line . PHP_EOL, FILE_APPEND);
 }
 
+function ai_suggest_sales_variant(): array {
+  $variants = [
+    [
+      'name' => 'diagnostico_consultivo',
+      'focus' => 'Detecta necesidad, uso esperado, urgencia y presupuesto sin sonar interrogatorio.',
+      'cta' => 'Cierra con una pregunta concreta que ayude a cotizar o recomendar mejor.',
+    ],
+    [
+      'name' => 'avance_a_cotizacion',
+      'focus' => 'Orienta la conversacion hacia cotizacion, disponibilidad, medidas, modelo o siguiente paso comercial.',
+      'cta' => 'Cierra pidiendo el dato minimo necesario para avanzar.',
+    ],
+    [
+      'name' => 'manejo_de_objecion',
+      'focus' => 'Responde con seguridad, reduce dudas y refuerza valor sin inventar informacion.',
+      'cta' => 'Cierra ofreciendo una alternativa o una validacion rapida.',
+    ],
+    [
+      'name' => 'cierre_suave',
+      'focus' => 'Mantiene tono cercano y empuja una accion simple: confirmar, reservar, enviar datos o agendar.',
+      'cta' => 'Cierra con una pregunta de si/no o una accion facil de responder.',
+    ],
+    [
+      'name' => 'seguimiento_activo',
+      'focus' => 'Retoma la conversacion con contexto, evita presionar y crea urgencia razonable.',
+      'cta' => 'Cierra con una opcion concreta para no dejar morir el lead.',
+    ],
+  ];
+
+  try {
+    return $variants[random_int(0, count($variants) - 1)];
+  } catch (Throwable $e) {
+    return $variants[array_rand($variants)];
+  }
+}
+
+function ai_suggest_history_key(int $accountId, int $conversationId): string {
+  return 'a' . $accountId . '_c' . $conversationId;
+}
+
+function ai_suggest_previous_replies(string $key): array {
+  $history = $_SESSION['ai_suggestion_history'][$key] ?? [];
+  if (!is_array($history)) return [];
+
+  $replies = [];
+  foreach ($history as $item) {
+    $reply = is_array($item) ? ($item['reply'] ?? '') : $item;
+    $reply = ai_suggest_clean_text($reply, 700);
+    if ($reply !== '') $replies[] = $reply;
+  }
+
+  return array_slice($replies, -6);
+}
+
+function ai_suggest_store_reply(string $key, string $reply): void {
+  if (!isset($_SESSION['ai_suggestion_history']) || !is_array($_SESSION['ai_suggestion_history'])) {
+    $_SESSION['ai_suggestion_history'] = [];
+  }
+
+  $history = $_SESSION['ai_suggestion_history'][$key] ?? [];
+  if (!is_array($history)) $history = [];
+
+  $history[] = [
+    'at' => time(),
+    'reply' => ai_suggest_clean_text($reply, 1000),
+  ];
+
+  $_SESSION['ai_suggestion_history'][$key] = array_slice($history, -8);
+}
+
 function ai_suggest_call_openai(array $context): array {
   $apiKey = trim((string) app_config('openai.api_key', ''));
   if ($apiKey === '') {
@@ -82,9 +152,21 @@ function ai_suggest_call_openai(array $context): array {
 
   $payload = [
     'model' => $model,
-    'instructions' => 'Eres un asistente comercial para CRM Pixels. Genera una respuesta breve, natural y enfocada en avanzar la venta. Responde exclusivamente JSON valido con las claves reply, intent, next_step y confidence. No inventes precios, disponibilidad, tiempos de entrega ni promesas. Si falta informacion, haz una pregunta corta para desbloquear la venta. Manten tono profesional, cercano y claro para Venezuela. Maximo 90 palabras.',
+    'instructions' => implode("\n", [
+      'Eres un asistente comercial senior dentro de CRM Pixels. Tu objetivo principal es ayudar al operador a vender mejor desde Instagram, Messenger o WhatsApp.',
+      'Genera una respuesta lista para enviar al cliente, escrita en espanol natural de Venezuela, cercana, profesional y enfocada en avanzar el proceso comercial.',
+      'Prioriza: entender necesidad, calificar interes, resolver dudas, pedir el dato minimo necesario, proponer siguiente paso y mantener la conversacion activa.',
+      'No repitas respuestas anteriores. Si el operador presiona varias veces generar respuesta IA, cambia completamente el enfoque, estructura, inicio y cierre.',
+      'No repitas literalmente el mensaje del cliente ni uses plantillas genericas. La respuesta debe sonar humana y especifica al contexto.',
+      'Usa emojis con moderacion: maximo 1 emoji en una respuesta normal, maximo 2 solo si aporta calidez. No uses emojis en cada frase.',
+      'No inventes precios, disponibilidad, garantias, tiempos de entrega, promociones, ubicaciones ni condiciones. Si falta informacion, pregunta o ofrece validar.',
+      'Evita saludos repetidos si la conversacion ya empezo. Evita despedidas largas. Maximo 90 palabras.',
+      'Responde exclusivamente JSON valido con las claves reply, intent, next_step y confidence.',
+    ]),
     'input' => "Contexto del CRM:\n" . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
     'max_output_tokens' => 500,
+    'temperature' => 0.92,
+    'top_p' => 0.96,
   ];
 
   $ch = curl_init($baseUrl . '/responses');
@@ -265,6 +347,8 @@ try {
   $username = trim((string) ($conversation['username'] ?? ''));
   $channelName = trim((string) ($conversation['channel_username'] ?: $conversation['page_name'] ?: ''));
   $leadStatus = (string) ($conversation['lead_sales_status'] ?: app_config('sales_funnel.default_status', 'nuevo_lead'));
+  $historyKey = ai_suggest_history_key((int) ($conversation['account_id'] ?? 0), (int) $conversation['id']);
+  $variant = ai_suggest_sales_variant();
 
   $context = [
     'account' => ai_suggest_clean_text($conversation['account_name'] ?? '', 160),
@@ -285,10 +369,18 @@ try {
       'reference' => ai_suggest_clean_text($conversation['ad_referral_source'] ?? '', 220),
     ],
     'operator_draft' => ai_suggest_clean_text($_POST['draft'] ?? '', 800),
+    'sales_generation_rules' => [
+      'variant' => $variant,
+      'must_be_different_from_previous' => true,
+      'previous_ai_suggestions_to_avoid' => ai_suggest_previous_replies($historyKey),
+      'generation_seed' => bin2hex(random_bytes(8)),
+      'generated_at' => app_datetime(gmdate('Y-m-d H:i:s')),
+    ],
     'recent_messages' => $recentMessages,
   ];
 
   $suggestion = ai_suggest_call_openai($context);
+  ai_suggest_store_reply($historyKey, $suggestion['reply']);
   ai_suggest_json([
     'ok' => true,
     'reply' => $suggestion['reply'],
