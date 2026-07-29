@@ -1103,6 +1103,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     const replyForm = document.getElementById('replyForm');
     const liveStatus = document.getElementById('liveStatus');
     const noticeArea = document.getElementById('inboxNoticeArea');
+    const conversationAvatarUrls = new Map();
     const sendWithEnter = document.getElementById('sendWithEnter');
     const emojiToggle = document.getElementById('emojiToggle');
     const emojiPanel = document.getElementById('emojiPanel');
@@ -1473,6 +1474,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       const avatar = image.closest('.conversation-avatar');
       if (!avatar) return;
       avatar.dataset.failedUrl = image.currentSrc || image.src || '';
+      if (avatar.dataset.avatarKey) conversationAvatarUrls.delete(avatar.dataset.avatarKey);
       image.remove();
       setTextIfChanged(avatar, avatar.dataset.initials || 'C');
     }, true);
@@ -1482,19 +1484,30 @@ function inbox_visible_message_text($value, array $attachments): string {
       if (!avatar) return;
       const avatarUrl = String(item.avatar_url || '').trim();
       const avatarInitials = String(item.avatar_initials || 'C').trim() || 'C';
+      const avatarKey = conversationKey(item);
+      const currentImage = avatar.querySelector('img');
+      const currentSrc = currentImage ? (currentImage.getAttribute('src') || '') : '';
       setAttributeIfChanged(avatar, 'data-initials', avatarInitials);
+      setAttributeIfChanged(avatar, 'data-avatar-key', avatarKey);
+      if (currentImage && currentSrc && avatarKey && !conversationAvatarUrls.has(avatarKey)) {
+        conversationAvatarUrls.set(avatarKey, currentSrc);
+      }
       if (avatarUrl && avatar.dataset.failedUrl !== avatarUrl) {
-        let image = avatar.querySelector('img');
+        let image = currentImage;
         if (!image) {
           avatar.textContent = '';
           image = document.createElement('img');
           image.alt = '';
           avatar.appendChild(image);
         }
-        setAttributeIfChanged(image, 'src', avatarUrl);
+        const stableUrl = conversationAvatarUrls.get(avatarKey) || currentSrc || avatarUrl;
+        if (avatarKey && stableUrl) conversationAvatarUrls.set(avatarKey, stableUrl);
+        setAttributeIfChanged(avatar, 'data-avatar-url', stableUrl);
+        setAttributeIfChanged(image, 'src', stableUrl);
         return;
       }
-      if (avatar.querySelector('img')) avatar.innerHTML = '';
+      if (currentImage && currentSrc) return;
+      if (currentImage) avatar.innerHTML = '';
       setTextIfChanged(avatar, avatarInitials);
     }
 
@@ -1597,9 +1610,10 @@ function inbox_visible_message_text($value, array $attachments): string {
       return Array.isArray(attachments)
         ? attachments.map(attachment => [
           attachment.id || '',
-          attachment.url || '',
           attachment.media_type || '',
-          attachment.filename || ''
+          attachment.mime_type || '',
+          attachment.filename || '',
+          attachment.file_size || ''
         ].join(':')).join('|')
         : '';
     }
