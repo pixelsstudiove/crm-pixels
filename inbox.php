@@ -1320,7 +1320,11 @@ function inbox_visible_message_text($value, array $attachments): string {
 
       aiSuggestButton.disabled = true;
       aiSuggestButton.classList.add('is-loading');
-      setAiSuggestStatus('Generando sugerencia...');
+      const defaultAiLabel = aiSuggestButton.dataset.defaultLabel || aiSuggestButton.textContent || 'Generar respuesta IA ✨';
+      aiSuggestButton.dataset.defaultLabel = defaultAiLabel;
+      aiSuggestButton.textContent = 'Generando...';
+      aiSuggestButton.setAttribute('aria-busy', 'true');
+      setAiSuggestStatus('');
 
       try {
         const response = await fetch(aiSuggestButton.dataset.aiUrl || 'ai_suggest_reply.php', {
@@ -1350,6 +1354,8 @@ function inbox_visible_message_text($value, array $attachments): string {
         showNotice(message, 'error');
       } finally {
         aiSuggestButton.classList.remove('is-loading');
+        aiSuggestButton.textContent = aiSuggestButton.dataset.defaultLabel || 'Generar respuesta IA ✨';
+        aiSuggestButton.removeAttribute('aria-busy');
         aiSuggestButton.disabled = !inboxState.canReply;
       }
     }
