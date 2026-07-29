@@ -993,7 +993,7 @@ function dash_channel_label(array $channel): string {
     }
     .filters-form {
       display:grid;
-      grid-template-columns:minmax(260px, 390px) minmax(190px, 240px) auto;
+      grid-template-columns:minmax(260px, 390px) minmax(190px, 240px) minmax(220px, 330px) auto;
       gap:12px;
       align-items:end;
       justify-content:start;
@@ -1055,8 +1055,9 @@ function dash_channel_label(array $channel): string {
     .filter-actions {
       display:flex;
       gap:8px;
-      align-items:center;
+      align-items:end;
       flex-wrap:wrap;
+      min-width:max-content;
     }
     .search-btn {
       color:#fff;
@@ -1533,7 +1534,19 @@ function dash_channel_label(array $channel): string {
     }
     @media (max-width: 1200px) {
       .filters-form {
-        grid-template-columns:minmax(220px, 360px) minmax(200px, 260px) auto;
+        grid-template-columns:minmax(220px, 1fr) minmax(170px, 220px) minmax(190px, 260px) auto;
+      }
+    }
+    @media (max-width: 980px) {
+      .filters-form {
+        grid-template-columns:1fr 1fr;
+      }
+      .filter-field:first-of-type,
+      .filter-actions {
+        grid-column:1 / -1;
+      }
+      .filter-actions {
+        min-width:0;
       }
     }
     @media (max-width: 760px) {
@@ -1592,6 +1605,10 @@ function dash_channel_label(array $channel): string {
       }
       .filters-form {
         grid-template-columns:1fr;
+      }
+      .filter-field:first-of-type,
+      .filter-actions {
+        grid-column:auto;
       }
       .filter-actions,
       .search-btn,
