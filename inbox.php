@@ -648,6 +648,13 @@ function inbox_visible_message_text($value, array $attachments): string {
     .composer-quick-actions { display:grid; grid-template-rows:repeat(3, 1fr); gap:6px; min-height:96px; }
     .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.82rem; font-weight:760; }
+    .composer-ai { display:flex; align-items:center; gap:10px; margin-left:auto; flex-wrap:wrap; }
+    .ai-suggest-btn { min-height:34px; border:1px solid var(--inbox-line); border-radius:999px; background:#fff; color:var(--inbox-ink); padding:0 14px; font-weight:900; cursor:pointer; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
+    .ai-suggest-btn:hover:not(:disabled) { background:var(--inbox-navy); border-color:var(--inbox-navy); color:#fff; }
+    .ai-suggest-btn:disabled { opacity:.55; cursor:not-allowed; }
+    .ai-suggest-btn.is-loading { opacity:.75; }
+    .ai-suggest-status { color:var(--inbox-muted); font-weight:800; font-size:.78rem; }
+    .ai-suggest-status.is-error { color:#b91c1c; }
     .composer-file { display:inline-flex; align-items:center; justify-content:center; }
     .composer-file input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
     .icon-tool { display:inline-flex; align-items:center; justify-content:center; width:100%; height:100%; min-height:0; padding:0; border:1px solid var(--inbox-line); border-radius:14px; background:#f8fafc; color:var(--inbox-ink); font-size:1.02rem; font-weight:900; cursor:pointer; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
@@ -671,6 +678,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .emoji-option:hover { background:#f2f6fb; border-color:#c7d3e2; }
     .reply-actions { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-top:3px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.88rem; }
     .reply-box.is-sending textarea, .reply-box.is-sending button { opacity:.7; pointer-events:none; }
+    .reply-box.is-disabled .ai-suggest-btn { filter:grayscale(.25); cursor:not-allowed; }
     .live-status { color:var(--inbox-muted); font-size:.82rem; }
     .side-panel { padding:12px; display:flex; flex-direction:column; gap:12px; overflow:hidden; background:#fff; transition:padding .18s ease; }
     .side-panel-content { min-height:0; display:grid; align-content:start; gap:14px; overflow:auto; padding:4px; }
@@ -744,6 +752,8 @@ function inbox_visible_message_text($value, array $attachments): string {
       .message { max-width:92%; }
       .composer-main { grid-template-columns:minmax(0, 1fr) 44px; }
       .composer-submit { grid-column:1 / -1; min-height:48px; }
+      .composer-ai { width:100%; margin-left:0; }
+      .ai-suggest-btn { width:100%; }
       .side-panel { grid-column:auto; }
     }
     @media (max-width: 560px) {
@@ -949,6 +959,10 @@ function inbox_visible_message_text($value, array $attachments): string {
                     </label>
                     <span>Shift + Intro crea salto de línea</span>
                   </div>
+                  <div class="composer-ai">
+                    <button class="ai-suggest-btn" type="button" id="aiSuggestButton" data-ai-url="<?= h(account_url('ai_suggest_reply.php')) ?>" <?= $canReplyFromCrm ? '' : 'disabled' ?>>Sugerir respuesta IA</button>
+                    <span class="ai-suggest-status" id="aiSuggestStatus" aria-live="polite"></span>
+                  </div>
                 </div>
                 <div class="reply-actions">
                   <span class="live-status" id="liveStatus">Actualizando automaticamente.</span>
@@ -1088,12 +1102,14 @@ function inbox_visible_message_text($value, array $attachments): string {
     const audioCancelButton = document.getElementById('audioCancelButton');
     const replyWindowAlert = document.getElementById('replyWindowAlert');
     const sideReplyWindowAlert = document.getElementById('sideReplyWindowAlert');
+    const aiSuggestButton = document.getElementById('aiSuggestButton');
+    const aiSuggestStatus = document.getElementById('aiSuggestStatus');
 
     function setComposerEnabled(canReply) {
       inboxState.canReply = Boolean(canReply) && Boolean(inboxState.channelAvailable);
       if (!replyForm) return;
       replyForm.classList.toggle('is-disabled', !inboxState.canReply);
-      replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, #emojiToggle, button[type="submit"]').forEach(el => {
+      replyForm.querySelectorAll('textarea[name="message"], #mediaInput, #audioRecordButton, #emojiToggle, #aiSuggestButton, button[type="submit"]').forEach(el => {
         el.disabled = !inboxState.canReply;
       });
       if (!inboxState.canReply && emojiPanel && emojiToggle) {
@@ -1280,6 +1296,62 @@ function inbox_visible_message_text($value, array $attachments): string {
       const next = start + value.length;
       textarea.focus();
       textarea.setSelectionRange(next, next);
+    }
+
+    function setAiSuggestStatus(message, type = 'info') {
+      if (!aiSuggestStatus) return;
+      aiSuggestStatus.textContent = message || '';
+      aiSuggestStatus.classList.toggle('is-error', type === 'error');
+    }
+
+    async function requestAiSuggestion() {
+      if (!replyForm || !aiSuggestButton || !inboxState.canReply) return;
+      const textarea = replyForm.querySelector('textarea[name="message"]');
+      const formData = new FormData();
+      formData.append('csrf', inboxState.csrf || '');
+      formData.append('conversation_id', inboxState.conversationId || '');
+      const accountId = inboxState.selectedAccountId || inboxState.accountId || 0;
+      if (accountId) formData.append('account_id', String(accountId));
+      formData.append('draft', textarea ? textarea.value : '');
+
+      aiSuggestButton.disabled = true;
+      aiSuggestButton.classList.add('is-loading');
+      setAiSuggestStatus('Generando sugerencia...');
+
+      try {
+        const response = await fetch(aiSuggestButton.dataset.aiUrl || 'ai_suggest_reply.php', {
+          method: 'POST',
+          body: formData,
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
+          cache: 'no-store'
+        });
+        const data = await response.json().catch(() => ({ ok: false, error: 'Respuesta invalida del servidor.' }));
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No se pudo generar la sugerencia.');
+
+        const suggestion = String(data.reply || '').trim();
+        if (!suggestion) throw new Error('La IA no devolvio una respuesta sugerida.');
+        if (textarea) {
+          if (textarea.value.trim()) {
+            insertAtCursor(textarea, `\n\n${suggestion}`);
+          } else {
+            textarea.value = suggestion;
+            textarea.focus();
+            textarea.setSelectionRange(suggestion.length, suggestion.length);
+          }
+        }
+        setAiSuggestStatus('Sugerencia lista.');
+      } catch (error) {
+        const message = error.message || 'No se pudo generar la sugerencia.';
+        setAiSuggestStatus(message, 'error');
+        showNotice(message, 'error');
+      } finally {
+        aiSuggestButton.classList.remove('is-loading');
+        aiSuggestButton.disabled = !inboxState.canReply;
+      }
+    }
+
+    if (aiSuggestButton && replyForm) {
+      aiSuggestButton.addEventListener('click', requestAiSuggestion);
     }
 
     function isNearBottom(el) {

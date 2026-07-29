@@ -198,6 +198,12 @@ $app = [
     'graph_version' => (string) env_value('WHATSAPP_CLOUD_GRAPH_VERSION', env_value('META_GRAPH_VERSION', 'v20.0')),
   ],
 
+  'openai' => [
+    'api_key' => (string) env_value('OPENAI_API_KEY', ''),
+    'model' => (string) env_value('OPENAI_MODEL', 'gpt-4.1-mini'),
+    'base_url' => rtrim((string) env_value('OPENAI_BASE_URL', 'https://api.openai.com/v1'), '/'),
+  ],
+
   'media' => [
     'max_upload_bytes' => (int) env_value('MEDIA_MAX_UPLOAD_BYTES', '8388608'),
     'allowed_image_mimes' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],

@@ -28,6 +28,10 @@ return [
   'WHATSAPP_CLOUD_VERIFY_TOKEN' => '',
   'WHATSAPP_CLOUD_APP_SECRET' => '',
   'WHATSAPP_CLOUD_GRAPH_VERSION' => 'v25.0',
+  // OpenAI para generar sugerencias de respuesta desde el inbox.
+  'OPENAI_API_KEY' => '',
+  'OPENAI_MODEL' => 'gpt-4.1-mini',
+  'OPENAI_BASE_URL' => 'https://api.openai.com/v1',
   'R2_ACCOUNT_ID' => '',
   'R2_ACCESS_KEY_ID' => '',
   'R2_SECRET_ACCESS_KEY' => '',
