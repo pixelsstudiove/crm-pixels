@@ -102,6 +102,7 @@ function nav_render_user_menu(bool $includeProfileModal = true): void {
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('channels.php')) ?>">Gestión de canales</a><?php endif; ?>
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('webhook_logs.php')) ?>">Ver eventos</a><?php endif; ?>
       <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('ai_knowledge.php')) ?>">Conocimiento IA</a><?php endif; ?>
+      <?php if (can('manage_integrations')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('ai_knowledge_candidates.php')) ?>">Log aprendizaje IA</a><?php endif; ?>
       <?php if (can('manage_accounts')): ?><a class="menu-item menu-item-nested" href="/meta_data_deletion.php">Eliminación Meta</a><?php endif; ?>
       <?php if (can('view_reports')): ?><a class="menu-item menu-item-nested" href="<?= h(account_url('stats.php')) ?>">Estadísticas</a><?php endif; ?>
       <form class="menu-form" action="/logout.php" method="post">
@@ -121,6 +122,7 @@ function nav_admin_items(): array {
   if (can('manage_integrations')) $items[] = ['key' => 'channels', 'label' => 'Gestión de canales', 'href' => account_url('channels.php')];
   if (can('manage_integrations')) $items[] = ['key' => 'events', 'label' => 'Ver eventos', 'href' => account_url('webhook_logs.php')];
   if (can('manage_integrations')) $items[] = ['key' => 'ai_knowledge', 'label' => 'Conocimiento IA', 'href' => account_url('ai_knowledge.php')];
+  if (can('manage_integrations')) $items[] = ['key' => 'ai_knowledge_candidates', 'label' => 'Log aprendizaje IA', 'href' => account_url('ai_knowledge_candidates.php')];
   if (can('manage_accounts')) $items[] = ['key' => 'meta_deletion', 'label' => 'Eliminación Meta', 'href' => '/meta_data_deletion.php'];
   if (can('view_reports')) $items[] = ['key' => 'stats', 'label' => 'Estadísticas', 'href' => account_url('stats.php')];
   return $items;
