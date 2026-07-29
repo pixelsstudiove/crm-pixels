@@ -301,7 +301,15 @@ function ig_event_text(array $event, string $provider = 'instagram'): string {
     }
     if ($supportedTypes) return 'Adjunto recibido: ' . implode(', ', array_unique($supportedTypes));
   }
+  return ig_unsupported_message_text();
+}
+
+function ig_unsupported_message_text(): string {
   return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
+}
+
+function ig_is_unsupported_message_text(string $text): bool {
+  return trim($text) === ig_unsupported_message_text();
 }
 
 function ig_referral_data(array $event): array {
@@ -340,6 +348,27 @@ function ig_referral_data(array $event): array {
     'enrichment_error' => null,
     'campaign_was_generic' => $sourceIsAds || $refIsAds,
   ];
+}
+
+function ig_ad_referral_message_text(array $ref): ?string {
+  $campaignName = ig_clean($ref['campaign_name'] ?? $ref['campaign'] ?? null, 180);
+  $adsetName = ig_clean($ref['adset_name'] ?? null, 180);
+  $adName = ig_clean($ref['ad_name'] ?? null, 180);
+  $source = ig_clean($ref['referral_source'] ?? null, 80);
+  $adId = ig_clean($ref['ad_id'] ?? null, 120);
+  $adsetId = ig_clean($ref['adset_id'] ?? null, 120);
+  $campaignId = ig_clean($ref['campaign_id'] ?? null, 120);
+  $hasReferralContext = $campaignName !== null || $adsetName !== null || $adName !== null || $adId !== null || $adsetId !== null || $campaignId !== null || $source !== null || !empty($ref['payload_json']);
+  if (!$hasReferralContext) return null;
+
+  $lines = [];
+  $lines[] = $adName !== null ? 'Respuesta al anuncio: ' . $adName : 'Respuesta recibida desde un anuncio.';
+  if ($campaignName !== null && !ads_is_generic_meta_source($campaignName)) $lines[] = 'Campaña: ' . $campaignName;
+  if ($adsetName !== null) $lines[] = 'Conjunto: ' . $adsetName;
+  if ($adName === null && $adId !== null) $lines[] = 'Anuncio ID: ' . $adId;
+  if ($campaignName === null && $source !== null && !ads_is_generic_meta_source($source)) $lines[] = 'Referencia: ' . $source;
+
+  return implode("\n", array_values(array_unique($lines)));
 }
 
 function ig_ad_attribution_token(?array $channel): ?string {
@@ -720,7 +749,8 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       ];
     }
 
-    $messageType = isset($event['message']['text']) ? 'text' : (isset($event['postback']) ? 'postback' : 'attachment');
+    $hasReferralContext = !empty($event['_crm_message_from_referral']) || isset($event['referral']) || isset($event['message']['referral']);
+    $messageType = $hasReferralContext ? 'referral' : (isset($event['message']['text']) ? 'text' : (isset($event['postback']) ? 'postback' : 'attachment'));
     $messagesTable = conv_messages_table();
     $messageAlreadyExists = false;
     $hadOutboundBefore = false;
@@ -900,6 +930,12 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
     $ref['adset_ref_id'] = null;
     $ref['ad_ref_id'] = null;
   }
+  $adReferralText = ig_ad_referral_message_text($ref);
+  $messageFromAdReferral = $adReferralText !== null && (!$hasVisibleMessage || ig_is_unsupported_message_text($messageText));
+  if ($messageFromAdReferral) {
+    $messageText = $adReferralText;
+    $event['_crm_message_from_referral'] = true;
+  }
   $profile = ig_contact_profile($channel ?: null, $customerId, $provider);
   $profileName = $profile['name'] ?? null;
   $profileUsername = $profile['username'] ?? null;
@@ -912,9 +948,9 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $existing = $pdo->prepare("SELECT id FROM {$table} WHERE account_id=? AND external_source=? AND external_contact_id=? LIMIT 1");
   $existing->execute([$accountId, $provider, $contactKey]);
   $leadId = (int) ($existing->fetchColumn() ?: 0);
-  $shouldStoreMessage = $hasVisibleMessage && !$looksLikeEchoDuplicate;
-  $shouldUpdateLeadActivity = $hasVisibleMessage && !$looksLikeEchoDuplicate;
-  $shouldUpdateLeadMessage = $direction === 'inbound' && $hasVisibleMessage && !$looksLikeEchoDuplicate;
+  $shouldStoreMessage = ($hasVisibleMessage || $messageFromAdReferral) && !$looksLikeEchoDuplicate;
+  $shouldUpdateLeadActivity = ($hasVisibleMessage || $messageFromAdReferral) && !$looksLikeEchoDuplicate;
+  $shouldUpdateLeadMessage = $direction === 'inbound' && ($hasVisibleMessage || $messageFromAdReferral) && !$looksLikeEchoDuplicate;
 
   if ($leadId > 0) {
     $update = $pdo->prepare(<<<SQL
@@ -991,7 +1027,7 @@ SQL);
       'source' => $provider,
       'status' => $looksLikeEchoDuplicate ? 'duplicate' : ($hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only')),
       'account_id' => $accountId,
-      'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : ($hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
+      'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : (($hasReferralOnly || $messageFromAdReferral) ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
       'recipient_id' => $businessId,
       'sender_id' => $customerId,
       'channel_id' => (int) $channel['id'],
@@ -1084,7 +1120,7 @@ SQL);
     'source' => $provider,
     'status' => $looksLikeEchoDuplicate ? 'duplicate' : ($hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only')),
     'account_id' => $accountId,
-    'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : ($hasReferralOnly ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
+    'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : (($hasReferralOnly || $messageFromAdReferral) ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
     'recipient_id' => $businessId,
     'sender_id' => $customerId,
     'channel_id' => (int) $channel['id'],
