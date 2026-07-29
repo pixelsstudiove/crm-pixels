@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/lead_status_history.php';
+require_once __DIR__ . '/config/ai_knowledge.php';
 require_permission('send_messages');
 
 conv_ensure_schema($pdo);
@@ -23,6 +24,9 @@ function send_json(array $payload, int $status = 200): void {
   if (!headers_sent()) header('Content-Type: application/json; charset=utf-8');
   http_response_code($status);
   echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+  if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+  }
   exit;
 }
 
@@ -90,6 +94,24 @@ function send_auto_contact_lead_after_reply(PDO $pdo, string $leadsTable, int $l
     'label' => lead_status_label($targetStatus),
     'reason' => $reason,
   ];
+}
+
+function send_schedule_ai_knowledge_learning(PDO $pdo, int $accountId, int $conversationId, int $messageId, string $message, array $conversation, string $provider): void {
+  if ($accountId <= 0 || $conversationId <= 0 || $messageId <= 0 || trim($message) === '') return;
+  if (!function_exists('ai_knowledge_learn_from_outbound_message')) return;
+
+  $operatorId = (int) ($_SESSION['user_id'] ?? 0);
+  $operatorUsername = (string) ($_SESSION['username'] ?? '');
+  $conversationSnapshot = $conversation;
+
+  register_shutdown_function(static function() use ($pdo, $accountId, $conversationId, $messageId, $message, $conversationSnapshot, $provider, $operatorId, $operatorUsername): void {
+    ai_knowledge_learn_from_outbound_message($pdo, $accountId, $conversationId, $messageId, $message, [
+      'conversation' => $conversationSnapshot,
+      'provider' => $provider,
+      'operator_id' => $operatorId,
+      'operator_username' => $operatorUsername,
+    ]);
+  });
 }
 
 function send_normalize_uploads($upload): array {
@@ -248,6 +270,7 @@ if ($message !== '') {
     'sent_at' => $now,
     'delivery_status' => 'sent',
   ]);
+  send_schedule_ai_knowledge_learning($pdo, $conversationAccountId, $conversationId, (int) $messageId, $message, $conversation, $conversationProvider);
   $autoContactResult = $autoContactResult ?: send_auto_contact_lead_after_reply($pdo, $TABLE_LEADS, $leadId, $conversationAccountId, $hadOutboundBefore, $now);
   $responseMessages[] = [
     'id' => $messageId,

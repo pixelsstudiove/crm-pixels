@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $approvedBy,
             $approvedAt,
           ]);
-          $messages[] = 'Respuesta guardada.';
+          $messages[] = 'Conocimiento guardado.';
         }
       } elseif (isset($_POST['update_response_submit'])) {
         $itemId = max(0, (int) ($_POST['item_id'] ?? 0));
@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               $approvedAt,
               $itemId,
             ]);
-            $messages[] = 'Respuesta actualizada.';
+            $messages[] = 'Conocimiento actualizado.';
           }
         }
       } elseif (isset($_POST['delete_response_submit'])) {
@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
           $stmt = $pdo->prepare("DELETE FROM {$table} WHERE id=?");
           $stmt->execute([$itemId]);
-          $messages[] = 'Respuesta eliminada.';
+          $messages[] = 'Conocimiento eliminado.';
         }
       }
     } catch (Throwable $e) {
@@ -167,7 +167,7 @@ foreach ($items as $item) {
 }
 
 $currentAction = (string) ($_SERVER['REQUEST_URI'] ?? '/ai_knowledge.php');
-$pageTitle = 'Respuestas IA - Pixels Studio';
+$pageTitle = 'Banco de conocimiento IA - Pixels Studio';
 ?>
 <!doctype html>
 <html lang="es">
@@ -191,6 +191,7 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
     .ai-input,.ai-select,.ai-textarea{width:100%;border:1px solid #d8e6f4;border-radius:14px;background:#fff;padding:13px 14px;font:inherit;font-weight:800;color:#060d1d;}
     .ai-select{appearance:auto;}
     .ai-textarea{min-height:150px;resize:vertical;line-height:1.45;}
+    .ai-original-reply{border:1px solid #e1eaf5;background:#f7faff;border-radius:16px;padding:14px;color:#68748b;font-weight:800;line-height:1.45;}
     .ai-check-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:14px 0;}
     .ai-check{display:inline-flex;align-items:center;gap:8px;font-weight:900;color:#060d1d;}
     .ai-check input{width:20px;height:20px;accent-color:#8738ff;}
@@ -231,8 +232,8 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
     <header class="dashboard-header">
       <div>
         <p class="eyebrow">Pixels Studio</p>
-        <h1>Respuestas IA</h1>
-        <p class="dashboard-subtitle">Aprueba y activa respuestas aprendidas para que la IA venda con el criterio de cada cuenta.</p>
+        <h1>Banco de conocimiento IA</h1>
+        <p class="dashboard-subtitle">Aprueba y activa conocimiento aprendido de respuestas reales del equipo para que la IA venda con el criterio de cada cuenta.</p>
       </div>
       <?php nav_render_config_top_nav($pdo, 'ai_knowledge.php', $selectedAccountId); ?>
     </header>
@@ -252,8 +253,8 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
 
       <section class="admin-content ai-list ai-main-grid">
         <aside class="ai-panel">
-          <h2>Crear respuesta</h2>
-          <p>Agrega respuestas base que luego podrá reutilizar la IA cuando el contexto lo amerite.</p>
+          <h2>Agregar conocimiento manual</h2>
+          <p>Carga reglas, argumentos o respuestas base que la IA pueda reutilizar como referencia interna.</p>
           <form method="post" action="<?= h($currentAction) ?>">
             <input type="hidden" name="csrf" value="<?= h($_SESSION['csrf'] ?? '') ?>">
             <?php if (is_super_admin()): ?>
@@ -272,8 +273,8 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
               <input class="ai-input" id="title" name="title" placeholder="Ej: Cotización de disponibilidad">
             </div>
             <div class="ai-form-row">
-              <label for="response_text">Respuesta</label>
-              <textarea class="ai-textarea" id="response_text" name="response_text" placeholder="Escribe una respuesta que quieras convertir en conocimiento aprobado..."></textarea>
+              <label for="response_text">Conocimiento</label>
+              <textarea class="ai-textarea" id="response_text" name="response_text" placeholder="Ej: Cuando pregunten por disponibilidad, confirma el producto, pide cantidad y ofrece reservar mientras se valida stock."></textarea>
             </div>
             <div class="ai-check-row">
               <label class="ai-check"><input type="checkbox" name="is_approved" value="1"> Aprobada</label>
@@ -283,14 +284,14 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
                 Activa
               </label>
             </div>
-            <button class="ai-submit" type="submit" name="create_response_submit" value="1">Guardar respuesta</button>
+            <button class="ai-submit" type="submit" name="create_response_submit" value="1">Guardar conocimiento</button>
           </form>
         </aside>
 
         <div>
-          <h2>Biblioteca de respuestas</h2>
+          <h2>Conocimiento por revisar</h2>
           <?php if (!$items): ?>
-            <div class="ai-empty">Todavía no hay respuestas para revisar. Cuando el equipo genere sugerencias con IA, aparecerán aquí como pendientes.</div>
+            <div class="ai-empty">Todavía no hay conocimiento para revisar. Cuando el equipo responda mensajes útiles, la IA analizará esas respuestas y las traerá aquí como pendientes.</div>
           <?php endif; ?>
 
           <?php foreach ($items as $item): ?>
@@ -306,6 +307,8 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
                 <div class="ai-pill-row">
                   <?php if ((int) $item['is_approved'] === 1): ?><span class="ai-pill ok">Aprobada</span><?php else: ?><span class="ai-pill pending">Pendiente</span><?php endif; ?>
                   <?php if ((int) $item['is_active'] === 1): ?><span class="ai-pill on">Activa</span><?php else: ?><span class="ai-pill">Pausada</span><?php endif; ?>
+                  <?php if (!empty($item['category'])): ?><span class="ai-pill"><?= h((string) $item['category']) ?></span><?php endif; ?>
+                  <?php if ((float) ($item['confidence'] ?? 0) > 0): ?><span class="ai-pill"><?= h(number_format((float) $item['confidence'], 0, ',', '.')) ?>% confianza</span><?php endif; ?>
                 </div>
               </div>
               <form method="post" action="<?= h($currentAction) ?>">
@@ -316,9 +319,15 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
                   <input class="ai-input" id="title_<?= (int) $item['id'] ?>" name="title" value="<?= h((string) $item['title']) ?>">
                 </div>
                 <div class="ai-form-row">
-                  <label class="ai-card-label" for="response_<?= (int) $item['id'] ?>">Respuesta</label>
+                  <label class="ai-card-label" for="response_<?= (int) $item['id'] ?>">Conocimiento</label>
                   <textarea class="ai-textarea" id="response_<?= (int) $item['id'] ?>" name="response_text"><?= h((string) $item['response_text']) ?></textarea>
                 </div>
+                <?php if ((string) ($item['source'] ?? '') === 'seller_reply' && trim((string) ($item['raw_response_text'] ?? '')) !== ''): ?>
+                  <div class="ai-form-row">
+                    <span class="ai-card-label">Respuesta original del vendedor</span>
+                    <div class="ai-original-reply"><?= nl2br(h((string) $item['raw_response_text'])) ?></div>
+                  </div>
+                <?php endif; ?>
                 <div class="ai-check-row">
                   <label class="ai-check"><input type="checkbox" name="is_approved" value="1" <?= (int) $item['is_approved'] === 1 ? 'checked' : '' ?>> Aprobada</label>
                   <label class="ai-toggle">
@@ -329,7 +338,7 @@ $pageTitle = 'Respuestas IA - Pixels Studio';
                 </div>
                 <div class="ai-card-actions">
                   <button class="ai-submit" type="submit" name="update_response_submit" value="1">Guardar</button>
-                  <button class="ai-danger" type="submit" name="delete_response_submit" value="1" onclick="return confirm('¿Eliminar esta respuesta de la biblioteca IA?');">Eliminar</button>
+                  <button class="ai-danger" type="submit" name="delete_response_submit" value="1" onclick="return confirm('¿Eliminar este conocimiento de la biblioteca IA?');">Eliminar</button>
                 </div>
               </form>
             </article>
