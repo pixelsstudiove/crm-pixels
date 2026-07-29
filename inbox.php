@@ -658,6 +658,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .ai-suggest-btn.is-loading { opacity:.88; }
     @keyframes aiShine { 0%, 68%, 100% { transform:translateX(0) rotate(18deg); opacity:0; } 76% { opacity:.85; } 90% { transform:translateX(360%) rotate(18deg); opacity:0; } }
     .ai-suggest-status { color:var(--inbox-muted); font-weight:800; font-size:.78rem; }
+    .ai-suggest-status:empty { display:none; }
     .ai-suggest-status.is-error { color:#b91c1c; }
     .composer-file { display:inline-flex; align-items:center; justify-content:center; }
     .composer-file input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
@@ -1345,7 +1346,7 @@ function inbox_visible_message_text($value, array $attachments): string {
           textarea.focus();
           textarea.setSelectionRange(suggestion.length, suggestion.length);
         }
-        setAiSuggestStatus('Sugerencia lista.');
+        setAiSuggestStatus('');
       } catch (error) {
         const message = error.message || 'No se pudo generar la sugerencia.';
         setAiSuggestStatus(message, 'error');
