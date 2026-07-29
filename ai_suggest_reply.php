@@ -158,6 +158,7 @@ function ai_suggest_call_openai(array $context): array {
       'Prioriza: entender necesidad, calificar interes, resolver dudas, pedir el dato minimo necesario, proponer siguiente paso y mantener la conversacion activa.',
       'No repitas respuestas anteriores. Si el operador presiona varias veces generar respuesta IA, cambia completamente el enfoque, estructura, inicio y cierre.',
       'No repitas literalmente el mensaje del cliente ni uses plantillas genericas. La respuesta debe sonar humana y especifica al contexto.',
+      'Escribe con saltos de linea reales para que sea facil de leer en el chat: 2 a 4 parrafos cortos separados por una linea en blanco. Evita bloques largos de texto.',
       'Usa emojis con moderacion: maximo 1 emoji en una respuesta normal, maximo 2 solo si aporta calidez. No uses emojis en cada frase.',
       'No inventes precios, disponibilidad, garantias, tiempos de entrega, promociones, ubicaciones ni condiciones. Si falta informacion, pregunta o ofrece validar.',
       'Evita saludos repetidos si la conversacion ya empezo. Evita despedidas largas. Maximo 90 palabras.',
