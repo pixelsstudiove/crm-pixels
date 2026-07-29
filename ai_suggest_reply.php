@@ -342,6 +342,77 @@ function ai_suggest_direct_knowledge_reply(array $context): string {
   return ai_suggest_clean_text($greeting . "\n\n" . $knowledge . $suffix, 1000);
 }
 
+function ai_suggest_contact_first_name(array $context): string {
+  $name = ai_suggest_clean_text($context['contact']['name'] ?? '', 80);
+  $nameParts = preg_split('/\s+/u', trim($name));
+  $firstName = is_array($nameParts) ? trim((string) ($nameParts[0] ?? '')) : '';
+
+  return $firstName !== '' && ai_suggest_match_normalize($firstName) !== 'contacto'
+    ? $firstName
+    : '';
+}
+
+function ai_suggest_last_client_message(array $context): string {
+  $messages = is_array($context['recent_messages'] ?? null) ? $context['recent_messages'] : [];
+  for ($i = count($messages) - 1; $i >= 0; $i--) {
+    $message = is_array($messages[$i] ?? null) ? $messages[$i] : [];
+    if (($message['role'] ?? '') !== 'cliente') continue;
+
+    $text = ai_suggest_clean_text($message['text'] ?? '', 500);
+    if ($text !== '') return $text;
+  }
+
+  return '';
+}
+
+function ai_suggest_open_sales_fallback(array $context): array {
+  $firstName = ai_suggest_contact_first_name($context);
+  $greeting = $firstName !== '' ? 'Hola ' . $firstName . ',' : 'Hola,';
+  $lastMessage = ai_suggest_last_client_message($context);
+  $normalized = ai_suggest_match_normalize($lastMessage);
+
+  if (preg_match('/\b(precio|cotiz|costo|cuanto|cu[aá]nto|disponible|stock|hay|tienen|tienes)\b/u', $normalized)) {
+    $templates = [
+      $greeting . " gracias por tu interés.\n\nPara darte una respuesta más precisa, ¿me confirmas qué cantidad necesitas y si buscas alguna medida, modelo o característica específica?\n\nCon eso puedo orientarte mejor y avanzar con la cotización.",
+      $greeting . " claro, te ayudo con gusto.\n\nAntes de cotizarte, ¿me indicas exactamente cuál producto necesitas y para cuándo lo requieres?\n\nAsí puedo validar la mejor opción disponible para ti.",
+    ];
+  } elseif (preg_match('/\b(ubic|direccion|direcci[oó]n|donde|d[oó]nde|sede|tienda|local)\b/u', $normalized)) {
+    $templates = [
+      $greeting . " claro, te ayudo con la ubicación.\n\nPermíteme confirmar la referencia exacta de la sede para enviártela sin confundirte.\n\n¿Quieres acercarte hoy o estás consultando para coordinar una compra?",
+      $greeting . " con gusto te apoyo.\n\nVoy a validar la dirección y la referencia más clara para que puedas llegar sin problema.\n\nMientras tanto, ¿vas a visitar tienda o quieres que primero revisemos disponibilidad de algún producto?",
+    ];
+  } elseif (preg_match('/\b(pago|pagar|cashea|zelle|transferencia|credito|cr[eé]dito|cuotas)\b/u', $normalized)) {
+    $templates = [
+      $greeting . " gracias por consultar.\n\nDéjame validar las opciones de pago disponibles para tu caso y te confirmo por aquí.\n\n¿La compra sería para hoy o estás comparando alternativas?",
+      $greeting . " claro, te ayudo.\n\nPara orientarte bien con las formas de pago, ¿me confirmas el producto o monto aproximado de la compra?\n\nAsí puedo darte una respuesta más útil.",
+    ];
+  } else {
+    $templates = [
+      $greeting . " gracias por escribirnos.\n\nPara ayudarte mejor, ¿podrías contarme un poco más sobre lo que necesitas? Así puedo orientarte con la opción correcta y verificar disponibilidad.\n\n¿Buscas cotizar, consultar disponibilidad o recibir una recomendación?",
+      $greeting . " con gusto te atiendo.\n\nCuéntame qué producto o solución estás buscando y para qué lo necesitas. Con ese dato puedo guiarte mejor y avanzar con una propuesta concreta.\n\n¿Quieres que revisemos opciones disponibles?",
+      $greeting . " gracias por contactarnos.\n\nPara darte una respuesta útil desde el inicio, ¿me compartes qué necesitas resolver o qué producto estás buscando?\n\nAsí puedo ayudarte a avanzar sin hacerte perder tiempo. 😊",
+    ];
+  }
+
+  $previous = array_map('ai_suggest_match_normalize', ai_suggest_previous_replies(
+    (string) ($context['sales_generation_rules']['history_key'] ?? '')
+  ));
+  $templates = array_values(array_filter($templates, static function ($template) use ($previous) {
+    return !in_array(ai_suggest_match_normalize($template), $previous, true);
+  })) ?: $templates;
+
+  $index = random_int(0, max(0, count($templates) - 1));
+  $reply = ai_suggest_clean_text($templates[$index], 1000);
+
+  return [
+    'reply' => $reply,
+    'intent' => 'Respuesta abierta de ventas',
+    'next_step' => 'Pedir el dato minimo necesario para avanzar sin inventar informacion.',
+    'confidence' => 0.72,
+    'fallback' => true,
+  ];
+}
+
 function ai_suggest_history_key(int $accountId, int $conversationId): string {
   return 'a' . $accountId . '_c' . $conversationId;
 }
@@ -405,6 +476,7 @@ function ai_suggest_call_openai(array $context): array {
       'No repitas respuestas anteriores. Si el operador presiona varias veces generar respuesta IA, cambia completamente el enfoque, estructura, inicio y cierre.',
       'No repitas literalmente el mensaje del cliente ni uses plantillas genericas. La respuesta debe sonar humana y especifica al contexto.',
       'El bloque approved_sales_knowledge contiene conocimiento aprobado y activo de la cuenta actual. Tratalo como fuente de verdad cuando sea relevante.',
+      'Si approved_sales_knowledge esta vacio o no responde la pregunta del cliente, genera una respuesta abierta de ventas sin inventar datos concretos. Pide el dato minimo necesario y ofrece avanzar.',
       'Si required_knowledge.required es true, tu respuesta debe usar required_knowledge.response como dato principal y responder directo. No cambies el tema, no preguntes que necesita si el dato ya responde la pregunta.',
       'Si el cliente pregunta por ubicacion, direccion, sedes, horario, pagos, precios, garantia, envios o disponibilidad y el conocimiento aprobado incluye ese dato, respondelo de forma directa antes de pedir mas informacion.',
       'Si el conocimiento aprobado incluye varias sedes o instrucciones concretas, listalas claramente con saltos de linea. No digas que vas a validar un dato que ya esta en el conocimiento.',
@@ -649,13 +721,16 @@ try {
       'variant' => $variant,
       'must_be_different_from_previous' => true,
       'previous_ai_suggestions_to_avoid' => ai_suggest_previous_replies($historyKey),
+      'history_key' => $historyKey,
       'generation_seed' => bin2hex(random_bytes(8)),
       'generated_at' => app_datetime(gmdate('Y-m-d H:i:s')),
     ],
     'recent_messages' => $recentMessages,
   ];
 
-  $suggestion = ai_suggest_call_openai($context);
+  $suggestion = $approvedKnowledge
+    ? ai_suggest_call_openai($context)
+    : ai_suggest_open_sales_fallback($context);
   ai_suggest_store_reply($historyKey, $suggestion['reply']);
   ai_suggest_json([
     'ok' => true,
@@ -663,6 +738,7 @@ try {
     'intent' => $suggestion['intent'],
     'next_step' => $suggestion['next_step'],
     'confidence' => $suggestion['confidence'],
+    'fallback' => (bool) ($suggestion['fallback'] ?? false),
   ]);
 } catch (Throwable $e) {
   ai_suggest_log_error($e->getMessage(), ['file' => $e->getFile(), 'line' => $e->getLine()]);
