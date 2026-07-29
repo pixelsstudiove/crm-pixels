@@ -97,6 +97,164 @@ function ai_suggest_sales_variant(): array {
   }
 }
 
+function ai_suggest_match_normalize($value): string {
+  $text = ai_suggest_clean_text($value, 7000);
+  if ($text === '') return '';
+
+  $text = strtr($text, [
+    'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a', 'Á' => 'a', 'À' => 'a', 'Ä' => 'a', 'Â' => 'a',
+    'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e', 'É' => 'e', 'È' => 'e', 'Ë' => 'e', 'Ê' => 'e',
+    'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i', 'Í' => 'i', 'Ì' => 'i', 'Ï' => 'i', 'Î' => 'i',
+    'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o', 'Ó' => 'o', 'Ò' => 'o', 'Ö' => 'o', 'Ô' => 'o',
+    'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u', 'Ú' => 'u', 'Ù' => 'u', 'Ü' => 'u', 'Û' => 'u',
+    'ñ' => 'n', 'Ñ' => 'n',
+  ]);
+  $text = function_exists('mb_strtolower') ? mb_strtolower($text, 'UTF-8') : strtolower($text);
+  $text = preg_replace('/[^\pL\pN]+/u', ' ', $text) ?: $text;
+  return trim(preg_replace('/\s+/u', ' ', $text) ?: $text);
+}
+
+function ai_suggest_keyword_tokens(string $text): array {
+  $text = ai_suggest_match_normalize($text);
+  if ($text === '') return [];
+
+  $stopwords = array_flip([
+    'para', 'pero', 'como', 'con', 'por', 'que', 'del', 'las', 'los', 'una', 'uno', 'unos', 'unas',
+    'este', 'esta', 'esto', 'ese', 'esa', 'eso', 'aqui', 'alla', 'hola', 'buenas', 'buenos',
+    'gracias', 'quiero', 'quisiera', 'necesito', 'puede', 'pueden', 'tiene', 'tienen', 'sobre',
+    'desde', 'donde', 'cuando', 'cual', 'cuales', 'cliente', 'mensaje', 'instagram', 'whatsapp',
+  ]);
+
+  $tokens = [];
+  foreach (preg_split('/\s+/u', $text) ?: [] as $token) {
+    $token = trim((string) $token);
+    $length = function_exists('mb_strlen') ? mb_strlen($token, 'UTF-8') : strlen($token);
+    if ($length < 3 || isset($stopwords[$token])) continue;
+    $tokens[$token] = true;
+  }
+
+  return array_keys($tokens);
+}
+
+function ai_suggest_detect_intent_keywords(string $searchText): array {
+  $normalized = ai_suggest_match_normalize($searchText);
+  $groups = [
+    'ubicacion' => [
+      'ubicacion', 'direccion', 'direcciones', 'sede', 'sedes', 'sucursal', 'sucursales',
+      'tienda', 'tiendas', 'local', 'locales', 'queda', 'quedan', 'ubicado', 'ubicada',
+      'ubicados', 'ubicadas', 'llegar', 'visitar', 'visito', 'mapa',
+    ],
+    'horario' => ['horario', 'hora', 'abren', 'abierto', 'atienden', 'atencion', 'cerrado', 'cierran'],
+    'precio' => ['precio', 'cuanto', 'costo', 'valor', 'presupuesto', 'cotizar', 'cotizacion'],
+    'pago' => ['pago', 'pagar', 'zelle', 'transferencia', 'punto', 'efectivo', 'divisas', 'bcv'],
+    'envio' => ['envio', 'delivery', 'despacho', 'entrega', 'enviar', 'recibir', 'domicilio'],
+    'garantia' => ['garantia', 'cambio', 'devolucion', 'reclamo'],
+  ];
+
+  $keywords = [];
+  foreach ($groups as $groupKeywords) {
+    foreach ($groupKeywords as $keyword) {
+      if (preg_match('/\b' . preg_quote($keyword, '/') . '\b/u', $normalized)) {
+        $keywords = array_merge($keywords, $groupKeywords);
+        break;
+      }
+    }
+  }
+
+  return array_values(array_unique($keywords));
+}
+
+function ai_suggest_knowledge_search_text(array $conversation, array $recentMessages, string $draft): string {
+  $parts = [
+    $draft,
+    (string) ($conversation['lead_notes'] ?? ''),
+    (string) ($conversation['campaign_name'] ?? ''),
+    (string) ($conversation['adset_name'] ?? ''),
+    (string) ($conversation['ad_name'] ?? ''),
+  ];
+
+  $inbound = array_values(array_filter($recentMessages, static fn($message) => ($message['role'] ?? '') === 'cliente'));
+  foreach (array_slice(array_reverse($inbound), 0, 5) as $message) {
+    $parts[] = (string) ($message['text'] ?? '');
+  }
+
+  return implode(' ', array_filter($parts, static fn($part) => trim((string) $part) !== ''));
+}
+
+function ai_suggest_score_knowledge_item(array $item, string $searchText, array $tokens, array $intentKeywords): int {
+  $title = ai_suggest_match_normalize($item['title'] ?? '');
+  $category = ai_suggest_match_normalize($item['category'] ?? '');
+  $response = ai_suggest_match_normalize($item['response_text'] ?? '');
+  $haystack = trim($title . ' ' . $category . ' ' . $response);
+  if ($haystack === '') return 0;
+
+  $score = 0;
+  foreach ($tokens as $token) {
+    if (preg_match('/\b' . preg_quote($token, '/') . '\b/u', $title)) $score += 5;
+    if (preg_match('/\b' . preg_quote($token, '/') . '\b/u', $category)) $score += 3;
+    if (preg_match('/\b' . preg_quote($token, '/') . '\b/u', $response)) $score += 2;
+  }
+
+  foreach ($intentKeywords as $keyword) {
+    if (preg_match('/\b' . preg_quote($keyword, '/') . '\b/u', $haystack)) $score += 8;
+  }
+
+  if (in_array('ubicacion', $intentKeywords, true)) {
+    $locationMarkers = ['avenida', 'av', 'calle', 'centro comercial', 'cc', 'local', 'sede', 'tienda', 'valencia', 'naguanagua'];
+    foreach ($locationMarkers as $marker) {
+      if (strpos($haystack, $marker) !== false) $score += 4;
+    }
+  }
+
+  if ($searchText !== '' && strpos($haystack, ai_suggest_match_normalize($searchText)) !== false) {
+    $score += 10;
+  }
+
+  return $score;
+}
+
+function ai_suggest_select_relevant_knowledge(array $items, array $conversation, array $recentMessages, string $draft, int $limit = 12): array {
+  if (!$items) return [];
+
+  $searchText = ai_suggest_knowledge_search_text($conversation, $recentMessages, $draft);
+  $tokens = ai_suggest_keyword_tokens($searchText);
+  $intentKeywords = ai_suggest_detect_intent_keywords($searchText);
+  $scored = [];
+
+  foreach ($items as $index => $item) {
+    $score = ai_suggest_score_knowledge_item($item, $searchText, $tokens, $intentKeywords);
+    $scored[] = [
+      'score' => $score,
+      'index' => $index,
+      'item' => $item,
+    ];
+  }
+
+  usort($scored, static function ($a, $b): int {
+    if ($a['score'] !== $b['score']) return $b['score'] <=> $a['score'];
+    $usageA = (int) ($a['item']['usage_count'] ?? 0);
+    $usageB = (int) ($b['item']['usage_count'] ?? 0);
+    if ($usageA !== $usageB) return $usageA <=> $usageB;
+    return ((int) ($b['item']['id'] ?? 0)) <=> ((int) ($a['item']['id'] ?? 0));
+  });
+
+  $selected = [];
+  foreach ($scored as $row) {
+    if ((int) $row['score'] <= 0 && count($selected) >= 4) continue;
+    $item = $row['item'];
+    $selected[] = [
+      'id' => (int) ($item['id'] ?? 0),
+      'title' => ai_suggest_clean_text($item['title'] ?? '', 140),
+      'response' => ai_suggest_clean_text($item['response_text'] ?? '', 1200),
+      'category' => ai_suggest_clean_text($item['category'] ?? '', 80),
+      'relevance_score' => (int) $row['score'],
+    ];
+    if (count($selected) >= $limit) break;
+  }
+
+  return $selected;
+}
+
 function ai_suggest_history_key(int $accountId, int $conversationId): string {
   return 'a' . $accountId . '_c' . $conversationId;
 }
@@ -159,7 +317,9 @@ function ai_suggest_call_openai(array $context): array {
       'Prioriza: entender necesidad, calificar interes, resolver dudas, pedir el dato minimo necesario, proponer siguiente paso y mantener la conversacion activa.',
       'No repitas respuestas anteriores. Si el operador presiona varias veces generar respuesta IA, cambia completamente el enfoque, estructura, inicio y cierre.',
       'No repitas literalmente el mensaje del cliente ni uses plantillas genericas. La respuesta debe sonar humana y especifica al contexto.',
-      'Si existe conocimiento aprobado y activo de la cuenta, usalo como referencia prioritaria solo cuando sea relevante para esta conversacion.',
+      'El bloque approved_sales_knowledge contiene conocimiento aprobado y activo de la cuenta actual. Tratalo como fuente de verdad cuando sea relevante.',
+      'Si el cliente pregunta por ubicacion, direccion, sedes, horario, pagos, precios, garantia, envios o disponibilidad y el conocimiento aprobado incluye ese dato, respondelo de forma directa antes de pedir mas informacion.',
+      'Si el conocimiento aprobado incluye varias sedes o instrucciones concretas, listalas claramente con saltos de linea. No digas que vas a validar un dato que ya esta en el conocimiento.',
       'Escribe con saltos de linea reales para que sea facil de leer en el chat: 2 a 4 parrafos cortos separados por una linea en blanco. Evita bloques largos de texto.',
       'Usa emojis con moderacion: maximo 1 emoji en una respuesta normal, maximo 2 solo si aporta calidez. No uses emojis en cada frase.',
       'No inventes precios, disponibilidad, garantias, tiempos de entrega, promociones, ubicaciones ni condiciones. Si falta informacion, pregunta o ofrece validar.',
@@ -353,14 +513,14 @@ try {
   $leadStatus = (string) ($conversation['lead_sales_status'] ?: app_config('sales_funnel.default_status', 'nuevo_lead'));
   $historyKey = ai_suggest_history_key((int) ($conversation['account_id'] ?? 0), (int) $conversation['id']);
   $variant = ai_suggest_sales_variant();
-  $approvedKnowledge = [];
-  foreach (ai_knowledge_active_items($pdo, (int) ($conversation['account_id'] ?? 0), 10) as $knowledgeItem) {
-    $approvedKnowledge[] = [
-      'title' => ai_suggest_clean_text($knowledgeItem['title'] ?? '', 140),
-      'response' => ai_suggest_clean_text($knowledgeItem['response_text'] ?? '', 1200),
-      'category' => ai_suggest_clean_text($knowledgeItem['category'] ?? '', 80),
-    ];
-  }
+  $draft = ai_suggest_clean_text($_POST['draft'] ?? '', 800);
+  $approvedKnowledge = ai_suggest_select_relevant_knowledge(
+    ai_knowledge_active_items($pdo, (int) ($conversation['account_id'] ?? 0), 80),
+    $conversation,
+    $recentMessages,
+    $draft,
+    12
+  );
 
   $context = [
     'account' => ai_suggest_clean_text($conversation['account_name'] ?? '', 160),
@@ -380,7 +540,7 @@ try {
       'ad' => ai_suggest_clean_text($conversation['ad_name'] ?? '', 220),
       'reference' => ai_suggest_clean_text($conversation['ad_referral_source'] ?? '', 220),
     ],
-    'operator_draft' => ai_suggest_clean_text($_POST['draft'] ?? '', 800),
+    'operator_draft' => $draft,
     'approved_sales_knowledge' => $approvedKnowledge,
     'sales_generation_rules' => [
       'variant' => $variant,

@@ -164,7 +164,7 @@ function ai_knowledge_active_items(PDO $pdo, int $accountId, int $limit = 8): ar
   ai_knowledge_ensure_schema($pdo);
   if ($accountId <= 0) return [];
 
-  $limit = max(1, min(20, $limit));
+  $limit = max(1, min(120, $limit));
   $table = ai_knowledge_table();
   $stmt = $pdo->prepare("
     SELECT id, title, response_text, category, usage_count
