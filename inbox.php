@@ -1381,6 +1381,41 @@ function inbox_visible_message_text($value, array $attachments): string {
       return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     }
 
+    function conversationScrollKey() {
+      const params = new URLSearchParams();
+      if (inboxState.selectedAccountId) params.set('selected_account_id', String(inboxState.selectedAccountId));
+      if (inboxState.accountId) params.set('account_id', String(inboxState.accountId));
+      if (inboxState.channelId) params.set('channel_id', String(inboxState.channelId));
+      if (inboxState.q) params.set('q', inboxState.q);
+      if (inboxState.status) params.set('status', inboxState.status);
+      if (inboxState.salesStatus) params.set('sales_status', inboxState.salesStatus);
+      return `crm_pixels_inbox_conversation_scroll:${window.location.pathname}:${params.toString()}`;
+    }
+
+    function saveConversationScroll() {
+      if (!conversationList) return;
+      try {
+        window.sessionStorage.setItem(conversationScrollKey(), String(conversationList.scrollTop || 0));
+      } catch (error) {}
+    }
+
+    function restoreConversationScroll() {
+      if (!conversationList) return;
+      try {
+        const stored = window.sessionStorage.getItem(conversationScrollKey());
+        if (stored === null) return;
+        const nextTop = Math.max(0, Number(stored) || 0);
+        conversationList.scrollTop = nextTop;
+      } catch (error) {}
+    }
+
+    function restoreConversationScrollSoon() {
+      restoreConversationScroll();
+      window.requestAnimationFrame(restoreConversationScroll);
+      window.setTimeout(restoreConversationScroll, 80);
+      window.setTimeout(restoreConversationScroll, 350);
+    }
+
     function scrollMessagesToBottom() {
       if (messageList) messageList.scrollTop = messageList.scrollHeight;
     }
@@ -1568,6 +1603,7 @@ function inbox_visible_message_text($value, array $attachments): string {
 
     function renderConversations(items) {
       if (!conversationList || !Array.isArray(items)) return;
+      const previousScrollTop = conversationList.scrollTop;
       if (!items.length) {
         conversationList.innerHTML = '<div class="empty-state">Aun no hay conversaciones. Llegaran aqui cuando entre un nuevo mensaje de Instagram, Messenger o WhatsApp.</div>';
         return;
@@ -1592,6 +1628,7 @@ function inbox_visible_message_text($value, array $attachments): string {
         updateConversationElement(node, item);
         conversationList.appendChild(node);
       });
+      conversationList.scrollTop = previousScrollTop;
     }
 
     function messageSignature(message) {
@@ -2434,6 +2471,22 @@ function inbox_visible_message_text($value, array $attachments): string {
       });
     }
 
+    if (conversationList) {
+      let conversationScrollTimer = 0;
+      conversationList.addEventListener('scroll', () => {
+        window.clearTimeout(conversationScrollTimer);
+        conversationScrollTimer = window.setTimeout(saveConversationScroll, 80);
+      }, { passive: true });
+
+      conversationList.addEventListener('click', event => {
+        const conversationLink = event.target.closest('.conversation-item');
+        if (conversationLink) saveConversationScroll();
+      });
+
+      window.addEventListener('beforeunload', saveConversationScroll);
+      restoreConversationScrollSoon();
+    }
+
     document.querySelectorAll('[data-lead-notes]').forEach(field => {
       let previousValue = field.value;
 
@@ -2480,8 +2533,10 @@ function inbox_visible_message_text($value, array $attachments): string {
     bindMessageMediaScroll(messageList);
     scrollMessagesToBottomSoon();
     window.addEventListener('load', scrollMessagesToBottomSoon);
+    window.addEventListener('load', restoreConversationScrollSoon);
     window.setInterval(() => pollInbox(false), 3000);
     window.setTimeout(() => pollInbox(true), 900);
+    window.setTimeout(restoreConversationScrollSoon, 1100);
   </script>
 </body>
 </html>
