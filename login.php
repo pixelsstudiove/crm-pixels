@@ -61,6 +61,32 @@ if (empty($_SESSION['csrf'])) {
   $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && is_numeric($_SESSION['user_id'])) {
+  try {
+    $stmt = $pdo->prepare("SELECT id, account_id, username, role FROM {$TABLE_USERS} WHERE id=? LIMIT 1");
+    $stmt->execute([(int) $_SESSION['user_id']]);
+    $activeUser = $stmt->fetch();
+
+    if ($activeUser) {
+      $activeRole = normalize_role($activeUser['role'] ?? null);
+      $activeAccountId = (int) ($activeUser['account_id'] ?? $defaultAccountId);
+
+      if ($activeRole === 'super_admin' || accounts_is_active($pdo, $activeAccountId)) {
+        $_SESSION['user_id'] = (int) $activeUser['id'];
+        $_SESSION['account_id'] = $activeAccountId;
+        $_SESSION['username'] = (string) $activeUser['username'];
+        $_SESSION['role'] = $activeRole;
+
+        $accountSlug = $activeRole === 'super_admin' ? '' : accounts_slug_for_id($pdo, $activeAccountId);
+        header('Location: ' . ($accountSlug !== '' ? account_url('dashboard.php', [], $accountSlug) : 'dashboard.php'));
+        exit;
+      }
+    }
+  } catch (Throwable $e) {
+    /* Si no se puede validar, dejamos que el formulario de login se muestre normalmente. */
+  }
+}
+
 function login_security_dir(): string {
   $dir = __DIR__ . '/storage/security/login';
   if (!is_dir($dir)) @mkdir($dir, 0770, true);
