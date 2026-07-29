@@ -288,6 +288,7 @@ function ig_event_text(array $event, string $provider = 'instagram'): string {
   if ($text !== null) return $text;
   $postback = ig_clean($event['postback']['title'] ?? null, 1200);
   if ($postback !== null) return 'Postback: ' . $postback;
+  if (ig_story_reply_data($event)) return 'Respuesta a story recibida.';
   $attachments = $event['message']['attachments'] ?? [];
   if (is_array($attachments) && $attachments) {
     $types = [];
@@ -297,7 +298,7 @@ function ig_event_text(array $event, string $provider = 'instagram'): string {
       $types[] = $type;
       $payload = is_array($attachment['payload'] ?? null) ? $attachment['payload'] : [];
       $hasDownloadUrl = trim((string) ($payload['url'] ?? '')) !== '';
-      if (in_array($type, ['image', 'audio'], true) && $hasDownloadUrl) $supportedTypes[] = $type;
+      if (in_array($type, ['image', 'audio', 'video'], true) && $hasDownloadUrl) $supportedTypes[] = $type;
     }
     if ($supportedTypes) return 'Adjunto recibido: ' . implode(', ', array_unique($supportedTypes));
   }
@@ -369,6 +370,33 @@ function ig_ad_referral_message_text(array $ref): ?string {
   if ($campaignName === null && $source !== null && !ads_is_generic_meta_source($source)) $lines[] = 'Referencia: ' . $source;
 
   return implode("\n", array_values(array_unique($lines)));
+}
+
+function ig_story_reply_data(array $event): ?array {
+  $story = $event['message']['reply_to']['story'] ?? $event['reply_to']['story'] ?? null;
+  if (!is_array($story)) return null;
+
+  $url = trim(str_replace("\0", '', (string) ($story['url'] ?? $story['media_url'] ?? '')));
+  $storyId = ig_clean($story['id'] ?? $story['story_id'] ?? null, 180);
+  if ($url === '' && $storyId === null) return null;
+
+  $rawType = strtolower(trim((string) ($story['media_type'] ?? $story['type'] ?? $story['attachment_type'] ?? '')));
+  $type = 'story';
+  if (str_contains($rawType, 'video')) $type = 'video';
+  elseif (str_contains($rawType, 'image') || str_contains($rawType, 'photo')) $type = 'image';
+
+  return [
+    'id' => $storyId,
+    'url' => $url,
+    'type' => $type,
+    'raw_type' => $rawType !== '' ? $rawType : null,
+  ];
+}
+
+function ig_story_reply_context_text(array $story): string {
+  return ($story['url'] ?? '') !== ''
+    ? 'Story respondida por el lead.'
+    : 'El lead respondió una story. Abre Instagram para ver el contenido original.';
 }
 
 function ig_ad_attribution_token(?array $channel): ?string {
@@ -553,7 +581,7 @@ function ig_contact_profile(?array $channel, ?string $senderId, string $provider
 
 function ig_download_media(string $url, ?string $accessToken): array {
   $headers = [
-    'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,audio/*,*/*;q=0.8',
+    'Accept: image/avif,image/webp,image/apng,image/svg+xml,image/*,audio/*,video/*,*/*;q=0.8',
     'User-Agent: PixelsCRM/1.0',
   ];
   if ($accessToken) $headers[] = 'Authorization: Bearer ' . $accessToken;
@@ -617,12 +645,23 @@ function ig_download_media_with_fallback(string $url, ?string $accessToken): arr
 function ig_media_allowed_mimes(string $type): array {
   return match ($type) {
     'audio' => (array) app_config('media.allowed_audio_mimes', []),
+    'video' => (array) app_config('media.allowed_video_mimes', []),
     default => (array) app_config('media.allowed_image_mimes', []),
   };
 }
 
 function ig_media_label(string $type): string {
-  return $type === 'audio' ? 'audio' : 'imagen';
+  if ($type === 'audio') return 'audio';
+  if ($type === 'video') return 'video';
+  return 'imagen';
+}
+
+function ig_media_type_from_mime(string $mime, string $fallback): string {
+  $mime = strtolower(trim($mime));
+  if (str_starts_with($mime, 'image/')) return 'image';
+  if (str_starts_with($mime, 'audio/')) return 'audio';
+  if (str_starts_with($mime, 'video/')) return 'video';
+  return in_array($fallback, ['image', 'audio', 'video'], true) ? $fallback : 'image';
 }
 
 function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messageId, array $event, ?array $channel, string $provider = 'instagram', string $direction = 'inbound'): array {
@@ -646,7 +685,7 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
     if (!is_array($attachment)) continue;
     $result['total']++;
     $type = ig_clean($attachment['type'] ?? 'image', 40) ?? 'image';
-    if (!in_array($type, ['image', 'audio'], true)) continue;
+    $type = in_array($type, ['image', 'audio', 'video'], true) ? $type : 'story';
     $label = ig_media_label($type);
     $payload = $attachment['payload'] ?? [];
     $payload = is_array($payload) ? $payload : [];
@@ -673,6 +712,8 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
 
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mime = (string) ($download['detected_mime'] ?? ($finfo->buffer($bytes) ?: ($download['mime'] ?? '')));
+    $type = ig_media_type_from_mime($mime, $type);
+    $label = ig_media_label($type);
     $allowedMimes = ig_media_allowed_mimes($type);
     if (!in_array($mime, $allowedMimes, true)) {
       $result['errors'][] = 'MIME no permitido: ' . $mime;
@@ -706,6 +747,61 @@ function ig_store_message_attachments(PDO $pdo, int $conversationId, int $messag
     else $result['errors'][] = 'El adjunto subió a R2, pero no se guardó en la base de datos.';
   }
   return $result;
+}
+
+function ig_store_story_reply_context(PDO $pdo, int $conversationId, string $senderId, ?string $messageId, string $messageAt, array $event, ?array $channel, string $provider = 'instagram'): array {
+  $story = ig_story_reply_data($event);
+  if (!$story || $conversationId <= 0) {
+    return ['message_id' => 0, 'message_inserted' => false, 'attachments_total' => 0, 'attachments_stored' => 0, 'attachment_errors' => []];
+  }
+
+  $messagesTable = conv_messages_table();
+  $contextSeed = $messageId ?: hash('sha256', $senderId . '|' . $messageAt . '|' . json_encode($story, JSON_UNESCAPED_UNICODE));
+  $externalId = 'story-context:' . $contextSeed;
+  $hash = hash('sha256', $externalId);
+  $existsStmt = $pdo->prepare("SELECT id FROM {$messagesTable} WHERE conversation_id=? AND external_message_hash=? LIMIT 1");
+  $existsStmt->execute([$conversationId, $hash]);
+  $alreadyExists = (bool) $existsStmt->fetchColumn();
+
+  $contextEvent = $event;
+  $contextEvent['_crm_story_reply_context'] = true;
+  $contextEvent['_crm_story_reply'] = $story;
+  $inserted = conv_add_message($pdo, [
+    'conversation_id' => $conversationId,
+    'external_message_id' => $externalId,
+    'direction' => 'inbound',
+    'sender_external_id' => $senderId,
+    'message_type' => 'story_context',
+    'message_text' => ig_story_reply_context_text($story),
+    'payload_json' => json_encode($contextEvent, JSON_UNESCAPED_UNICODE),
+    'sent_at' => $messageAt,
+    'delivery_status' => 'received',
+  ]);
+
+  $attachmentResult = ['total' => 0, 'stored' => 0, 'errors' => []];
+  if ($inserted > 0 && !$alreadyExists && trim((string) ($story['url'] ?? '')) !== '') {
+    $attachmentResult = ig_store_message_attachments($pdo, $conversationId, $inserted, [
+      'message' => [
+        'attachments' => [
+          [
+            'type' => (string) ($story['type'] ?? 'story'),
+            'payload' => [
+              'url' => (string) ($story['url'] ?? ''),
+              'attachment_id' => $story['id'] ?? null,
+            ],
+          ],
+        ],
+      ],
+    ], $channel, $provider, 'inbound');
+  }
+
+  return [
+    'message_id' => $inserted,
+    'message_inserted' => $inserted > 0 && !$alreadyExists,
+    'attachments_total' => (int) ($attachmentResult['total'] ?? 0),
+    'attachments_stored' => (int) ($attachmentResult['stored'] ?? 0),
+    'attachment_errors' => (array) ($attachmentResult['errors'] ?? []),
+  ];
 }
 
 function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, string $threadId, ?string $messageId, string $messageText, string $messageAt, ?string $profileName, ?string $profileUsername, int $leadId, array $event, string $provider = 'instagram', string $direction = 'inbound', bool $storeMessage = true): array {
@@ -764,6 +860,10 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       $outboundStmt->execute([$conversationId]);
       $hadOutboundBefore = (bool) $outboundStmt->fetchColumn();
     }
+    $storyContextResult = ['message_id' => 0, 'message_inserted' => false, 'attachments_total' => 0, 'attachments_stored' => 0, 'attachment_errors' => []];
+    if ($direction === 'inbound' && !$messageAlreadyExists && ig_story_reply_data($event)) {
+      $storyContextResult = ig_store_story_reply_context($pdo, $conversationId, $senderId, $messageId, $messageAt, $event, $channel, $provider);
+    }
     $inserted = conv_add_message($pdo, [
       'conversation_id' => $conversationId,
       'external_message_id' => $messageId,
@@ -797,7 +897,11 @@ function ig_sync_conversation(PDO $pdo, ?array $channel, string $senderId, strin
       'message_inserted' => $inserted > 0 && !$messageAlreadyExists,
       'attachments_total' => (int) ($attachmentResult['total'] ?? 0),
       'attachments_stored' => (int) ($attachmentResult['stored'] ?? 0),
-      'attachment_errors' => (array) ($attachmentResult['errors'] ?? []),
+      'story_context_message_id' => (int) ($storyContextResult['message_id'] ?? 0),
+      'story_context_inserted' => (bool) ($storyContextResult['message_inserted'] ?? false),
+      'story_context_attachments_total' => (int) ($storyContextResult['attachments_total'] ?? 0),
+      'story_context_attachments_stored' => (int) ($storyContextResult['attachments_stored'] ?? 0),
+      'attachment_errors' => array_merge((array) ($storyContextResult['attachment_errors'] ?? []), (array) ($attachmentResult['errors'] ?? [])),
       'had_outbound_before' => $hadOutboundBefore,
       'error' => $inserted > 0 ? null : 'No se pudo guardar el mensaje en conversation_messages.',
     ];
@@ -864,6 +968,7 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   $hasVisibleMessage = isset($event['message']) || isset($event['postback']);
   $hasReferralOnly = !$hasVisibleMessage && isset($event['referral']) && is_array($event['referral']);
   $messageText = $hasVisibleMessage ? ig_event_text($event, $provider) : 'Referencia de anuncio recibida desde Meta.';
+  $hasStoryReply = ig_story_reply_data($event) !== null;
   $isOfficialEcho = !empty($event['message']['is_echo']);
   if ($recipientId === null) {
     conv_log_webhook_event($pdo, [
@@ -1027,7 +1132,7 @@ SQL);
       'source' => $provider,
       'status' => $looksLikeEchoDuplicate ? 'duplicate' : ($hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only')),
       'account_id' => $accountId,
-      'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : (($hasReferralOnly || $messageFromAdReferral) ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
+      'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : (($hasReferralOnly || $messageFromAdReferral) ? 'referral' : ($direction === 'outbound' ? 'message_echo' : ($hasStoryReply ? 'story_reply' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'))))),
       'recipient_id' => $businessId,
       'sender_id' => $customerId,
       'channel_id' => (int) $channel['id'],
@@ -1120,7 +1225,7 @@ SQL);
     'source' => $provider,
     'status' => $looksLikeEchoDuplicate ? 'duplicate' : ($hasReferralOnly ? 'processed' : ($conversationMessageId > 0 ? ($messageInserted ? 'processed' : 'duplicate') : 'lead_only')),
     'account_id' => $accountId,
-    'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : (($hasReferralOnly || $messageFromAdReferral) ? 'referral' : ($direction === 'outbound' ? 'message_echo' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment')))),
+    'event_type' => $looksLikeEchoDuplicate ? 'message_echo_duplicate' : (($hasReferralOnly || $messageFromAdReferral) ? 'referral' : ($direction === 'outbound' ? 'message_echo' : ($hasStoryReply ? 'story_reply' : (isset($event['message']['text']) ? 'message' : (isset($event['postback']) ? 'postback' : 'attachment'))))),
     'recipient_id' => $businessId,
     'sender_id' => $customerId,
     'channel_id' => (int) $channel['id'],

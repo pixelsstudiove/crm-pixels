@@ -511,7 +511,7 @@ function inbox_channel_label(array $channel): string {
 
 function inbox_has_displayable_attachment(array $attachments): bool {
   foreach ($attachments as $attachment) {
-    if (in_array(($attachment['media_type'] ?? ''), ['image', 'audio'], true) && !empty($attachment['url'])) return true;
+    if (in_array(($attachment['media_type'] ?? ''), ['image', 'audio', 'video'], true) && !empty($attachment['url'])) return true;
   }
   return false;
 }
@@ -519,7 +519,7 @@ function inbox_has_displayable_attachment(array $attachments): bool {
 function inbox_visible_message_text($value, array $attachments): string {
   $text = inbox_normalize_message_text($value);
   $hasAttachment = inbox_has_displayable_attachment($attachments);
-  $attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Imagen enviada', 'Audio enviado', 'Imagen', 'Audio'];
+  $attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Adjunto recibido: video', 'Imagen enviada', 'Audio enviado', 'Video enviado', 'Imagen', 'Audio', 'Video'];
   if ($hasAttachment && in_array($text, $attachmentOnlyLabels, true)) return '';
   if ($text !== '') return $text;
   return $hasAttachment ? '' : 'Mensaje sin texto';
@@ -619,6 +619,7 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message-attachments { display:grid; gap:8px; margin-bottom:8px; }
     .message-image { display:block; max-width:min(280px, 100%); max-height:320px; border-radius:14px; border:1px solid rgba(0,68,99,.12); object-fit:cover; background:#fff; }
     .message-audio { display:block; width:min(320px, 100%); max-width:100%; }
+    .message-video { display:block; width:min(320px, 100%); max-height:380px; border-radius:14px; border:1px solid rgba(0,68,99,.12); background:#000; }
     .message-meta { margin-top:6px; font-size:.72rem; opacity:.68; font-weight:700; }
     .message-meta.error { color:#b83232; opacity:1; font-weight:900; }
     .reply-box { flex:0 0 auto; padding:12px; border-top:1px solid var(--inbox-line); background:#fff; }
@@ -903,6 +904,8 @@ function inbox_visible_message_text($value, array $attachments): string {
                             </a>
                           <?php elseif (($attachment['media_type'] ?? '') === 'audio'): ?>
                             <audio class="message-audio" controls preload="none" src="<?= h($attachment['url']) ?>"></audio>
+                          <?php elseif (($attachment['media_type'] ?? '') === 'video'): ?>
+                            <video class="message-video" controls preload="metadata" src="<?= h($attachment['url']) ?>"></video>
                           <?php endif; ?>
                         <?php endforeach; ?>
                       </div>
@@ -1268,13 +1271,16 @@ function inbox_visible_message_text($value, array $attachments): string {
         if (attachment.media_type === 'audio') {
           return `<audio class="message-audio" controls preload="none" src="${escapeHtml(attachment.url)}"></audio>`;
         }
+        if (attachment.media_type === 'video') {
+          return `<video class="message-video" controls preload="metadata" src="${escapeHtml(attachment.url)}"></video>`;
+        }
         return '';
       }).join('');
       return items ? `<div class="message-attachments">${items}</div>` : '';
     }
 
     function hasDisplayableAttachment(attachments) {
-      return Array.isArray(attachments) && attachments.some(attachment => attachment && ['image', 'audio'].includes(attachment.media_type) && attachment.url);
+      return Array.isArray(attachments) && attachments.some(attachment => attachment && ['image', 'audio', 'video'].includes(attachment.media_type) && attachment.url);
     }
 
     function visibleMessageText(message) {
@@ -1287,7 +1293,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       ];
       let text = String(message?.text ?? '').trim();
       if (legacyUnsupportedTexts.includes(text)) text = unsupportedText;
-      const attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Imagen enviada', 'Audio enviado', 'Imagen', 'Audio'];
+      const attachmentOnlyLabels = ['Adjunto recibido: image', 'Adjunto recibido: audio', 'Adjunto recibido: video', 'Imagen enviada', 'Audio enviado', 'Video enviado', 'Imagen', 'Audio', 'Video'];
       if (hasDisplayableAttachment(message?.attachments) && attachmentOnlyLabels.includes(text)) return '';
       if (text) return text;
       return hasDisplayableAttachment(message?.attachments) ? '' : 'Mensaje sin texto';

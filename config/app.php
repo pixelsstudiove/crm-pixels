@@ -208,6 +208,7 @@ $app = [
     'max_upload_bytes' => (int) env_value('MEDIA_MAX_UPLOAD_BYTES', '8388608'),
     'allowed_image_mimes' => ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
     'allowed_audio_mimes' => ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/ogg', 'application/ogg', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave', 'audio/webm', 'video/webm', 'audio/3gpp', 'video/mp4'],
+    'allowed_video_mimes' => ['video/mp4', 'video/quicktime', 'video/webm', 'video/3gpp'],
   ],
 
   'r2' => [
