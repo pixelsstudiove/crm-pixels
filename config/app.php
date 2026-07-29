@@ -49,6 +49,7 @@ $app = [
     'conversation_attachments_table' => 'conversation_attachments',
     'webhook_event_logs_table' => 'webhook_event_logs',
     'lead_status_history_table' => 'lead_status_history',
+    'ai_knowledge_table' => 'ai_knowledge_items',
   ],
 
   'session' => [

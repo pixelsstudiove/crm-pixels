@@ -295,3 +295,28 @@ CREATE TABLE IF NOT EXISTS `webhook_event_logs` (
   KEY `idx_sender_id` (`sender_id`),
   KEY `idx_channel_id` (`channel_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `ai_knowledge_items` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `account_id` INT UNSIGNED NOT NULL DEFAULT 1,
+  `title` VARCHAR(180) NOT NULL,
+  `response_text` TEXT NOT NULL,
+  `response_hash` CHAR(64) NOT NULL,
+  `category` VARCHAR(60) NOT NULL DEFAULT 'ai_suggestion',
+  `source` VARCHAR(60) NOT NULL DEFAULT 'ai_suggestion',
+  `source_conversation_id` INT UNSIGNED NULL,
+  `source_message_id` INT UNSIGNED NULL,
+  `is_approved` TINYINT(1) NOT NULL DEFAULT 0,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 0,
+  `usage_count` INT UNSIGNED NOT NULL DEFAULT 0,
+  `last_used_at` DATETIME NULL,
+  `created_by` INT UNSIGNED NULL,
+  `approved_by` INT UNSIGNED NULL,
+  `approved_at` DATETIME NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_account_response_hash` (`account_id`, `response_hash`),
+  KEY `idx_account_approved_active` (`account_id`, `is_approved`, `is_active`),
+  KEY `idx_source_conversation` (`source_conversation_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

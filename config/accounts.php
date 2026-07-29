@@ -264,6 +264,7 @@ function accounts_ensure_runtime_schema(PDO $pdo, string $dbName): int {
     safe_identifier((string) app_config('database.conversation_attachments_table', 'conversation_attachments'), 'conversation_attachments') => 'id',
     safe_identifier((string) app_config('database.webhook_event_logs_table', 'webhook_event_logs'), 'webhook_event_logs') => 'id',
     safe_identifier((string) app_config('database.lead_status_history_table', 'lead_status_history'), 'lead_status_history') => 'id',
+    safe_identifier((string) app_config('database.ai_knowledge_table', 'ai_knowledge_items'), 'ai_knowledge_items') => 'id',
   ];
 
   foreach ($tables as $table => $after) {

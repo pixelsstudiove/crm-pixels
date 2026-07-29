@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth/require_auth.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/lead_status_history.php';
+require_once __DIR__ . '/config/ai_knowledge.php';
 
 function ai_suggest_json(array $payload, int $status = 200): void {
   http_response_code($status);
@@ -158,6 +159,7 @@ function ai_suggest_call_openai(array $context): array {
       'Prioriza: entender necesidad, calificar interes, resolver dudas, pedir el dato minimo necesario, proponer siguiente paso y mantener la conversacion activa.',
       'No repitas respuestas anteriores. Si el operador presiona varias veces generar respuesta IA, cambia completamente el enfoque, estructura, inicio y cierre.',
       'No repitas literalmente el mensaje del cliente ni uses plantillas genericas. La respuesta debe sonar humana y especifica al contexto.',
+      'Si existe conocimiento aprobado y activo de la cuenta, usalo como referencia prioritaria solo cuando sea relevante para esta conversacion.',
       'Escribe con saltos de linea reales para que sea facil de leer en el chat: 2 a 4 parrafos cortos separados por una linea en blanco. Evita bloques largos de texto.',
       'Usa emojis con moderacion: maximo 1 emoji en una respuesta normal, maximo 2 solo si aporta calidez. No uses emojis en cada frase.',
       'No inventes precios, disponibilidad, garantias, tiempos de entrega, promociones, ubicaciones ni condiciones. Si falta informacion, pregunta o ofrece validar.',
@@ -241,6 +243,7 @@ if (!hash_equals((string) ($_SESSION['csrf'] ?? ''), (string) ($_POST['csrf'] ??
 
 try {
   conv_ensure_schema($pdo);
+  ai_knowledge_ensure_schema($pdo);
 
   $conversationRouteId = trim((string) ($_POST['conversation_id'] ?? ''));
   $requestAccountId = accounts_request_account_id($pdo);
@@ -350,6 +353,14 @@ try {
   $leadStatus = (string) ($conversation['lead_sales_status'] ?: app_config('sales_funnel.default_status', 'nuevo_lead'));
   $historyKey = ai_suggest_history_key((int) ($conversation['account_id'] ?? 0), (int) $conversation['id']);
   $variant = ai_suggest_sales_variant();
+  $approvedKnowledge = [];
+  foreach (ai_knowledge_active_items($pdo, (int) ($conversation['account_id'] ?? 0), 10) as $knowledgeItem) {
+    $approvedKnowledge[] = [
+      'title' => ai_suggest_clean_text($knowledgeItem['title'] ?? '', 140),
+      'response' => ai_suggest_clean_text($knowledgeItem['response_text'] ?? '', 1200),
+      'category' => ai_suggest_clean_text($knowledgeItem['category'] ?? '', 80),
+    ];
+  }
 
   $context = [
     'account' => ai_suggest_clean_text($conversation['account_name'] ?? '', 160),
@@ -370,6 +381,7 @@ try {
       'reference' => ai_suggest_clean_text($conversation['ad_referral_source'] ?? '', 220),
     ],
     'operator_draft' => ai_suggest_clean_text($_POST['draft'] ?? '', 800),
+    'approved_sales_knowledge' => $approvedKnowledge,
     'sales_generation_rules' => [
       'variant' => $variant,
       'must_be_different_from_previous' => true,
@@ -382,6 +394,12 @@ try {
 
   $suggestion = ai_suggest_call_openai($context);
   ai_suggest_store_reply($historyKey, $suggestion['reply']);
+  ai_knowledge_create_suggestion($pdo, (int) ($conversation['account_id'] ?? 0), (int) $conversation['id'], $suggestion['reply'], [
+    'title' => 'Sugerencia para ' . $contactName,
+    'category' => 'ai_suggestion',
+    'source' => 'ai_suggestion',
+    'created_by' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+  ]);
   ai_suggest_json([
     'ok' => true,
     'reply' => $suggestion['reply'],

@@ -81,6 +81,7 @@ function account_delete_all_data(PDO $pdo, string $dbName, string $accountsTable
     safe_identifier((string) app_config('database.conversation_attachments_table', 'conversation_attachments'), 'conversation_attachments'),
     safe_identifier((string) app_config('database.conversation_messages_table', 'conversation_messages'), 'conversation_messages'),
     safe_identifier((string) app_config('database.webhook_event_logs_table', 'webhook_event_logs'), 'webhook_event_logs'),
+    safe_identifier((string) app_config('database.ai_knowledge_table', 'ai_knowledge_items'), 'ai_knowledge_items'),
     safe_identifier((string) app_config('database.conversations_table', 'conversations'), 'conversations'),
     safe_identifier((string) app_config('database.conversation_contacts_table', 'conversation_contacts'), 'conversation_contacts'),
     safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'),

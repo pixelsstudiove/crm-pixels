@@ -7,6 +7,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/config/conversations.php';
 require_once __DIR__ . '/config/ad_attribution.php';
+require_once __DIR__ . '/config/ai_knowledge.php';
 
 $installKey = (string) app_config('security.install_key', '');
 $providedKey = (string) ($_GET['key'] ?? $_POST['key'] ?? '');
@@ -308,6 +309,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       ensure_instagram_channels_schema($pdo, safe_identifier((string) app_config('database.instagram_channels_table', 'instagram_channels'), 'instagram_channels'), $log);
       conv_ensure_schema($pdo);
       $log[] = ['ok', 'Tablas del CRM conversacional verificadas.'];
+      ai_knowledge_ensure_schema($pdo);
+      $log[] = ['ok', 'Tabla de respuestas IA verificada.'];
       $importedConversations = conv_backfill_from_leads($pdo, $TABLE_LEADS);
       $log[] = ['ok', 'Conversaciones importadas desde leads existentes: ' . $importedConversations . '.'];
       $log[] = ['ok', 'Instalación/actualización finalizada.'];
