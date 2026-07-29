@@ -1316,7 +1316,8 @@ function inbox_visible_message_text($value, array $attachments): string {
       formData.append('conversation_id', inboxState.conversationId || '');
       const accountId = inboxState.selectedAccountId || inboxState.accountId || 0;
       if (accountId) formData.append('account_id', String(accountId));
-      formData.append('draft', textarea ? textarea.value : '');
+      const currentDraft = textarea ? textarea.value : '';
+      formData.append('draft', currentDraft);
 
       aiSuggestButton.disabled = true;
       aiSuggestButton.classList.add('is-loading');
@@ -1325,6 +1326,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       aiSuggestButton.textContent = 'Generando...';
       aiSuggestButton.setAttribute('aria-busy', 'true');
       setAiSuggestStatus('');
+      if (textarea) textarea.value = '';
 
       try {
         const response = await fetch(aiSuggestButton.dataset.aiUrl || 'ai_suggest_reply.php', {
@@ -1339,13 +1341,9 @@ function inbox_visible_message_text($value, array $attachments): string {
         const suggestion = String(data.reply || '').trim();
         if (!suggestion) throw new Error('La IA no devolvio una respuesta sugerida.');
         if (textarea) {
-          if (textarea.value.trim()) {
-            insertAtCursor(textarea, `\n\n${suggestion}`);
-          } else {
-            textarea.value = suggestion;
-            textarea.focus();
-            textarea.setSelectionRange(suggestion.length, suggestion.length);
-          }
+          textarea.value = suggestion;
+          textarea.focus();
+          textarea.setSelectionRange(suggestion.length, suggestion.length);
         }
         setAiSuggestStatus('Sugerencia lista.');
       } catch (error) {
