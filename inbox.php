@@ -649,10 +649,15 @@ function inbox_visible_message_text($value, array $attachments): string {
     .composer-tools { position:relative; display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:8px; flex-wrap:wrap; }
     .composer-left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--inbox-muted); font-size:.82rem; font-weight:760; }
     .composer-ai { display:flex; align-items:center; gap:10px; margin-left:auto; flex-wrap:wrap; }
-    .ai-suggest-btn { min-height:34px; border:1px solid var(--inbox-line); border-radius:999px; background:#fff; color:var(--inbox-ink); padding:0 14px; font-weight:900; cursor:pointer; transition:background .18s ease, border-color .18s ease, color .18s ease, transform .12s ease; }
-    .ai-suggest-btn:hover:not(:disabled) { background:var(--inbox-navy); border-color:var(--inbox-navy); color:#fff; }
-    .ai-suggest-btn:disabled { opacity:.55; cursor:not-allowed; }
-    .ai-suggest-btn.is-loading { opacity:.75; }
+    .ai-suggest-btn { position:relative; isolation:isolate; min-height:42px; border:1px solid rgba(255,255,255,.52); border-radius:999px; background:linear-gradient(135deg, #6126ff 0%, #8b3dff 44%, #5d35ff 100%); color:#fff; padding:0 22px; font-weight:950; letter-spacing:.01em; cursor:pointer; overflow:hidden; box-shadow:0 12px 26px rgba(94,53,255,.28), inset 0 1px 0 rgba(255,255,255,.42), inset 0 -10px 22px rgba(22,199,232,.14); transition:transform .16s ease, box-shadow .18s ease, filter .18s ease; }
+    .ai-suggest-btn::before { content:""; position:absolute; inset:5px 10px auto; height:46%; border-radius:999px; background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,0)); opacity:.7; pointer-events:none; z-index:-1; }
+    .ai-suggest-btn::after { content:""; position:absolute; inset:-35% auto -35% -28%; width:42%; transform:rotate(18deg); background:linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent); opacity:0; pointer-events:none; }
+    .ai-suggest-btn:hover:not(:disabled) { transform:translateY(-1px); filter:saturate(1.08); box-shadow:0 16px 34px rgba(94,53,255,.36), 0 0 0 5px rgba(124,60,255,.10), inset 0 1px 0 rgba(255,255,255,.55), inset 0 -10px 22px rgba(22,199,232,.18); }
+    .ai-suggest-btn:hover:not(:disabled)::after { animation:aiShine .9s ease forwards; }
+    .ai-suggest-btn:focus-visible { outline:3px solid rgba(22,199,232,.45); outline-offset:3px; }
+    .ai-suggest-btn:disabled { opacity:.58; cursor:not-allowed; filter:grayscale(.18); box-shadow:none; }
+    .ai-suggest-btn.is-loading { opacity:.88; }
+    @keyframes aiShine { from { transform:translateX(0) rotate(18deg); opacity:0; } 18% { opacity:.85; } to { transform:translateX(360%) rotate(18deg); opacity:0; } }
     .ai-suggest-status { color:var(--inbox-muted); font-weight:800; font-size:.78rem; }
     .ai-suggest-status.is-error { color:#b91c1c; }
     .composer-file { display:inline-flex; align-items:center; justify-content:center; }
@@ -960,7 +965,7 @@ function inbox_visible_message_text($value, array $attachments): string {
                     <span>Shift + Intro crea salto de línea</span>
                   </div>
                   <div class="composer-ai">
-                    <button class="ai-suggest-btn" type="button" id="aiSuggestButton" data-ai-url="<?= h(account_url('ai_suggest_reply.php')) ?>" <?= $canReplyFromCrm ? '' : 'disabled' ?>>Sugerir respuesta IA</button>
+                    <button class="ai-suggest-btn" type="button" id="aiSuggestButton" data-ai-url="<?= h(account_url('ai_suggest_reply.php')) ?>" <?= $canReplyFromCrm ? '' : 'disabled' ?>>Generar respuesta IA ✨</button>
                     <span class="ai-suggest-status" id="aiSuggestStatus" aria-live="polite"></span>
                   </div>
                 </div>
