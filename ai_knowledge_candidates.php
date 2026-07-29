@@ -261,18 +261,25 @@ $pageTitle = 'Log de aprendizaje IA - Pixels Studio';
               $progress = $threshold > 0 ? min(100, (int) round(($distinctCount / $threshold) * 100)) : 100;
               $href = ai_candidate_conversation_href($item, $latest);
               $reason = trim((string) ($payload['reason'] ?? ($analysis['reason'] ?? '')));
+              $canonicalTopic = trim((string) ($payload['canonical_topic'] ?? ($analysis['canonical_topic'] ?? ($item['title'] ?? ''))));
+              $contextKey = trim((string) ($payload['context_key'] ?? ($analysis['context_key'] ?? '')));
+              $topicSource = trim((string) ($payload['topic_source'] ?? 'model'));
+              $topicAliases = $payload['topic_aliases'] ?? ($analysis['aliases'] ?? []);
+              if (!is_array($topicAliases)) $topicAliases = [];
+              $topicAliases = array_values(array_filter(array_map(static fn($alias) => trim((string) $alias), $topicAliases)));
             ?>
             <article class="learning-entry <?= $isReady ? 'ready' : 'candidate' ?>">
               <div class="learning-entry-head">
                 <div class="learning-title">
                   <span class="learning-id">#<?= (int) $item['id'] ?></span>
                   <div>
-                    <h2><?= h((string) ($item['title'] ?: 'Conocimiento candidato')) ?></h2>
+                    <h2><?= h($canonicalTopic !== '' ? $canonicalTopic : (string) ($item['title'] ?: 'Conocimiento candidato')) ?></h2>
                     <div class="learning-meta">
                       <span class="learning-pill <?= $isReady ? 'ready' : 'pending' ?>"><?= $isReady ? 'Lista para revisar' : 'En observación' ?></span>
                       <span class="learning-pill"><?= h((string) ($item['account_name'] ?? 'Cuenta')) ?></span>
                       <span class="learning-pill channel"><?= h(ai_candidate_source_label($sourceChannel)) ?></span>
                       <?php if (trim((string) ($item['category'] ?? '')) !== ''): ?><span class="learning-pill"><?= h((string) $item['category']) ?></span><?php endif; ?>
+                      <?php if ($topicSource !== ''): ?><span class="learning-pill">Normalizado por <?= h($topicSource === 'rule' ? 'regla' : ($topicSource === 'existing' ? 'tópico existente' : 'modelo')) ?></span><?php endif; ?>
                       <?php if ((float) ($item['confidence'] ?? 0) > 0): ?><span class="learning-pill"><?= h(number_format((float) $item['confidence'], 0, ',', '.')) ?>% confianza</span><?php endif; ?>
                     </div>
                   </div>
@@ -284,6 +291,15 @@ $pageTitle = 'Log de aprendizaje IA - Pixels Studio';
                 <div class="learning-block">
                   <strong>Conocimiento propuesto</strong>
                   <p><?= nl2br(h((string) ($item['response_text'] ?? ''))) ?></p>
+                  <?php if ($contextKey !== '' || $topicAliases): ?>
+                    <div style="height:12px"></div>
+                    <strong>Tópico normalizado</strong>
+                    <p>
+                      <?= h($canonicalTopic !== '' ? $canonicalTopic : 'Sin nombre') ?>
+                      <?php if ($contextKey !== ''): ?> · <?= h($contextKey) ?><?php endif; ?>
+                      <?php if ($topicAliases): ?><br>Alias: <?= h(implode(', ', $topicAliases)) ?><?php endif; ?>
+                    </p>
+                  <?php endif; ?>
                   <?php if ($reason !== ''): ?>
                     <div style="height:12px"></div>
                     <strong>Motivo detectado</strong>

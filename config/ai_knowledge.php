@@ -134,6 +134,216 @@ function ai_knowledge_decode_analysis_payload($json): array {
   return is_array($decoded) ? $decoded : [];
 }
 
+function ai_knowledge_fold_text(string $text): string {
+  $text = ai_knowledge_clean_text($text, 4000);
+  $text = function_exists('mb_strtolower') ? mb_strtolower($text, 'UTF-8') : strtolower($text);
+  $map = [
+    'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+    'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+    'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+    'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+    'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+    'ñ' => 'n',
+  ];
+  $text = strtr($text, $map);
+  $text = preg_replace('/[^\pL\pN]+/u', ' ', $text) ?: $text;
+  return preg_replace('/\s+/u', ' ', trim($text)) ?: trim($text);
+}
+
+function ai_knowledge_topic_slug(string $topic): string {
+  $topic = ai_knowledge_fold_text($topic);
+  $topic = preg_replace('/[^\pL\pN]+/u', '_', $topic) ?: $topic;
+  return trim($topic, '_') ?: 'general';
+}
+
+function ai_knowledge_canonical_topic_rules(string $text, string $category = 'general'): ?array {
+  $folded = ai_knowledge_fold_text($text);
+  if ($folded === '') return null;
+
+  $rules = [
+    [
+      'pattern' => '/\b(cashea|financiamiento|cuotas|credito)\b/u',
+      'title' => 'Pago con Cashea',
+      'context_key' => 'pago_cashea',
+      'category' => 'pago',
+      'aliases' => ['cashea', 'financiamiento', 'cuotas'],
+    ],
+    [
+      'pattern' => '/\b(zelle|pago movil|transferencia|tarjeta|punto de venta|efectivo|divisa|divisas|dolar|dolares|bolivar|bolivares|metodo de pago|metodos de pago)\b/u',
+      'title' => 'Métodos de pago',
+      'context_key' => 'metodos_pago',
+      'category' => 'pago',
+      'aliases' => ['formas de pago', 'zelle', 'pago móvil', 'transferencia'],
+    ],
+    [
+      'pattern' => '/\b(ubicacion|direccion|sede|sedes|sucursal|sucursales|tienda fisica|tiendas fisicas|donde estan|donde se ubican|como llegar|referencia|referencias|maps|google maps|valencia)\b/u',
+      'title' => 'Ubicación y sedes',
+      'context_key' => 'ubicacion_sedes',
+      'category' => 'general',
+      'aliases' => ['dirección', 'sucursales', 'tienda física', 'referencias'],
+    ],
+    [
+      'pattern' => '/\b(horario|horarios|abren|cierran|hora de apertura|hora de cierre|atienden|atencion)\b/u',
+      'title' => 'Horarios de atención',
+      'context_key' => 'horarios_atencion',
+      'category' => 'horario',
+      'aliases' => ['horario', 'apertura', 'cierre'],
+    ],
+    [
+      'pattern' => '/\b(delivery|envio|envios|despacho|domicilio|entrega|flete|motorizado)\b/u',
+      'title' => 'Envíos y delivery',
+      'context_key' => 'envios_delivery',
+      'category' => 'envio',
+      'aliases' => ['delivery', 'despacho', 'entrega'],
+    ],
+    [
+      'pattern' => '/\b(garantia|garantias|cambio|cambios|devolucion|devoluciones|reclamo)\b/u',
+      'title' => 'Garantías y cambios',
+      'context_key' => 'garantias_cambios',
+      'category' => 'garantia',
+      'aliases' => ['garantía', 'cambios', 'devoluciones'],
+    ],
+  ];
+
+  foreach ($rules as $rule) {
+    if (preg_match($rule['pattern'], $folded)) {
+      $rule['topic_source'] = 'rule';
+      return $rule;
+    }
+  }
+
+  return null;
+}
+
+function ai_knowledge_existing_topics(PDO $pdo, int $accountId, int $limit = 80): array {
+  if ($accountId <= 0) return [];
+  $limit = max(10, min(150, $limit));
+  $table = ai_knowledge_table();
+
+  try {
+    $stmt = $pdo->prepare("
+      SELECT id, title, category, source, response_text, analysis_json, usage_count, updated_at
+      FROM {$table}
+      WHERE account_id = ?
+        AND context_hash IS NOT NULL
+        AND source IN ('manual', 'seller_reply_candidate', 'seller_reply')
+      ORDER BY is_approved DESC, usage_count DESC, updated_at DESC, id DESC
+      LIMIT {$limit}
+    ");
+    $stmt->execute([$accountId]);
+  } catch (Throwable $e) {
+    ai_knowledge_log_error('No se pudieron leer topicos existentes', ['error' => $e->getMessage()]);
+    return [];
+  }
+
+  $topics = [];
+  foreach ($stmt->fetchAll() ?: [] as $row) {
+    $payload = ai_knowledge_decode_analysis_payload($row['analysis_json'] ?? null);
+    $analysis = is_array($payload['analysis'] ?? null) ? $payload['analysis'] : [];
+    $contextKey = (string) ($payload['context_key'] ?? ($analysis['context_key'] ?? ''));
+    $canonicalTopic = (string) ($payload['canonical_topic'] ?? ($analysis['canonical_topic'] ?? ($row['title'] ?? '')));
+    $aliases = $payload['topic_aliases'] ?? ($analysis['aliases'] ?? []);
+    if (!is_array($aliases)) $aliases = [];
+    $topics[] = [
+      'id' => (int) ($row['id'] ?? 0),
+      'title' => ai_knowledge_clean_text($canonicalTopic !== '' ? $canonicalTopic : (string) ($row['title'] ?? ''), 140),
+      'context_key' => ai_knowledge_clean_text($contextKey, 140),
+      'category' => ai_knowledge_clean_text($row['category'] ?? 'general', 60),
+      'source' => ai_knowledge_clean_text($row['source'] ?? '', 60),
+      'aliases' => array_values(array_filter(array_map(static fn($alias) => ai_knowledge_clean_text((string) $alias, 80), $aliases))),
+      'summary' => ai_knowledge_clean_text($row['response_text'] ?? '', 260),
+    ];
+  }
+
+  return $topics;
+}
+
+function ai_knowledge_topic_tokens(string $text): array {
+  $folded = ai_knowledge_fold_text($text);
+  if ($folded === '') return [];
+  $words = preg_split('/\s+/u', $folded) ?: [];
+  $stopWords = array_flip([
+    'de', 'del', 'la', 'las', 'el', 'los', 'y', 'o', 'para', 'por', 'con', 'sin',
+    'en', 'un', 'una', 'unos', 'unas', 'que', 'como', 'sobre', 'cliente', 'clientes',
+    'tienda', 'tiendas', 'fisica', 'fisicas', 'opciones', 'atencion', 'servicio',
+  ]);
+  $tokens = [];
+  foreach ($words as $word) {
+    $word = trim((string) $word);
+    if ($word === '' || isset($stopWords[$word])) continue;
+    if ((function_exists('mb_strlen') ? mb_strlen($word, 'UTF-8') : strlen($word)) < 3) continue;
+    $tokens[$word] = true;
+  }
+  return array_keys($tokens);
+}
+
+function ai_knowledge_match_existing_topic(array $existingTopics, string $candidateTitle, string $candidateContextKey, string $category): ?array {
+  $candidateSlug = ai_knowledge_topic_slug($candidateContextKey !== '' ? $candidateContextKey : $candidateTitle);
+  $candidateTokens = ai_knowledge_topic_tokens($candidateTitle . ' ' . $candidateContextKey);
+  foreach ($existingTopics as $topic) {
+    if (!is_array($topic)) continue;
+    $topicKey = (string) ($topic['context_key'] ?? '');
+    $topicTitle = (string) ($topic['title'] ?? '');
+    if ($topicKey !== '' && ai_knowledge_topic_slug($topicKey) === $candidateSlug) {
+      $topic['topic_source'] = 'existing';
+      return $topic;
+    }
+
+    $topicTokens = ai_knowledge_topic_tokens($topicTitle . ' ' . $topicKey . ' ' . implode(' ', (array) ($topic['aliases'] ?? [])));
+    if (!$candidateTokens || !$topicTokens) continue;
+    $overlap = count(array_intersect($candidateTokens, $topicTokens));
+    $smaller = max(1, min(count($candidateTokens), count($topicTokens)));
+    if ($overlap >= 2 && ($overlap / $smaller) >= 0.5) {
+      $topic['topic_source'] = 'existing';
+      return $topic;
+    }
+  }
+  return null;
+}
+
+function ai_knowledge_resolve_canonical_topic(PDO $pdo, int $accountId, array $analysis, array $analysisContext): array {
+  $rawCategory = ai_knowledge_clean_text($analysis['category'] ?? 'general', 60);
+  $candidateText = implode("\n", [
+    (string) ($analysis['context_key'] ?? ''),
+    (string) ($analysis['title'] ?? ''),
+    (string) ($analysis['knowledge'] ?? ''),
+    (string) ($analysisContext['seller_reply'] ?? ''),
+    json_encode($analysisContext['recent_messages'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) ?: '',
+  ]);
+
+  $ruleTopic = ai_knowledge_canonical_topic_rules($candidateText, $rawCategory);
+  if (is_array($ruleTopic)) return $ruleTopic;
+
+  $existingTopics = is_array($analysisContext['existing_topics'] ?? null)
+    ? $analysisContext['existing_topics']
+    : ai_knowledge_existing_topics($pdo, $accountId);
+  $existingTopic = ai_knowledge_match_existing_topic(
+    $existingTopics,
+    (string) ($analysis['title'] ?? ''),
+    (string) ($analysis['context_key'] ?? ''),
+    $rawCategory
+  );
+  if (is_array($existingTopic)) {
+    return [
+      'title' => ai_knowledge_clean_text($existingTopic['title'] ?? ($analysis['title'] ?? ''), 140),
+      'context_key' => ai_knowledge_clean_text($existingTopic['context_key'] ?? ($analysis['context_key'] ?? ''), 140),
+      'category' => ai_knowledge_clean_text($existingTopic['category'] ?? $rawCategory, 60),
+      'aliases' => is_array($existingTopic['aliases'] ?? null) ? $existingTopic['aliases'] : [],
+      'topic_source' => 'existing',
+    ];
+  }
+
+  $title = ai_knowledge_clean_text($analysis['canonical_topic'] ?? ($analysis['title'] ?? ''), 140);
+  $contextKey = ai_knowledge_clean_text($analysis['context_key'] ?? '', 140);
+  return [
+    'title' => $title,
+    'context_key' => $contextKey,
+    'category' => $rawCategory,
+    'aliases' => is_array($analysis['aliases'] ?? null) ? $analysis['aliases'] : [],
+    'topic_source' => 'model',
+  ];
+}
+
 function ai_knowledge_evidence_key(array $evidence): string {
   $conversationId = (int) ($evidence['conversation_id'] ?? 0);
   $messageId = (int) ($evidence['message_id'] ?? 0);
@@ -336,10 +546,11 @@ function ai_knowledge_call_openai_for_learning(array $context): ?array {
       'Eres un analista comercial de CRM Pixels. Tu trabajo es convertir respuestas reales de vendedores en conocimiento reutilizable para futuras sugerencias de IA.',
       'Analiza el contexto de la conversacion y la respuesta del vendedor. Guarda conocimiento solo si ensena una regla, dato, argumento, proceso, condicion comercial, forma de cotizar, objecion o siguiente paso reutilizable.',
       'No guardes saludos, agradecimientos, confirmaciones simples, respuestas sin contexto, mensajes personales, datos privados del cliente, precios o disponibilidad si no queda claro a que producto/servicio aplican.',
-      'Evita duplicados: crea un context_key corto que represente la intencion reutilizable, por ejemplo producto_fregadero_ubicacion, pago_zelle, delivery_valencia, precio_bloques_rojos.',
-      'Si ya existe conocimiento para el mismo contexto, el context_key debe ser igual aunque el vendedor use otras palabras.',
+      'Antes de crear un tema nuevo, revisa existing_topics. Si la respuesta habla del mismo tema reutilizable que un topico existente, reutiliza exactamente su context_key y su title aunque el vendedor use palabras distintas.',
+      'Evita duplicados: crea un context_key corto y estable que represente el topico canonico reutilizable, por ejemplo ubicacion_sedes, pago_cashea, metodos_pago, delivery_valencia, precio_bloques_rojos.',
+      'No crees topicos demasiado especificos si el dato aplica a toda la empresa. Por ejemplo direccion, ubicacion, sedes, sucursales, referencias y como llegar deben caer en ubicacion_sedes.',
       'La respuesta knowledge debe quedar lista para que otra IA la use como referencia interna, no como texto obligatorio para copiar literal.',
-      'Responde exclusivamente JSON valido con estas claves: save, reason, context_key, title, knowledge, category, confidence.',
+      'Responde exclusivamente JSON valido con estas claves: save, reason, context_key, canonical_topic, title, aliases, knowledge, category, confidence.',
       'category debe ser una de: producto, precio, pago, envio, horario, garantia, objecion, proceso, promocion, seguimiento, general.',
       'confidence debe ser un numero de 0 a 100.',
     ]),
@@ -391,6 +602,10 @@ function ai_knowledge_call_openai_for_learning(array $context): ?array {
 function ai_knowledge_normalize_context_key(string $contextKey, string $category): string {
   $contextKey = ai_knowledge_clean_text($contextKey, 120);
   $contextKey = function_exists('mb_strtolower') ? mb_strtolower($contextKey, 'UTF-8') : strtolower($contextKey);
+  if (preg_match('/^([a-z0-9_]+)\s*:\s*(.+)$/u', $contextKey, $match)) {
+    $category = ai_knowledge_clean_text((string) $match[1], 60);
+    $contextKey = (string) $match[2];
+  }
   $contextKey = preg_replace('/[^\pL\pN]+/u', '_', $contextKey) ?: $contextKey;
   $contextKey = trim($contextKey, '_');
   if ($contextKey === '') $contextKey = $category . '_general';
@@ -430,6 +645,7 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
         'adset' => ai_knowledge_clean_text($conversation['adset_name'] ?? '', 220),
         'ad' => ai_knowledge_clean_text($conversation['ad_name'] ?? '', 220),
       ],
+      'existing_topics' => ai_knowledge_existing_topics($pdo, $accountId),
       'recent_messages' => $recentMessages,
       'seller_reply' => $reply,
     ];
@@ -446,11 +662,19 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
     if (!in_array($category, $allowedCategories, true)) $category = 'general';
 
     $knowledge = ai_knowledge_clean_text($analysis['knowledge'] ?? '', 2000);
-    $contextKey = ai_knowledge_normalize_context_key((string) ($analysis['context_key'] ?? ''), $category);
-    if ($knowledge === '' || $contextKey === '') return;
+    if ($knowledge === '') return;
 
-    $title = ai_knowledge_clean_text($analysis['title'] ?? '', 140);
+    $rawContextKey = ai_knowledge_clean_text((string) ($analysis['context_key'] ?? ''), 140);
+    $topic = ai_knowledge_resolve_canonical_topic($pdo, $accountId, $analysis, $analysisContext);
+    $category = ai_knowledge_clean_text($topic['category'] ?? $category, 60);
+    if (!in_array($category, $allowedCategories, true)) $category = 'general';
+    $contextKey = ai_knowledge_normalize_context_key((string) ($topic['context_key'] ?? $rawContextKey), $category);
+    if ($contextKey === '') return;
+
+    $title = ai_knowledge_clean_text($topic['title'] ?? ($analysis['title'] ?? ''), 140);
     if ($title === '') $title = ai_knowledge_title_from_text($knowledge);
+    $aliases = is_array($topic['aliases'] ?? null) ? $topic['aliases'] : [];
+    $aliases = array_values(array_filter(array_map(static fn($alias) => ai_knowledge_clean_text((string) $alias, 80), $aliases)));
 
     $table = ai_knowledge_table();
     $createdBy = max(0, (int) ($meta['operator_id'] ?? ($_SESSION['user_id'] ?? 0))) ?: null;
@@ -484,6 +708,10 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
     $analysisJson = json_encode([
       'analysis' => $analysis,
       'context_key' => $contextKey,
+      'raw_context_key' => $rawContextKey,
+      'canonical_topic' => $title,
+      'topic_aliases' => $aliases,
+      'topic_source' => ai_knowledge_clean_text($topic['topic_source'] ?? 'model', 40),
       'reason' => ai_knowledge_clean_text($analysis['reason'] ?? '', 500),
       'source_channel' => $sourceChannel,
       'evidence' => $evidence,
