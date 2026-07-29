@@ -615,6 +615,10 @@ function inbox_visible_message_text($value, array $attachments): string {
     .message.system .message-meta { display:none; }
     .message.is-pending { opacity:.78; }
     .message.is-failed { background:#fff3f3; border-color:#f4a6a6; color:#7e1e1e; }
+    .message.is-deleted { opacity:.78; }
+    .message.is-deleted .message-text { color:var(--inbox-muted); font-style:italic; }
+    .message.outbound.is-deleted .message-text { color:rgba(255,255,255,.76); }
+    .message.is-deleted .message-attachments { display:none; }
     .message-text { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.45; }
     .message-attachments { display:grid; gap:8px; margin-bottom:8px; }
     .message-image { display:block; max-width:min(280px, 100%); max-height:320px; border-radius:14px; border:1px solid rgba(0,68,99,.12); object-fit:cover; background:#fff; }
@@ -892,6 +896,8 @@ function inbox_visible_message_text($value, array $attachments): string {
                 <?php if ($messages): foreach ($messages as $message): ?>
                   <?php $direction = (string) ($message['direction'] ?? 'inbound'); ?>
                   <?php $messageClass = $direction === 'outbound' ? 'outbound' : ($direction === 'system' ? 'system' : 'inbound'); ?>
+                  <?php $isDeletedMessage = (($message['message_type'] ?? '') === 'deleted') || (($message['delivery_status'] ?? '') === 'deleted'); ?>
+                  <?php if ($isDeletedMessage) $messageClass .= ' is-deleted'; ?>
                   <article class="message <?= h($messageClass) ?>" data-message-id="<?= (int) $message['id'] ?>">
                     <?php $messageAttachments = $attachmentsByMessage[(int) $message['id']] ?? []; ?>
                     <?php $visibleText = inbox_visible_message_text($message['message_text'] ?? '', $messageAttachments); ?>
@@ -1575,6 +1581,32 @@ function inbox_visible_message_text($value, array $attachments): string {
       });
     }
 
+    function messageSignature(message) {
+      const attachments = Array.isArray(message.attachments)
+        ? message.attachments.map(attachment => [
+          attachment.id || '',
+          attachment.url || '',
+          attachment.media_type || '',
+          attachment.filename || ''
+        ].join(':')).join('|')
+        : '';
+      return [
+        message.id || '',
+        message.direction || '',
+        message.text || '',
+        message.time || '',
+        message.delivery_status || '',
+        message.message_type || '',
+        attachments
+      ].join('::');
+    }
+
+    function messageClassName(message) {
+      const direction = message.direction === 'outbound' ? 'outbound' : (message.direction === 'system' ? 'system' : 'inbound');
+      const isDeleted = message.message_type === 'deleted' || message.delivery_status === 'deleted';
+      return `message ${direction}${isDeleted ? ' is-deleted' : ''}`;
+    }
+
     function appendMessage(message) {
       if (!messageList || !message || !message.id) return;
       if (messageList.querySelector(`[data-message-id="${Number(message.id)}"]`)) return;
@@ -1584,8 +1616,9 @@ function inbox_visible_message_text($value, array $attachments): string {
       const metaLabel = direction === 'outbound' ? 'Enviado' : (direction === 'system' ? 'Sistema' : 'Recibido');
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
       const article = document.createElement('article');
-      article.className = `message ${direction}`;
+      article.className = messageClassName(message);
       article.dataset.messageId = String(message.id);
+      article.dataset.signature = messageSignature(message);
       const visibleText = visibleMessageText(message);
       article.innerHTML = `
         ${attachmentMarkup(message.attachments)}
@@ -1668,7 +1701,7 @@ function inbox_visible_message_text($value, array $attachments): string {
       const sentBy = direction === 'outbound' && message.sent_by_username ? ` · ${escapeHtml(message.sent_by_username)}` : '';
       const visibleText = visibleMessageText(message);
       return `
-        <article class="message ${direction}" data-message-id="${Number(message.id)}">
+        <article class="${messageClassName(message)}" data-message-id="${Number(message.id)}" data-signature="${escapeHtml(messageSignature(message))}">
           ${attachmentMarkup(message.attachments)}
           ${visibleText ? `<div class="message-text">${escapeHtml(visibleText)}</div>` : ''}
           <div class="message-meta">${metaLabel} · ${escapeHtml(message.time)}${sentBy}</div>
@@ -1709,9 +1742,20 @@ function inbox_visible_message_text($value, array $attachments): string {
       const hasSameOrder = hasSameCount && incomingIds.every((id, index) => id === currentIds[index]);
       const lastIncomingId = incomingIds.reduce((max, id) => Math.max(max, id), 0);
 
-      if (hasSameOrder) {
+      const hasSameSignature = hasSameOrder && messages.every(message => {
+        const node = messageNodeById(Number(message.id || 0));
+        return node && node.dataset.signature === messageSignature(message);
+      });
+
+      if (hasSameOrder && hasSameSignature) {
         inboxState.lastMessageId = Math.max(inboxState.lastMessageId, lastIncomingId);
         messageList.dataset.lastId = String(inboxState.lastMessageId);
+        return;
+      }
+
+      if (hasSameOrder) {
+        if (hasActiveMediaPlayback()) return;
+        renderMessages(messages);
         return;
       }
 

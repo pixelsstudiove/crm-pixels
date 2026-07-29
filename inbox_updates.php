@@ -299,6 +299,7 @@ SQL;
           'time' => updates_time($message['sent_at'] ?? ''),
           'sent_by_username' => (string) ($message['sent_by_username'] ?? ''),
           'delivery_status' => (string) ($message['delivery_status'] ?? ''),
+          'message_type' => (string) ($message['message_type'] ?? ''),
         ];
       }
     }

@@ -107,7 +107,7 @@ function ig_log_invalid_signature(PDO $pdo, string $rawBody): void {
       'event_type' => 'invalid_signature',
       'recipient_id' => ig_clean($firstEvent['recipient']['id'] ?? null, 120),
       'sender_id' => ig_clean($firstEvent['sender']['id'] ?? null, 120),
-      'external_message_id' => ig_clean($firstEvent['message']['mid'] ?? $firstEvent['postback']['mid'] ?? null, 2000),
+      'external_message_id' => ig_clean($firstEvent['message']['mid'] ?? $firstEvent['message']['id'] ?? $firstEvent['postback']['mid'] ?? $firstEvent['postback']['id'] ?? null, 2000),
       'message_preview' => ig_event_text($firstEvent, $provider),
       'error_message' => 'Firma invalida. Revisa FACEBOOK_APP_SECRET / INSTAGRAM_APP_SECRET segun la app que envia el webhook.',
       'payload_json' => json_encode($payload ?: ['raw' => mb_substr($rawBody, 0, 2000)], JSON_UNESCAPED_UNICODE),
@@ -284,6 +284,7 @@ function ig_ensure_channel_schema_safe(PDO $pdo): string {
 }
 
 function ig_event_text(array $event, string $provider = 'instagram'): string {
+  if (ig_is_deleted_message_event($event)) return ig_deleted_message_text();
   $text = ig_clean($event['message']['text'] ?? null, 1200);
   if ($text !== null) return $text;
   $postback = ig_clean($event['postback']['title'] ?? null, 1200);
@@ -309,8 +310,33 @@ function ig_unsupported_message_text(): string {
   return 'Se ha recibido un mensaje no soportado en esta plataforma, accede a este mensaje directamente desde la app oficial.';
 }
 
+function ig_deleted_message_text(): string {
+  return function_exists('conv_deleted_message_text') ? conv_deleted_message_text() : 'Mensaje eliminado por el usuario.';
+}
+
 function ig_is_unsupported_message_text(string $text): bool {
   return trim($text) === ig_unsupported_message_text();
+}
+
+function ig_truthy_meta_value($value): bool {
+  if (is_bool($value)) return $value;
+  if (is_int($value)) return $value === 1;
+  if (is_string($value)) {
+    return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'deleted', 'delete'], true);
+  }
+  return false;
+}
+
+function ig_is_deleted_message_event(array $event): bool {
+  $message = is_array($event['message'] ?? null) ? $event['message'] : [];
+  $action = strtolower(trim((string) ($message['action'] ?? $event['action'] ?? '')));
+  $type = strtolower(trim((string) ($message['type'] ?? $event['type'] ?? '')));
+  return ig_truthy_meta_value($message['is_deleted'] ?? null)
+    || ig_truthy_meta_value($message['deleted'] ?? null)
+    || ig_truthy_meta_value($event['is_deleted'] ?? null)
+    || ig_truthy_meta_value($event['deleted'] ?? null)
+    || in_array($action, ['delete', 'deleted', 'message_delete', 'message_deleted'], true)
+    || in_array($type, ['delete', 'deleted', 'message_delete', 'message_deleted'], true);
 }
 
 function ig_referral_data(array $event): array {
@@ -964,11 +990,12 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
   if ($senderId === null) return 0;
 
   $recipientId = ig_clean($event['recipient']['id'] ?? null, 120);
-  $messageId = ig_clean($event['message']['mid'] ?? $event['postback']['mid'] ?? null, 2000);
+  $messageId = ig_clean($event['message']['mid'] ?? $event['message']['id'] ?? $event['postback']['mid'] ?? $event['postback']['id'] ?? null, 2000);
   $hasVisibleMessage = isset($event['message']) || isset($event['postback']);
   $hasReferralOnly = !$hasVisibleMessage && isset($event['referral']) && is_array($event['referral']);
   $messageText = $hasVisibleMessage ? ig_event_text($event, $provider) : 'Referencia de anuncio recibida desde Meta.';
   $hasStoryReply = ig_story_reply_data($event) !== null;
+  $isDeletedMessage = ig_is_deleted_message_event($event);
   $isOfficialEcho = !empty($event['message']['is_echo']);
   if ($recipientId === null) {
     conv_log_webhook_event($pdo, [
@@ -1023,6 +1050,26 @@ function ig_upsert_lead(PDO $pdo, string $table, string $channelsTable, array $e
 
   $messageAt = ig_message_time($event['timestamp'] ?? null);
   $threadId = $businessId . ':' . $customerId;
+  if ($isDeletedMessage) {
+    $deleted = conv_mark_message_deleted($pdo, $accountId, $provider, $messageId, $messageAt, $event);
+    conv_log_webhook_event($pdo, [
+      'source' => $provider,
+      'status' => !empty($deleted['ok']) ? 'processed' : 'ignored',
+      'account_id' => $accountId,
+      'event_type' => 'message_deleted',
+      'recipient_id' => $businessId,
+      'sender_id' => $customerId,
+      'channel_id' => (int) $channel['id'],
+      'channel_username' => $provider === 'messenger' ? ($channel['page_name'] ?? null) : ($channel['instagram_username'] ?? $channel['page_name'] ?? null),
+      'external_message_id' => $messageId,
+      'lead_id' => !empty($deleted['lead_id']) ? (int) $deleted['lead_id'] : null,
+      'conversation_id' => !empty($deleted['conversation_id']) ? (int) $deleted['conversation_id'] : null,
+      'message_preview' => ig_deleted_message_text(),
+      'error_message' => !empty($deleted['ok']) ? null : (string) ($deleted['error'] ?? 'No se pudo marcar el mensaje como eliminado.'),
+      'payload_json' => json_encode($event, JSON_UNESCAPED_UNICODE),
+    ]);
+    return !empty($deleted['lead_id']) ? (int) $deleted['lead_id'] : 0;
+  }
   $looksLikeEchoDuplicate = $direction === 'inbound'
     && $hasVisibleMessage
     && ig_recent_outbound_duplicate_for_thread($pdo, $accountId, $provider, $threadId, $customerId, $messageText, $messageAt);

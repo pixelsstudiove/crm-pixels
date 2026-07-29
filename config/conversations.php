@@ -458,6 +458,82 @@ SQL);
   return (int) ($find->fetchColumn() ?: 0);
 }
 
+function conv_deleted_message_text(): string {
+  return 'Mensaje eliminado por el usuario.';
+}
+
+function conv_refresh_conversation_preview(PDO $pdo, int $conversationId): void {
+  if ($conversationId <= 0) return;
+  $messagesTable = conv_messages_table();
+  $conversationsTable = conv_conversations_table();
+  try {
+    $stmt = $pdo->prepare("SELECT message_text, sent_at FROM {$messagesTable} WHERE conversation_id=? ORDER BY sent_at DESC, id DESC LIMIT 1");
+    $stmt->execute([$conversationId]);
+    $row = $stmt->fetch();
+    $preview = $row ? conv_clean($row['message_text'] ?? null, 1200) : null;
+    $sentAt = $row ? conv_clean($row['sent_at'] ?? null, 30) : null;
+    $update = $pdo->prepare("UPDATE {$conversationsTable} SET last_message_preview=?, last_message_at=?, updated_at=NOW() WHERE id=?");
+    $update->execute([$preview, $sentAt, $conversationId]);
+  } catch (Throwable $e) {
+    /* no-op */
+  }
+}
+
+function conv_mark_message_deleted(PDO $pdo, int $accountId, string $externalSource, ?string $externalMessageId, ?string $deletedAt = null, array $payload = []): array {
+  conv_ensure_schema($pdo);
+  $externalSource = conv_clean($externalSource, 40) ?? '';
+  $externalMessageId = conv_clean($externalMessageId, 2000);
+  if ($accountId <= 0 || $externalSource === '' || $externalMessageId === null) {
+    return ['ok' => false, 'error' => 'Mensaje externo invalido.'];
+  }
+
+  $hash = hash('sha256', $externalMessageId);
+  $messagesTable = conv_messages_table();
+  $conversationsTable = conv_conversations_table();
+  $attachmentsTable = conv_attachments_table();
+  $stmt = $pdo->prepare(<<<SQL
+SELECT m.*, c.id AS conversation_id, c.lead_id
+FROM {$messagesTable} m
+JOIN {$conversationsTable} c ON c.id = m.conversation_id
+WHERE c.account_id=? AND c.external_source=? AND m.external_message_hash=?
+LIMIT 1
+SQL);
+  $stmt->execute([$accountId, $externalSource, $hash]);
+  $message = $stmt->fetch();
+  if (!$message) {
+    return ['ok' => false, 'error' => 'Mensaje no encontrado en el CRM.'];
+  }
+
+  $messageId = (int) ($message['id'] ?? 0);
+  $conversationId = (int) ($message['conversation_id'] ?? 0);
+  if ($messageId <= 0 || $conversationId <= 0) {
+    return ['ok' => false, 'error' => 'Mensaje local invalido.'];
+  }
+
+  $deleteAttachments = $pdo->prepare("DELETE FROM {$attachmentsTable} WHERE message_id=?");
+  $deleteAttachments->execute([$messageId]);
+  $attachmentsDeleted = $deleteAttachments->rowCount();
+
+  $payload['_crm_deleted_at'] = $deletedAt ?: gmdate('Y-m-d H:i:s');
+  $payload['_crm_previous_message_type'] = $message['message_type'] ?? null;
+  $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE);
+  $update = $pdo->prepare(<<<SQL
+UPDATE {$messagesTable}
+SET message_type='deleted', message_text=?, payload_json=?, delivery_status='deleted'
+WHERE id=?
+SQL);
+  $update->execute([conv_deleted_message_text(), $payloadJson, $messageId]);
+  conv_refresh_conversation_preview($pdo, $conversationId);
+
+  return [
+    'ok' => true,
+    'message_id' => $messageId,
+    'conversation_id' => $conversationId,
+    'lead_id' => (int) ($message['lead_id'] ?? 0),
+    'attachments_deleted' => $attachmentsDeleted,
+  ];
+}
+
 function conv_add_attachment(PDO $pdo, array $data): int {
   $table = conv_attachments_table();
   $conversationId = (int) ($data['conversation_id'] ?? 0);
