@@ -764,3 +764,257 @@ function ai_knowledge_learn_from_outbound_message(PDO $pdo, int $accountId, int 
     ]);
   }
 }
+
+function ai_knowledge_candidate_topic_from_payload(array $row, array $payload): array {
+  $analysis = is_array($payload['analysis'] ?? null) ? $payload['analysis'] : [];
+  $category = ai_knowledge_clean_text($row['category'] ?? ($analysis['category'] ?? 'general'), 60);
+  if ($category === '') $category = 'general';
+
+  $candidateText = implode("\n", [
+    (string) ($payload['canonical_topic'] ?? ''),
+    (string) ($payload['context_key'] ?? ''),
+    (string) ($analysis['canonical_topic'] ?? ''),
+    (string) ($analysis['context_key'] ?? ''),
+    (string) ($analysis['title'] ?? ''),
+    (string) ($row['title'] ?? ''),
+    (string) ($row['response_text'] ?? ''),
+    (string) ($row['raw_response_text'] ?? ''),
+  ]);
+
+  $ruleTopic = ai_knowledge_canonical_topic_rules($candidateText, $category);
+  if (is_array($ruleTopic)) {
+    $title = ai_knowledge_clean_text($ruleTopic['title'] ?? '', 140);
+    $contextKey = ai_knowledge_normalize_context_key((string) ($ruleTopic['context_key'] ?? $title), (string) ($ruleTopic['category'] ?? $category));
+    return [
+      'title' => $title !== '' ? $title : ai_knowledge_clean_text($row['title'] ?? 'Conocimiento candidato', 140),
+      'context_key' => $contextKey,
+      'category' => ai_knowledge_clean_text($ruleTopic['category'] ?? $category, 60),
+      'aliases' => is_array($ruleTopic['aliases'] ?? null) ? $ruleTopic['aliases'] : [],
+      'topic_source' => 'rule',
+    ];
+  }
+
+  $title = ai_knowledge_clean_text(
+    $payload['canonical_topic'] ?? ($analysis['canonical_topic'] ?? ($analysis['title'] ?? ($row['title'] ?? 'Conocimiento candidato'))),
+    140
+  );
+  if ($title === '') $title = 'Conocimiento candidato';
+
+  $rawContextKey = ai_knowledge_clean_text($payload['context_key'] ?? ($analysis['context_key'] ?? ''), 140);
+  if ($rawContextKey === '') $rawContextKey = ai_knowledge_topic_slug($title);
+  $contextKey = ai_knowledge_normalize_context_key($rawContextKey, $category);
+
+  $aliases = $payload['topic_aliases'] ?? ($analysis['aliases'] ?? []);
+  if (!is_array($aliases)) $aliases = [];
+
+  return [
+    'title' => $title,
+    'context_key' => $contextKey,
+    'category' => $category,
+    'aliases' => array_values(array_filter(array_map(static fn($alias) => ai_knowledge_clean_text((string) $alias, 80), $aliases))),
+    'topic_source' => ai_knowledge_clean_text($payload['topic_source'] ?? 'model', 40),
+  ];
+}
+
+function ai_knowledge_candidate_evidence_from_row(array $row, array $payload): array {
+  $evidence = $payload['evidence'] ?? [];
+  if (is_array($evidence) && $evidence) {
+    return array_values(array_filter($evidence, static fn($item) => is_array($item)));
+  }
+
+  $conversationId = (int) ($row['source_conversation_id'] ?? 0);
+  if ($conversationId <= 0) return [];
+
+  return [[
+    'conversation_id' => $conversationId,
+    'message_id' => (int) ($row['source_message_id'] ?? 0),
+    'reply' => ai_knowledge_clean_text($row['raw_response_text'] ?? ($row['response_text'] ?? ''), 2000),
+    'knowledge' => ai_knowledge_clean_text($row['response_text'] ?? '', 2000),
+    'captured_at' => (string) ($row['updated_at'] ?? $row['created_at'] ?? gmdate('c')),
+  ]];
+}
+
+function ai_knowledge_pick_candidate_keeper(array $rows): array {
+  usort($rows, static function (array $a, array $b): int {
+    $aReady = (string) ($a['source'] ?? '') === 'seller_reply' ? 1 : 0;
+    $bReady = (string) ($b['source'] ?? '') === 'seller_reply' ? 1 : 0;
+    if ($aReady !== $bReady) return $bReady <=> $aReady;
+
+    $aUsage = (int) ($a['usage_count'] ?? 0);
+    $bUsage = (int) ($b['usage_count'] ?? 0);
+    if ($aUsage !== $bUsage) return $bUsage <=> $aUsage;
+
+    $aText = (string) ($a['response_text'] ?? '');
+    $bText = (string) ($b['response_text'] ?? '');
+    $aLen = function_exists('mb_strlen') ? mb_strlen($aText, 'UTF-8') : strlen($aText);
+    $bLen = function_exists('mb_strlen') ? mb_strlen($bText, 'UTF-8') : strlen($bText);
+    if ($aLen !== $bLen) return $bLen <=> $aLen;
+
+    return ((int) ($a['id'] ?? 0)) <=> ((int) ($b['id'] ?? 0));
+  });
+
+  return $rows[0] ?? [];
+}
+
+function ai_knowledge_unify_repeated_candidates(PDO $pdo, int $accountId = 0): array {
+  ai_knowledge_ensure_schema($pdo);
+
+  $table = ai_knowledge_table();
+  $where = ["source IN ('seller_reply_candidate', 'seller_reply')", 'is_approved = 0'];
+  $params = [];
+  if ($accountId > 0) {
+    $where[] = 'account_id = ?';
+    $params[] = $accountId;
+  }
+
+  $stmt = $pdo->prepare("
+    SELECT *
+    FROM {$table}
+    WHERE " . implode(' AND ', $where) . "
+    ORDER BY account_id ASC, updated_at DESC, id DESC
+  ");
+  $stmt->execute($params);
+  $rows = $stmt->fetchAll() ?: [];
+
+  $groups = [];
+  foreach ($rows as $row) {
+    $payload = ai_knowledge_decode_analysis_payload($row['analysis_json'] ?? null);
+    $topic = ai_knowledge_candidate_topic_from_payload($row, $payload);
+    $contextKey = (string) ($topic['context_key'] ?? '');
+    if ($contextKey === '') continue;
+    $key = (int) ($row['account_id'] ?? 0) . '|' . $contextKey;
+    $row['_payload'] = $payload;
+    $row['_topic'] = $topic;
+    $groups[$key][] = $row;
+  }
+
+  $threshold = ai_knowledge_learning_threshold();
+  $stats = [
+    'processed' => count($rows),
+    'topics' => count($groups),
+    'groups_unified' => 0,
+    'duplicates_removed' => 0,
+    'promoted' => 0,
+    'normalized' => 0,
+  ];
+
+  foreach ($groups as $groupRows) {
+    if (!$groupRows) continue;
+    $keeper = ai_knowledge_pick_candidate_keeper($groupRows);
+    if (!$keeper) continue;
+
+    $keeperId = (int) ($keeper['id'] ?? 0);
+    $accountIdForRow = (int) ($keeper['account_id'] ?? 0);
+    $topic = is_array($keeper['_topic'] ?? null) ? $keeper['_topic'] : ai_knowledge_candidate_topic_from_payload($keeper, []);
+    $contextKey = (string) ($topic['context_key'] ?? '');
+    $contextHash = $contextKey !== '' ? ai_knowledge_hash($contextKey) : null;
+    $title = ai_knowledge_clean_text($topic['title'] ?? ($keeper['title'] ?? 'Conocimiento candidato'), 140);
+    $category = ai_knowledge_clean_text($topic['category'] ?? ($keeper['category'] ?? 'general'), 60);
+    if ($title === '') $title = 'Conocimiento candidato';
+    if ($category === '') $category = 'general';
+
+    $aliases = [];
+    $mergedEvidence = [];
+    $sourceChannels = [];
+    $hadReady = false;
+    $sourceIds = [];
+    foreach ($groupRows as $row) {
+      $sourceIds[] = (int) ($row['id'] ?? 0);
+      if ((string) ($row['source'] ?? '') === 'seller_reply') $hadReady = true;
+      $rowTopic = is_array($row['_topic'] ?? null) ? $row['_topic'] : [];
+      foreach ((array) ($rowTopic['aliases'] ?? []) as $alias) {
+        $alias = ai_knowledge_clean_text((string) $alias, 80);
+        if ($alias !== '') $aliases[ai_knowledge_topic_slug($alias)] = $alias;
+      }
+      $payload = is_array($row['_payload'] ?? null) ? $row['_payload'] : [];
+      foreach (ai_knowledge_candidate_evidence_from_row($row, $payload) as $evidence) {
+        $mergedEvidence = ai_knowledge_merge_evidence($mergedEvidence, $evidence);
+        $sourceChannel = ai_knowledge_clean_text($evidence['source_channel'] ?? ($payload['source_channel'] ?? ''), 60);
+        if ($sourceChannel !== '') $sourceChannels[$sourceChannel] = true;
+      }
+    }
+
+    $distinctCount = ai_knowledge_distinct_conversation_count($mergedEvidence);
+    $newSource = ($hadReady || $distinctCount >= $threshold) ? 'seller_reply' : 'seller_reply_candidate';
+    if (!$hadReady && $newSource === 'seller_reply') $stats['promoted']++;
+
+    $keeperPayload = is_array($keeper['_payload'] ?? null) ? $keeper['_payload'] : [];
+    $analysis = is_array($keeperPayload['analysis'] ?? null) ? $keeperPayload['analysis'] : [];
+    $analysisJson = json_encode([
+      'analysis' => $analysis,
+      'context_key' => $contextKey,
+      'raw_context_key' => (string) ($keeperPayload['raw_context_key'] ?? ($analysis['context_key'] ?? '')),
+      'canonical_topic' => $title,
+      'topic_aliases' => array_values($aliases),
+      'topic_source' => 'unified',
+      'reason' => ai_knowledge_clean_text($keeperPayload['reason'] ?? ($analysis['reason'] ?? ''), 500),
+      'source_channel' => array_key_first($sourceChannels) ?: ai_knowledge_clean_text($keeperPayload['source_channel'] ?? '', 60),
+      'evidence' => $mergedEvidence,
+      'evidence_conversation_count' => $distinctCount,
+      'minimum_distinct_conversations' => $threshold,
+      'unified_at' => gmdate('c'),
+      'unified_from_ids' => $sourceIds,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+
+    $duplicateIds = array_values(array_filter($sourceIds, static fn($id) => $id > 0 && $id !== $keeperId));
+    if ($duplicateIds) {
+      $stats['groups_unified']++;
+      $stats['duplicates_removed'] += count($duplicateIds);
+    }
+
+    $existingContextId = 0;
+    if ($contextHash !== null) {
+      $sourceIdPlaceholders = implode(',', array_fill(0, count($sourceIds), '?'));
+      $conflictStmt = $pdo->prepare("SELECT id FROM {$table} WHERE account_id = ? AND context_hash = ? AND id NOT IN ({$sourceIdPlaceholders}) LIMIT 1");
+      $conflictStmt->execute(array_merge([$accountIdForRow, $contextHash], $sourceIds));
+      $existingContextId = (int) ($conflictStmt->fetchColumn() ?: 0);
+    }
+
+    $shouldNormalize = (
+      (string) ($keeper['title'] ?? '') !== $title ||
+      (string) ($keeper['category'] ?? '') !== $category ||
+      (string) ($keeper['source'] ?? '') !== $newSource ||
+      ($contextHash !== null && $existingContextId === 0 && (string) ($keeper['context_hash'] ?? '') !== $contextHash)
+    );
+    if ($shouldNormalize) $stats['normalized']++;
+
+    try {
+      $pdo->beginTransaction();
+      if ($duplicateIds) {
+        $placeholders = implode(',', array_fill(0, count($duplicateIds), '?'));
+        $deleteStmt = $pdo->prepare("DELETE FROM {$table} WHERE id IN ({$placeholders})");
+        $deleteStmt->execute($duplicateIds);
+      }
+
+      $updateSql = "
+        UPDATE {$table}
+        SET title = ?,
+            category = ?,
+            source = ?,
+            analysis_json = ?,
+            usage_count = ?,
+            updated_at = NOW()
+      ";
+      $updateParams = [$title, $category, $newSource, $analysisJson, $distinctCount];
+      if ($contextHash !== null && $existingContextId === 0) {
+        $updateSql .= ', context_hash = ?';
+        $updateParams[] = $contextHash;
+      }
+      $updateSql .= ' WHERE id = ?';
+      $updateParams[] = $keeperId;
+
+      $updateStmt = $pdo->prepare($updateSql);
+      $updateStmt->execute($updateParams);
+      $pdo->commit();
+    } catch (Throwable $e) {
+      if ($pdo->inTransaction()) $pdo->rollBack();
+      ai_knowledge_log_error('No se pudieron unificar candidatos IA', [
+        'keeper_id' => $keeperId,
+        'source_ids' => $sourceIds,
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  return $stats;
+}

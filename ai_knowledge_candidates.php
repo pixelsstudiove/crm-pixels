@@ -26,6 +26,22 @@ if (!in_array($statusFilter, ['all', 'candidate', 'ready'], true)) $statusFilter
 $sourceFilter = strtolower(trim((string) ($_GET['source_channel'] ?? 'all')));
 if (!in_array($sourceFilter, ['all', 'crm', 'canal_oficial'], true)) $sourceFilter = 'all';
 $search = trim((string) ($_GET['q'] ?? ''));
+$currentAction = account_url('ai_knowledge_candidates.php', [], accounts_request_account_slug($pdo) ?: null);
+$unifyResult = null;
+$unifyError = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'unify_repeated') {
+  $targetAccountId = is_super_admin() ? max(0, (int) ($_POST['account_id'] ?? $selectedAccountId)) : current_account_id();
+  try {
+    $unifyResult = ai_knowledge_unify_repeated_candidates($pdo, $targetAccountId);
+  } catch (Throwable $e) {
+    $unifyError = 'No se pudieron unificar las respuestas repetidas. Revisa el log técnico para más detalles.';
+    ai_knowledge_log_error('Fallo al unificar candidatos desde el log IA', [
+      'account_id' => $targetAccountId,
+      'error' => $e->getMessage(),
+    ]);
+  }
+}
 
 function ai_candidate_clean_excerpt(string $text, int $max = 240): string {
   $text = preg_replace('/\s+/u', ' ', trim($text)) ?: trim($text);
@@ -148,7 +164,6 @@ $navParams = [
   'source_channel' => $sourceFilter !== 'all' ? $sourceFilter : null,
   'q' => $search !== '' ? $search : null,
 ];
-$currentAction = account_url('ai_knowledge_candidates.php', [], accounts_request_account_slug($pdo) ?: null);
 $pageTitle = 'Log de aprendizaje IA - Pixels Studio';
 ?>
 <!doctype html>
@@ -170,7 +185,14 @@ $pageTitle = 'Log de aprendizaje IA - Pixels Studio';
     .learning-input,.learning-select{width:100%;border:1px solid #d8e6f4;border-radius:16px;background:#fff;color:#060d1d;font:inherit;font-weight:850;padding:14px 15px;}
     .learning-select{appearance:auto;}
     .learning-submit,.learning-link{border:0;border-radius:999px;background:#060d1d;color:#fff;padding:15px 20px;font-weight:950;text-decoration:none;display:inline-flex;justify-content:center;align-items:center;min-height:52px;cursor:pointer;}
+    .learning-submit.unify{background:#8738ff;box-shadow:0 14px 35px rgba(135,56,255,.22);}
+    .learning-submit.unify:hover{background:#060d1d;color:#fff;}
     .learning-link.secondary{background:#eef8ff;color:#007fa6;border:1px solid #cbefff;}
+    .learning-unify{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:18px;}
+    .learning-unify h2{margin:0 0 6px;color:#060d1d;font-size:22px;line-height:1.1;}
+    .learning-unify p{margin:0;color:#68748b;font-weight:850;line-height:1.45;max-width:760px;}
+    .learning-alert{margin:0 0 18px;border:1px solid #c7f1d7;background:#effcf4;color:#176c38;border-radius:20px;padding:15px 18px;font-weight:900;line-height:1.45;}
+    .learning-alert.error{border-color:#ffc4c4;background:#fff0f0;color:#b42336;}
     .learning-log{display:grid;gap:14px;}
     .learning-entry{position:relative;background:#fff;border:1px solid #dce9f7;border-radius:26px;padding:20px 20px 20px 28px;box-shadow:0 18px 45px rgba(5,14,33,.06);overflow:hidden;}
     .learning-entry::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;background:#19c7dd;}
@@ -193,7 +215,7 @@ $pageTitle = 'Log de aprendizaje IA - Pixels Studio';
     .learning-progress span{display:block;height:100%;border-radius:inherit;background:#8738ff;min-width:8px;}
     .learning-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
     .learning-empty{padding:32px;border:1px dashed #cfe2f4;border-radius:24px;background:#fff;color:#68748b;font-weight:900;line-height:1.4;}
-    @media (max-width:1180px){.learning-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.learning-filters{grid-template-columns:1fr 1fr}.learning-submit{width:100%;}.learning-grid{grid-template-columns:1fr;}}
+    @media (max-width:1180px){.learning-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.learning-filters{grid-template-columns:1fr 1fr}.learning-submit{width:100%;}.learning-grid{grid-template-columns:1fr;}.learning-unify{align-items:stretch;flex-direction:column;}}
     @media (max-width:720px){.learning-kpi-grid,.learning-filters{grid-template-columns:1fr}.learning-entry-head{flex-direction:column}.learning-panel,.learning-entry{border-radius:20px}.learning-title h2{font-size:19px;}}
   </style>
 </head>
@@ -220,6 +242,29 @@ $pageTitle = 'Log de aprendizaje IA - Pixels Studio';
       <?php nav_render_admin_side_nav('ai_knowledge_candidates'); ?>
 
       <section class="admin-content">
+        <section class="learning-panel learning-unify">
+          <div>
+            <h2>Unificar respuestas repetidas</h2>
+            <p>Agrupa candidatos que hablan del mismo tema, fusiona su evidencia y mueve a listas para revisar los que ya cumplen <?= (int) $threshold ?> conversaciones distintas.</p>
+          </div>
+          <form method="post" action="<?= h($currentAction) ?>" onsubmit="return confirm('Se unificarán los candidatos repetidos y se eliminarán duplicados. ¿Continuamos?');">
+            <input type="hidden" name="action" value="unify_repeated">
+            <input type="hidden" name="account_id" value="<?= (int) $selectedAccountId ?>">
+            <button class="learning-submit unify" type="submit">Unificar repetidos</button>
+          </form>
+        </section>
+
+        <?php if (is_array($unifyResult)): ?>
+          <div class="learning-alert">
+            Unificación completada: <?= (int) ($unifyResult['processed'] ?? 0) ?> candidatos revisados,
+            <?= (int) ($unifyResult['groups_unified'] ?? 0) ?> grupos unidos,
+            <?= (int) ($unifyResult['duplicates_removed'] ?? 0) ?> duplicados eliminados y
+            <?= (int) ($unifyResult['promoted'] ?? 0) ?> temas enviados al siguiente paso.
+          </div>
+        <?php elseif ($unifyError !== ''): ?>
+          <div class="learning-alert error"><?= h($unifyError) ?></div>
+        <?php endif; ?>
+
         <form class="learning-panel learning-filters" method="get" action="<?= h($currentAction) ?>">
           <div class="learning-field">
             <label for="q">Buscar</label>
